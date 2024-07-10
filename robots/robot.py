@@ -25,7 +25,7 @@ def angle_normalize(x):
 
 class BaseRobot:
     
-    def __init__(self, X0, dt, ax, type='Unicycle2D', robot_id=0):
+    def __init__(self, X0, dt, ax, fov_angle=70, cam_range=3.0, type='Unicycle2D', robot_id=0):
         '''
         X0: iniytial state
         dt: simulation time step
@@ -58,8 +58,8 @@ class BaseRobot:
         self.dt = dt
       
         # FOV parameters
-        self.fov_angle = np.deg2rad(70)  # [rad]
-        self.cam_range = 3.0  # [m]
+        self.fov_angle = np.deg2rad(fov_angle)  # [rad]
+        self.cam_range = cam_range  # [m]
 
         self.robot_radius = 0.25 # including padding
         self.max_decel = 3.0 #0.5 # [m/s^2]
