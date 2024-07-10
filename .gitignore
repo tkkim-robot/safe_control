@@ -1,0 +1,10 @@
+# Ignore pycache directories
+*/__pycache__/
+
+# Ignore misc. files
+*.csv
+*.egg-info/
+.DS_Store
+
+# Ignore directories and files with "images" in their name
+output/
