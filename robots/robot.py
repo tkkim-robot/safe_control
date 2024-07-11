@@ -25,7 +25,7 @@ def angle_normalize(x):
 
 class BaseRobot:
     
-    def __init__(self, X0, dt, ax, fov_angle=70, cam_range=3.0, type='Unicycle2D', robot_id=0):
+    def __init__(self, X0, dt, ax, fov_angle=70, cam_range=3.0, type='DynamicUnicycle2D', robot_id=0):
         '''
         X0: iniytial state
         dt: simulation time step
@@ -38,7 +38,6 @@ class BaseRobot:
         colors = plt.get_cmap('Pastel1').colors # color palette
         color = colors[robot_id % len(colors) + 1]
 
-        self.test_type = 'gatekeeper' # or 'cbf_qp'
         if type == 'Unicycle2D':
             try:
                 from unicycle2D import Unicycle2D
@@ -131,7 +130,7 @@ class BaseRobot:
     def render_plot(self):
         x = np.array([self.X[0,0],self.X[1,0],self.X[2,0]])
         self.body.set_offsets([x[0], x[1]])
-        if len(self.unsafe_points) > 0 and self.test_type == 'gatekeeper':
+        if len(self.unsafe_points) > 0:
             self.unsafe_points_handle.set_offsets(np.array(self.unsafe_points))
         
         self.axis.set_ydata([self.X[1,0],self.X[1,0]+self.vis_orient_len*np.sin(self.X[2,0])])

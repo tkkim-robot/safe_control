@@ -1,8 +1,23 @@
 import numpy as np
+import casadi as ca
+
+"""
+Created on July 11th, 2024
+@author: Taekyung Kim
+
+@description: 
+Dynamic unicycle model for CBF-QP and MPC-CBF (casadi)
+"""
 
 def angle_normalize(x):
-    return (((x + np.pi) % (2 * np.pi)) - np.pi)
-
+    if isinstance(x, (np.ndarray, float, int)):
+        # NumPy implementation
+        return (((x + np.pi) % (2 * np.pi)) - np.pi)
+    elif isinstance(x, (ca.SX, ca.MX, ca.DM)):
+        # CasADi implementation
+        return ca.fmod(x + ca.pi, 2 * ca.pi) - ca.pi
+    else:
+        raise TypeError(f"Unsupported input type: {type(x)}")
 
 class DynamicUnicycle2D:
     
@@ -40,6 +55,9 @@ class DynamicUnicycle2D:
         return X
 
     def nominal_input(self, X, G, d_min = 0.05, k_omega = 2.0, k_a = 1.0, k_v = 1.0):
+        '''
+        nominal input for CBF-QP
+        '''
         G = np.copy(G.reshape(-1,1)) # goal state
         max_v = 1.0
 
@@ -72,11 +90,10 @@ class DynamicUnicycle2D:
         omega = k_omega * error_theta
         return np.array([0.0, omega]).reshape(-1,1)
     
-    def agent_barrier(self, X, obs, robot_radius):
+    def agent_barrier(self, X, obs, robot_radius, beta = 1.01):
+        '''Continuous Time High Order CBF'''
         obsX = obs[0:2]
         d_min = obs[2][0] + robot_radius # obs radius + robot radius
-
-        beta = 1.01
     
         h = np.linalg.norm( X[0:2] - obsX[0:2] )**2 - beta*d_min**2   
         h_dot = 2 * (X[0:2] - obsX[0:2]).T @ ( self.f(X)[0:2]) # Lgh is zero => relative degree is 2
@@ -85,8 +102,32 @@ class DynamicUnicycle2D:
         dh_dot_dx = np.append( ( 2 * self.f(X)[0:2] ).T, np.array([[0,0]]), axis = 1 ) + 2 * ( X[0:2] - obsX[0:2] ).T @ df_dx[0:2,:]
         return h, h_dot, dh_dot_dx
     
+    def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta = 1.01):
+        '''Discrete Time High Order CBF'''
+        # Dynamics equations for the next states
+        x_k1 = self.step(x_k, u_k)
+        x_k2 = self.step(x_k1, u_k)
 
-        
+        def h(x, obs, robot_radius, beta = 1.01):
+            '''Computes CBF h(x) = ||x-x_obs||^2 - beta*d_min^2'''
+            x_obs = obs[0]
+            y_obs = obs[1]
+            r_obs = obs[2]
+            d_min = robot_radius + r_obs
+
+            h = (x[0, 0] - x_obs)**2 + (x[1, 0] - y_obs)**2 - beta*d_min**2
+            return h
+
+        h_k2 = h(x_k2, obs, robot_radius, beta)
+        h_k1 = h(x_k1, obs, robot_radius, beta)
+        h_k = h(x_k, obs, robot_radius, beta)
+
+        d_h = h_k1 - h_k
+        dd_h = h_k2 - 2 * h_k1 + h_k
+        #hocbf_2nd_order = h_ddot + (gamma1 + gamma2) * h_dot + (gamma1 * gamma2) * h_k
+
+        return h_k, d_h, dd_h
+
         
         
     
