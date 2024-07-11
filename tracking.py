@@ -177,11 +177,13 @@ class LocalTrackingController:
     def is_collide_unknown(self):
         if self.unknown_obs is None:
             return False
+        robot_radius = self.robot.robot_radius
         for obs in self.unknown_obs:
             # check if the robot collides with the obstacle
-            robot_radius = self.robot.robot_radius
             distance = np.linalg.norm(self.robot.X[:2] - obs[:2])
-            return distance < obs[2] + robot_radius
+            if distance < obs[2] + robot_radius:
+                return True
+        return False
 
     def update_goal(self):
         '''
