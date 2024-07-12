@@ -30,9 +30,9 @@ class QPError(Exception):
 
 
 class LocalTrackingController:
-    def __init__(self, X0, type='DynamicUnicycle2D', robot_id=0, dt=0.05,
+    def __init__(self, X0, model='DynamicUnicycle2D', robot_id=0, dt=0.05,
                   show_animation=False, save_animation=False, ax=None, fig=None, env=None):
-        self.type = type
+        self.model = model
         self.robot_id = robot_id # robot id = 1 has the plot handler
         self.dt = dt
 
@@ -42,11 +42,11 @@ class LocalTrackingController:
         self.current_goal_index = 0  # Index of the current goal in the path
         self.reached_threshold = 1.0
 
-        if self.type == 'Unicycle2D':
+        if self.model == 'Unicycle2D':
             self.alpha = 1.0
             self.v_max = 1.0
             self.w_max = 0.5
-        elif self.type == 'DynamicUnicycle2D':
+        elif self.model == 'DynamicUnicycle2D':
             self.alpha1 = 1.5
             self.alpha2 = 1.5
             # v_max is set to 1.0 inside the robot class
@@ -89,7 +89,7 @@ class LocalTrackingController:
 
     def setup_robot(self, X0):
         from robots.robot import BaseRobot
-        self.robot = BaseRobot(X0.reshape(-1, 1), self.dt, self.ax, self.type, self.robot_id)
+        self.robot = BaseRobot(X0.reshape(-1, 1), self.dt, self.ax, fov_angle=70.0, cam_range=3.0, model=self.model, robot_id=self.robot_id)
 
     def setup_control_problem(self):
         self.u = cp.Variable((2, 1))
@@ -98,11 +98,11 @@ class LocalTrackingController:
         self.b1 = cp.Parameter((1, 1), value=np.zeros((1, 1)))
         objective = cp.Minimize(cp.sum_squares(self.u - self.u_ref))
 
-        if self.type == 'Unicycle2D':
+        if self.model == 'Unicycle2D':
             constraints = [self.A1 @ self.u + self.b1 >= 0,
                            cp.abs(self.u[0]) <= self.v_max,
                            cp.abs(self.u[1]) <= self.w_max]
-        elif self.type == 'DynamicUnicycle2D':
+        elif self.model == 'DynamicUnicycle2D':
             constraints = [self.A1 @ self.u + self.b1 >= 0,
                             cp.abs(self.u[0]) <= self.a_max,
                             cp.abs(self.u[1]) <= self.w_max]
@@ -129,9 +129,12 @@ class LocalTrackingController:
         if len(waypoints) < 2:
             return waypoints
         
-        distances = np.linalg.norm(np.diff(waypoints[:, :2], axis=0), axis=1)
-        mask = np.concatenate(([True], distances >= self.reached_threshold))
-        return waypoints[mask]
+        robot_pos = self.robot.get_position()
+        aug_waypoints = np.vstack((robot_pos, waypoints[:, :2]))
+
+        distances = np.linalg.norm(np.diff(aug_waypoints, axis=0), axis=1)
+        mask = np.concatenate(([False], distances >= self.reached_threshold))
+        return aug_waypoints[mask]
     
     def goal_reached(self, current_position, goal_position):
         return np.linalg.norm(current_position[:2] - goal_position[:2]) < self.reached_threshold
@@ -240,7 +243,7 @@ class LocalTrackingController:
                 self.goal = self.update_goal()
         else:
             self.goal = self.update_goal()
-
+            
         # 1. Update the detected obstacles
         detected_obs = self.robot.detect_unknown_obs(self.unknown_obs)
         nearest_obs = self.get_nearest_obs(detected_obs)
@@ -250,11 +253,11 @@ class LocalTrackingController:
             # deactivate the CBF constraints
             self.A1.value = np.zeros_like(self.A1.value)
             self.b1.value = np.zeros_like(self.b1.value)
-        elif self.type == 'Unicycle2D':
+        elif self.model == 'Unicycle2D':
             h, dh_dx = self.robot.agent_barrier(nearest_obs)
             self.A1.value[0,:] = dh_dx @ self.robot.g()
             self.b1.value[0,:] = dh_dx @ self.robot.f() + self.alpha * h
-        elif self.type == 'DynamicUnicycle2D':
+        elif self.model == 'DynamicUnicycle2D':
             h, h_dot, dh_dot_dx = self.robot.agent_barrier(nearest_obs)
             self.A1.value[0,:] = dh_dot_dx @ self.robot.g()
             self.b1.value[0,:] = dh_dot_dx @ self.robot.f() + (self.alpha1+self.alpha2) * h_dot + self.alpha1*self.alpha2*h
@@ -356,9 +359,9 @@ def single_agent_main():
     ax, fig = plot_handler.plot_grid("Local Tracking Controller")
     env_handler = env.Env()
 
-    #type = 'Unicycle2D'
-    type = 'DynamicUnicycle2D'
-    tracking_controller = LocalTrackingController(x_init, type=type, dt=dt,
+    #model = 'Unicycle2D'
+    model = 'DynamicUnicycle2D'
+    tracking_controller = LocalTrackingController(x_init, model=model, dt=dt,
                                          show_animation=True,
                                          save_animation=False,
                                          ax=ax, fig=fig,
@@ -388,9 +391,9 @@ def multi_agent_main():
     ax, fig = plot_handler.plot_grid("Local Tracking Controller")
     env_handler = env.Env()
 
-    #type = 'Unicycle2D'
-    type = 'DynamicUnicycle2D'
-    controller_0 = LocalTrackingController(x_init, type=type, 
+    #model = 'Unicycle2D'
+    model = 'DynamicUnicycle2D'
+    controller_0 = LocalTrackingController(x_init, model=model, 
                                          robot_id=0,
                                          dt=dt,
                                          show_animation=True,
@@ -398,7 +401,7 @@ def multi_agent_main():
                                          ax=ax, fig=fig,
                                          env=env_handler)
     
-    controller_1 = LocalTrackingController(x_goal, type=type,
+    controller_1 = LocalTrackingController(x_goal, model=model,
                                          robot_id=1,
                                          dt=dt,
                                          show_animation=True,

@@ -28,7 +28,7 @@ class DynamicUnicycle2D:
             cbf: h(x) = ||x-x_obs||^2 - beta*d_min^2
             relative degree: 2
         '''
-        self.type = 'DynamicUnicycle'   
+        self.model = 'DynamicUnicycle'   
         self.dt = dt     
 
     def f(self, X):

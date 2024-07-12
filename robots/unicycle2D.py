@@ -12,7 +12,7 @@ class Unicycle2D:
             cbf: h(x) = ||x-x_obs||^2 - beta*d_min^2 - sigma(s)
             relative degree: 1
         '''
-        self.type = 'Unicycle2D'
+        self.model = 'Unicycle2D'
         self.dt = dt
       
         # for exp 
