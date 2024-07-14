@@ -49,7 +49,7 @@ class DynamicUnicycle2D:
         return np.array([ [0, 0],[0, 0], [0, 1], [1, 0] ])
 
         
-    def step(self, X, U): #Just holonomic X,T acceleration
+    def step(self, X, U):
         X = X + ( self.f(X) + self.g(X) @ U )*self.dt
         X[2,0] = angle_normalize(X[2,0])
         return X
@@ -90,7 +90,7 @@ class DynamicUnicycle2D:
         omega = k_omega * error_theta
         return np.array([0.0, omega]).reshape(-1,1)
     
-    def agent_barrier(self, X, obs, robot_radius, beta = 1.01):
+    def agent_barrier(self, X, obs, robot_radius, beta=1.01):
         '''Continuous Time High Order CBF'''
         obsX = obs[0:2]
         d_min = obs[2][0] + robot_radius # obs radius + robot radius

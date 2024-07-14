@@ -1,7 +1,23 @@
 import numpy as np
+import casadi as ca
+
+"""
+Created on July 14h, 2024
+@author: Taekyung Kim
+
+@description: 
+Kinematic unicycle model for CBF-QP and MPC-CBF (casadi)
+"""
 
 def angle_normalize(x):
-    return (((x + np.pi) % (2 * np.pi)) - np.pi)
+    if isinstance(x, (np.ndarray, float, int)):
+        # NumPy implementation
+        return (((x + np.pi) % (2 * np.pi)) - np.pi)
+    elif isinstance(x, (ca.SX, ca.MX, ca.DM)):
+        # CasADi implementation
+        return ca.fmod(x + ca.pi, 2 * ca.pi) - ca.pi
+    else:
+        raise TypeError(f"Unsupported input type: {type(x)}")
 
 class Unicycle2D:
     
@@ -15,12 +31,9 @@ class Unicycle2D:
         self.model = 'Unicycle2D'
         self.dt = dt
       
-        # for exp 
+        # for exp (CBF for unicycle)
         self.k1 = 0.5 #=#1.0
         self.k2 = 1.8 #0.5
-
-        self.max_decel = 0.4  # [m/s^2]
-        self.max_ang_decel = 0.25  # [rad/s^2]
 
     def f(self, X):
         return np.array([0,0,0]).reshape(-1,1)
@@ -36,8 +49,12 @@ class Unicycle2D:
         return X
 
     def nominal_input(self, X, G, d_min = 0.05, k_omega = 2.0, k_v = 1.0):
+        '''
+        nominal input for CBF-QP
+        '''
         G = np.copy(G.reshape(-1,1)) # goal state
-        distance = max(np.linalg.norm( X[0:2,0]-G[0:2,0] ) - d_min, 0.05) #1.5)
+
+        distance = max(np.linalg.norm( X[0:2,0]-G[0:2,0] ) - d_min, 0.05)
         theta_d = np.arctan2(G[1,0]-X[1,0],G[0,0]-X[0,0])
         error_theta = angle_normalize( theta_d - X[2,0] )
 
@@ -68,16 +85,12 @@ class Unicycle2D:
     def sigma_der(self,s):
         return - self.k2 * np.exp(self.k1-s)/( 1+np.exp( self.k1-s ) ) * ( 1 - self.sigma(s)/self.k2 )
     
-    def agent_barrier(self, X, obs, robot_radius):
+    def agent_barrier(self, X, obs, robot_radius, beta=1.01):
         obsX = obs[0:2]
         d_min = obs[2][0] + robot_radius # obs radius + robot radius
 
-        beta = 1.01
         theta = X[2,0]
 
-        # if np.linalg.norm( X[0:2] - obsX[0:2] ) > 0.3:
-        #     obsX = obsX.copy() * 10
-        
         h = np.linalg.norm( X[0:2] - obsX[0:2] )**2 - beta*d_min**2   
         s = ( X[0:2] - obsX[0:2]).T @ np.array( [np.cos(theta),np.sin(theta)] ).reshape(-1,1)
         h = h - self.sigma(s)
@@ -92,3 +105,6 @@ class Unicycle2D:
         # print(dh_dx)
         return h, dh_dx
         
+    def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta = 1.01):
+        # not implemented
+        raise NotImplementedError

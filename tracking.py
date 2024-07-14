@@ -176,13 +176,19 @@ class LocalTrackingController:
     def get_nearest_obs(self, detected_obs):
         # if there was new obstacle detected, update the obs
         if len(detected_obs) != 0:
-            all_obs = np.vstack((self.obs, detected_obs))
-            return np.array(detected_obs).reshape(-1, 1)
+            if len(self.obs) == 0:
+                all_obs = np.array(detected_obs)
+            else:
+                all_obs = np.vstack((self.obs, detected_obs))
+            #return np.array(detected_obs).reshape(-1, 1) just returning the detected obs
         else:
             all_obs = self.obs
 
         if len(all_obs) == 0:
             return None
+        
+        if all_obs.ndim == 1:
+            all_obs = all_obs.reshape(1, -1)
 
         radius = all_obs[:, 2]
         distances = np.linalg.norm(all_obs[:, :2] - self.robot.X[:2].T, axis=1)
@@ -361,7 +367,7 @@ def single_agent_main():
     env_handler = env.Env()
 
     robot_spec = {
-        'model': 'DynamicUnicycle2D',
+        'model': 'Unicycle2D', #'DynamicUnicycle2D',
         'w_max': 0.5,
         'a_max': 0.5,
         'fov_angle': 70.0,
@@ -375,8 +381,8 @@ def single_agent_main():
                                          ax=ax, fig=fig,
                                          env=env_handler)
 
-    # unknown_obs = np.array([[9.0, 8.8, 0.3]]) 
-    # tracking_controller.set_unknown_obs(unknown_obs)
+    unknown_obs = np.array([[2.6, 6.0, 0.3]]) 
+    tracking_controller.set_unknown_obs(unknown_obs)
     tracking_controller.set_waypoints(waypoints)
     unexpected_beh = tracking_controller.run_all_steps(tf=30)
 
@@ -445,4 +451,4 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    multi_agent_main()
+    single_agent_main()
