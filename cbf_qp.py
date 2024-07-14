@@ -33,7 +33,7 @@ class CBFQP:
                            cp.abs(self.u[1]) <= self.robot_spec['w_max']]
         self.cbf_controller = cp.Problem(objective, constraints)
 
-    def solve_control_problem(self, robot_state, u_ref, nearest_obs):
+    def solve_control_problem(self, robot_state, control_ref, nearest_obs):
         # 3. Update the CBF constraints
         if nearest_obs is None:
             # deactivate the CBF constraints
@@ -48,7 +48,7 @@ class CBFQP:
             self.A1.value[0,:] = dh_dot_dx @ self.robot.g()
             self.b1.value[0,:] = dh_dot_dx @ self.robot.f() + (self.cbf_param['alpha1']+self.cbf_param['alpha2']) * h_dot + self.cbf_param['alpha1']*self.cbf_param['alpha2']*h
 
-        self.u_ref.value = u_ref
+        self.u_ref.value = control_ref['u_ref']
 
         # 4. Solve this yields a new 'self.u'
         self.cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)

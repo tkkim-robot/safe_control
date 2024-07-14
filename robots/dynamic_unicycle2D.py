@@ -31,11 +31,19 @@ class DynamicUnicycle2D:
         self.model = 'DynamicUnicycle'   
         self.dt = dt     
 
-    def f(self, X):
-        return np.array([X[3,0]*np.cos(X[2,0]),
-                         X[3,0]*np.sin(X[2,0]),
-                         0,
-                         0]).reshape(-1,1)
+    def f(self, X, casadi = False):
+        if casadi:
+            return ca.vertcat(
+                X[3,0] * ca.cos(X[2,0]),
+                X[3,0] * ca.sin(X[2,0]),
+                0,
+                0
+            )
+        else:
+            return np.array([X[3,0]*np.cos(X[2,0]),
+                            X[3,0]*np.sin(X[2,0]),
+                            0,
+                            0]).reshape(-1,1)
     
  
     def df_dx(self, X):
@@ -45,8 +53,17 @@ class DynamicUnicycle2D:
                          [0, 0, 0, 0],
                          [0, 0, 0, 0]
                          ])
-    def g(self, X):
-        return np.array([ [0, 0],[0, 0], [0, 1], [1, 0] ])
+    
+    def g(self, X, casadi = False):
+        if casadi:
+            return ca.DM([
+                [0, 0], 
+                [0, 0], 
+                [0, 1], 
+                [1, 0]
+            ])
+        else:
+            return np.array([ [0, 0],[0, 0], [0, 1], [1, 0] ])
 
         
     def step(self, X, U):

@@ -278,7 +278,10 @@ class LocalTrackingController:
             u_ref = self.robot.nominal_input(self.goal)
 
         # 3. Update the CBF constraints & # 4. Solve the control problem
-        u = self.controller.solve_control_problem(self.robot.X, u_ref, nearest_obs)
+        control_ref = {'state_machine': self.state_machine,
+                 'u_ref': u_ref,
+                 'goal': self.goal}
+        u = self.controller.solve_control_problem(self.robot.X, control_ref, nearest_obs)
 
         # 5. Raise an error if the QP is infeasible, or the robot collides with the obstacle
         collide = self.is_collide_unknown()

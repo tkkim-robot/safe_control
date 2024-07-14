@@ -35,13 +35,27 @@ class Unicycle2D:
         self.k1 = 0.5 #=#1.0
         self.k2 = 1.8 #0.5
 
-    def f(self, X):
-        return np.array([0,0,0]).reshape(-1,1)
+    def f(self, X, casadi=False):
+        if casadi:
+            return ca.vertcat([
+                0, 
+                0, 
+                0, 
+                0
+            ])
+        else:
+            return np.array([0,0,0]).reshape(-1,1)
     
-    def g(self, X):
-        return np.array([ [ np.cos(X[2,0]), 0],
-                          [ np.sin(X[2,0]), 0],
-                          [0, 1] ]) 
+    def g(self, X, casadi=False):
+        if casadi:
+            return ca.DM([ [ ca.cos(X[2,0]), 0],
+                            [ ca.sin(X[2,0]), 0],
+                            [0, 1]
+            ])
+        else:
+            return np.array([ [ np.cos(X[2,0]), 0],
+                            [ np.sin(X[2,0]), 0],
+                            [0, 1] ]) 
          
     def step(self, X, U): 
         X = X + ( self.f(X) + self.g(X) @ U )*self.dt

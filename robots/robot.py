@@ -101,11 +101,11 @@ class BaseRobot:
     def get_orientation(self):
         return self.X[2, 0]
     
-    def f(self):
-        return self.robot.f(self.X)
+    def f(self, casadi=False):
+        return self.robot.f(self.X, casadi)
     
-    def g(self):
-        return self.robot.g(self.X)
+    def g(self, casadi=False):
+        return self.robot.g(self.X, casadi)
     
     def nominal_input(self, goal, d_min=0.05):
         return self.robot.nominal_input(self.X, goal, d_min)
@@ -121,6 +121,9 @@ class BaseRobot:
     
     def agent_barrier(self, obs):
         return self.robot.agent_barrier(self.X, obs, self.robot_radius)
+    
+    def agent_barrier_dt(self, u_k, obs):
+        return self.robot.agent_barrier_dt(self.X, u_k, obs, self.robot_radius)
 
     def step(self, U):
         # wrap step function
