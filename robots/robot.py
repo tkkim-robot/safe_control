@@ -25,26 +25,27 @@ def angle_normalize(x):
 
 class BaseRobot:
     
-    def __init__(self, X0, dt, ax, fov_angle=70.0, cam_range=3.0, model='DynamicUnicycle2D', robot_id=0):
+    def __init__(self, X0, robot_spec, dt, ax):
         '''
         X0: iniytial state
         dt: simulation time step
         ax: plot axis handle
         '''
         
-        self.model = model
-        self.robot_id = robot_id
+        self.robot_spec = robot_spec
+        if 'robot_id' not in robot_spec:
+            self.robot_spec['robot_id'] = 0
 
         colors = plt.get_cmap('Pastel1').colors # color palette
-        color = colors[robot_id % len(colors) + 1]
+        color = colors[self.robot_spec['robot_id'] % len(colors) + 1]
 
-        if model == 'Unicycle2D':
+        if self.robot_spec['model'] == 'Unicycle2D':
             try:
                 from unicycle2D import Unicycle2D
             except ImportError:
                 from robots.unicycle2D import Unicycle2D
             self.robot = Unicycle2D(dt)
-        elif model == 'DynamicUnicycle2D':
+        elif self.robot_spec['model'] == 'DynamicUnicycle2D':
             try:
                 from dynamic_unicycle2D import DynamicUnicycle2D
             except ImportError:
@@ -57,8 +58,8 @@ class BaseRobot:
         self.dt = dt
       
         # FOV parameters
-        self.fov_angle = np.deg2rad(float(fov_angle))  # [rad]
-        self.cam_range = cam_range  # [m]
+        self.fov_angle = np.deg2rad(float(self.robot_spec['fov_angle']))  # [rad]
+        self.cam_range = self.robot_spec['cam_range']  # [m]
 
         self.robot_radius = 0.25 # including padding
         self.max_decel = 3.0 #0.5 # [m/s^2]
@@ -211,9 +212,9 @@ class BaseRobot:
 
     def update_safety_area(self):
         theta = self.X[2, 0]  # Current heading angle in radians
-        if self.model == 'Unicycle2D':
+        if self.robot_spec['model'] == 'Unicycle2D':
             v = self.U[0, 0]  # Linear velocity
-        elif self.model == 'DynamicUnicycle2D':
+        elif self.robot_spec['model'] == 'DynamicUnicycle2D':
             v = self.X[3, 0]
         omega = self.U[1, 0]  # Angular velocity
         

@@ -19,7 +19,7 @@ The main functions demonstrate single and multi-agent scenarios, showcasing the 
 @required-scripts: robots/robot.py
 """
 
-class QPError(Exception):
+class InfeasibleError(Exception):
     '''
     Exception raised for errors when QP is infeasible or 
     the robot collides with the obstacle
@@ -28,12 +28,12 @@ class QPError(Exception):
         self.message = message
         super().__init__(self.message)
 
-
 class LocalTrackingController:
-    def __init__(self, X0, model='DynamicUnicycle2D', robot_id=0, dt=0.05,
+    def __init__(self, X0, robot_spec, control_type='cbf_qp', dt=0.05,
                   show_animation=False, save_animation=False, ax=None, fig=None, env=None):
-        self.model = model
-        self.robot_id = robot_id # robot id = 1 has the plot handler
+        
+        self.robot_spec = robot_spec
+        self.control_type = control_type # 'cbf_qp' or 'mpc_cbf'
         self.dt = dt
 
         self.state_machine = 'idle'  # Can be 'idle', 'track', 'stop', 'rotate'
@@ -42,26 +42,40 @@ class LocalTrackingController:
         self.current_goal_index = 0  # Index of the current goal in the path
         self.reached_threshold = 1.0
 
-        if self.model == 'Unicycle2D':
-            self.alpha = 1.0
-            self.v_max = 1.0
-            self.w_max = 0.5
-        elif self.model == 'DynamicUnicycle2D':
-            self.alpha1 = 1.5
-            self.alpha2 = 1.5
+        if self.robot_spec['model'] == 'Unicycle2D':
+            if 'v_max' not in self.robot_spec:
+                self.robot_spec['v_max'] = 1.0
+            if 'w_max' not in self.robot_spec:
+                self.robot_spec['w_max'] = 0.5
+        elif self.robot_spec['model'] == 'DynamicUnicycle2D':
             # v_max is set to 1.0 inside the robot class
-            self.a_max = 0.5
-            self.w_max = 0.5
-            X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
+            if 'a_max' not in self.robot_spec:
+                self.robot_spec['a_max'] = 0.5
+            if 'w_max' not in self.robot_spec:
+                self.robot_spec['w_max'] = 0.5
+            if X0.shape[0] == 3: # set initial velocity to 0.0
+                X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
+        elif self.robot_spec['model'] == 'DoubleIntegrator2D':
+            if 'ax_max' not in self.robot_spec:
+                self.robot_spec['ax_max'] = 1.0
+            if 'ay_max' not in self.robot_spec:
+                self.robot_spec['ay_max'] = 1.0
+            if X0.shape[0] == 3:
+                X0 = np.array([X0[0], X0[1], 0.0, 0.0, X0[2]]).reshape(-1, 1)
+            elif X0.shape[0] == 2:
+                X0 = np.array([X0[0], X0[1], 0.0, 0.0, 0.0]).reshape(-1, 1)
+            elif X0.shape[0] != 5:
+                raise ValueError("Invalid initial state dimension for DoubleIntegrator2D")
+            
+        if 'fov_angle' not in self.robot_spec:
+            self.robot_spec['fov_angle'] = 70.0
+        if 'cam_range' not in self.robot_spec:
+            self.robot_spec['cam_range'] = 3.0
 
         self.show_animation = show_animation
         self.save_animation = save_animation
         if self.save_animation:
-            self.current_directory_path = os.getcwd() 
-            if not os.path.exists(self.current_directory_path + "/output/animations"):
-                os.makedirs(self.current_directory_path + "/output/animations")
-            self.save_per_frame = 2
-            self.ani_idx = 0
+            self.setup_animation_saving()
 
         self.ax = ax
         self.fig = fig
@@ -69,44 +83,43 @@ class LocalTrackingController:
         self.unknown_obs = None
 
         if show_animation:
-            # Initialize plotting
-            if self.ax is None:
-                self.ax = plt.axes()
-            if self.fig is None:
-                self.fig = plt.figure()
-            plt.ion()
-            self.ax.set_xlabel("X")
-            self.ax.set_ylabel("Y")
-            self.ax.set_aspect(1)
-            self.waypoints_scatter = self.ax.scatter([],[],s=10,facecolors='g',edgecolors='g', alpha=0.5)
+            self.setup_animation_plot()
         else:
             self.ax = plt.axes() # dummy placeholder
 
         # Setup control problem
         self.setup_robot(X0)
-        self.setup_control_problem()
+
+        if control_type == 'cbf_qp':
+            from cbf_qp import CBFQP
+            self.controller = CBFQP(self.robot, self.robot_spec)
+        elif control_type == 'mpc_cbf':
+            self.controller = None # TODO:
+
         self.goal = None
+
+    def setup_animation_saving(self):
+        self.current_directory_path = os.getcwd()
+        if not os.path.exists(self.current_directory_path + "/output/animations"):
+            os.makedirs(self.current_directory_path + "/output/animations")
+        self.save_per_frame = 2
+        self.ani_idx = 0
+
+    def setup_animation_plot(self):
+        # Initialize plotting
+        if self.ax is None:
+            self.ax = plt.axes()
+        if self.fig is None:
+            self.fig = plt.figure()
+        plt.ion()
+        self.ax.set_xlabel("X")
+        self.ax.set_ylabel("Y")
+        self.ax.set_aspect(1)
+        self.waypoints_scatter = self.ax.scatter([],[],s=10,facecolors='g',edgecolors='g', alpha=0.5)
 
     def setup_robot(self, X0):
         from robots.robot import BaseRobot
-        self.robot = BaseRobot(X0.reshape(-1, 1), self.dt, self.ax, fov_angle=70.0, cam_range=3.0, model=self.model, robot_id=self.robot_id)
-
-    def setup_control_problem(self):
-        self.u = cp.Variable((2, 1))
-        self.u_ref = cp.Parameter((2, 1), value=np.zeros((2, 1)))
-        self.A1 = cp.Parameter((1, 2), value=np.zeros((1, 2)))
-        self.b1 = cp.Parameter((1, 1), value=np.zeros((1, 1)))
-        objective = cp.Minimize(cp.sum_squares(self.u - self.u_ref))
-
-        if self.model == 'Unicycle2D':
-            constraints = [self.A1 @ self.u + self.b1 >= 0,
-                           cp.abs(self.u[0]) <= self.v_max,
-                           cp.abs(self.u[1]) <= self.w_max]
-        elif self.model == 'DynamicUnicycle2D':
-            constraints = [self.A1 @ self.u + self.b1 >= 0,
-                            cp.abs(self.u[0]) <= self.a_max,
-                            cp.abs(self.u[1]) <= self.w_max]
-        self.cbf_controller = cp.Problem(objective, constraints)
+        self.robot = BaseRobot(X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
 
     def set_waypoints(self, waypoints):
         if type(waypoints) == list:
@@ -216,13 +229,13 @@ class LocalTrackingController:
         goal = np.array(self.waypoints[self.current_goal_index][0:2]) # set goal to next waypoint's (x,y)
         return goal
     
-    def draw_plot(self, pause=0.01):
+    def draw_plot(self, pause=0.01, force_save=False):
         if self.show_animation:
             self.fig.canvas.draw()
             plt.pause(pause)
             if self.save_animation:
                 self.ani_idx += 1
-                if self.ani_idx % self.save_per_frame == 0:
+                if force_save or self.ani_idx % self.save_per_frame == 0:
                     plt.savefig(self.current_directory_path +
                             "/output/animations/" + "t_step_" + str(self.ani_idx//self.save_per_frame).zfill(4) + ".png")
             
@@ -248,45 +261,27 @@ class LocalTrackingController:
         detected_obs = self.robot.detect_unknown_obs(self.unknown_obs)
         nearest_obs = self.get_nearest_obs(detected_obs)
 
-        # 2. Update the CBF constraints
-        if nearest_obs is None:
-            # deactivate the CBF constraints
-            self.A1.value = np.zeros_like(self.A1.value)
-            self.b1.value = np.zeros_like(self.b1.value)
-        elif self.model == 'Unicycle2D':
-            h, dh_dx = self.robot.agent_barrier(nearest_obs)
-            self.A1.value[0,:] = dh_dx @ self.robot.g()
-            self.b1.value[0,:] = dh_dx @ self.robot.f() + self.alpha * h
-        elif self.model == 'DynamicUnicycle2D':
-            h, h_dot, dh_dot_dx = self.robot.agent_barrier(nearest_obs)
-            self.A1.value[0,:] = dh_dot_dx @ self.robot.g()
-            self.b1.value[0,:] = dh_dot_dx @ self.robot.f() + (self.alpha1+self.alpha2) * h_dot + self.alpha1*self.alpha2*h
-
-        # 3. Compuite nominal control input, pre-defined in the robot class
+        # 2. Compuite nominal control input, pre-defined in the robot class
         if self.state_machine == 'rotate':
             goal_angle = np.arctan2(self.goal[1] - self.robot.X[1, 0],
                                     self.goal[0] - self.robot.X[0, 0])
-            self.u_ref.value = self.robot.rotate_to(goal_angle)
+            u_ref = self.robot.rotate_to(goal_angle)
         elif self.goal is None:
-            self.u_ref.value = self.robot.stop()
+            u_ref = self.robot.stop()
         else:
-            self.u_ref.value = self.robot.nominal_input(self.goal)
+            u_ref = self.robot.nominal_input(self.goal)
 
-         # 4. Solve this yields a new `self.u``
-        self.cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
+        # 3. Update the CBF constraints & # 4. Solve the control problem
+        u = self.controller.solve_control_problem(self.robot.X, u_ref, nearest_obs)
 
         # 5. Raise an error if the QP is infeasible, or the robot collides with the obstacle
         collide = self.is_collide_unknown()
-        if self.cbf_controller.status != 'optimal' or collide:
-            if self.show_animation:
-                self.robot.render_plot()
-                current_position = self.robot.X[:2].flatten()
-                self.ax.text(current_position[0]+0.5, current_position[1]+0.5, '!', color='red', weight='bold', fontsize=22)
-                self.draw_plot(pause=5)
-            raise QPError
+        if self.controller.status != 'optimal' or collide:
+            self.draw_infeasible()
+            raise InfeasibleError("Infeasible or Collision")
 
         # 6. Step the robot
-        self.robot.step(self.u.value)
+        self.robot.step(u)
         if self.show_animation:
             self.robot.render_plot()
 
@@ -303,6 +298,13 @@ class LocalTrackingController:
             return -1 # all waypoints reached
         return beyond_flag
     
+    def draw_infeasible(self):
+        if self.show_animation:
+            self.robot.render_plot()
+            current_position = self.robot.X[:2].flatten()
+            self.ax.text(current_position[0]+0.5, current_position[1]+0.5, '!', color='red', weight='bold', fontsize=22)
+            self.draw_plot(pause=5, force_save=True)
+
     def export_video(self):
         # convert the image sequence to a video
         if self.show_animation and self.save_animation:
@@ -355,13 +357,19 @@ def single_agent_main():
     x_init = waypoints[0]
 
     plot_handler = plotting.Plotting()
-    plot_handler = plotting.Plotting()
     ax, fig = plot_handler.plot_grid("Local Tracking Controller")
     env_handler = env.Env()
 
-    #model = 'Unicycle2D'
-    model = 'DynamicUnicycle2D'
-    tracking_controller = LocalTrackingController(x_init, model=model, dt=dt,
+    robot_spec = {
+        'model': 'DynamicUnicycle2D',
+        'w_max': 0.5,
+        'a_max': 0.5,
+        'fov_angle': 70.0,
+        'cam_range': 3.0
+    }
+    tracking_controller = LocalTrackingController(x_init, robot_spec,
+                                         control_type='cbf_qp',
+                                         dt=dt,
                                          show_animation=True,
                                          save_animation=False,
                                          ax=ax, fig=fig,
@@ -429,4 +437,4 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    multi_agent_main()
+    single_agent_main()
