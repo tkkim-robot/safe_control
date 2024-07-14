@@ -399,18 +399,26 @@ def multi_agent_main():
     ax, fig = plot_handler.plot_grid("Local Tracking Controller")
     env_handler = env.Env()
 
-    #model = 'Unicycle2D'
-    model = 'DynamicUnicycle2D'
-    controller_0 = LocalTrackingController(x_init, model=model, 
-                                         robot_id=0,
+    robot_spec = {
+        'model': 'DynamicUnicycle2D',
+        'w_max': 0.5,
+        'a_max': 0.5,
+        'fov_angle': 70.0,
+        'cam_range': 3.0
+    }
+
+    robot_spec['robot_id'] = 0
+    controller_0 = LocalTrackingController(x_init, robot_spec,
+                                         control_type='cbf_qp',
                                          dt=dt,
                                          show_animation=True,
                                          save_animation=False,
                                          ax=ax, fig=fig,
                                          env=env_handler)
     
-    controller_1 = LocalTrackingController(x_goal, model=model,
-                                         robot_id=1,
+    robot_spec['robot_id'] = 1
+    controller_1 = LocalTrackingController(x_goal, robot_spec,
+                                         control_type='cbf_qp',
                                          dt=dt,
                                          show_animation=True,
                                          save_animation=False,
@@ -437,4 +445,4 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main()
+    multi_agent_main()

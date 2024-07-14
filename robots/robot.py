@@ -205,8 +205,7 @@ class BaseRobot:
         robot_position = (self.X[0, 0], self.X[1, 0])
         new_area = Polygon([robot_position, fov_left, fov_right])
     
-        #self.sensing_footprints = self.sensing_footprints.union(new_area).simplify(0.3)
-        self.sensing_footprints = custom_merge([self.sensing_footprints, new_area]).simplify(0.3)
+        self.sensing_footprints = custom_merge([self.sensing_footprints, new_area])
         #print(is_valid_reason(self.sensing_footprints))
         #self.sensing_footprints = self.sensing_footprints.simplify(0.1)
 
