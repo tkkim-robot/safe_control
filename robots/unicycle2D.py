@@ -40,7 +40,6 @@ class Unicycle2D:
             return ca.vertcat([
                 0, 
                 0, 
-                0, 
                 0
             ])
         else:
@@ -48,10 +47,11 @@ class Unicycle2D:
     
     def g(self, X, casadi=False):
         if casadi:
-            return ca.DM([ [ ca.cos(X[2,0]), 0],
-                            [ ca.sin(X[2,0]), 0],
-                            [0, 1]
-            ])
+            g = ca.SX.zeros(3, 2)
+            g[0, 0] = ca.cos(X[2,0])
+            g[1, 0] = ca.sin(X[2,0])
+            g[2, 1] = 1
+            return g
         else:
             return np.array([ [ np.cos(X[2,0]), 0],
                             [ np.sin(X[2,0]), 0],
@@ -120,5 +120,22 @@ class Unicycle2D:
         return h, dh_dx
         
     def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta = 1.01):
-        # not implemented
-        raise NotImplementedError
+        '''Discrete Time High Order CBF'''
+        # Dynamics equations for the next states
+        x_k1 = self.step(x_k, u_k)
+
+        def h(x, obs, robot_radius, beta = 1.01):
+            '''Computes CBF h(x) = ||x-x_obs||^2 - beta*d_min^2'''
+            x_obs = obs[0]
+            y_obs = obs[1]
+            r_obs = obs[2]
+            d_min = robot_radius + r_obs
+
+            h = (x[0, 0] - x_obs)**2 + (x[1, 0] - y_obs)**2 - beta*d_min**2
+            return h
+
+        h_k1 = h(x_k1, obs, robot_radius, beta)
+        h_k = h(x_k, obs, robot_radius, beta)
+
+        d_h = h_k1 - h_k
+        return h_k, d_h
