@@ -94,7 +94,8 @@ class LocalTrackingController:
             from cbf_qp import CBFQP
             self.controller = CBFQP(self.robot, self.robot_spec)
         elif control_type == 'mpc_cbf':
-            self.controller = None # TODO:
+            from mpc_cbf import MPCCBF
+            self.controller = MPCCBF(self.robot, self.robot_spec)
 
         self.goal = None
 
@@ -351,7 +352,7 @@ class LocalTrackingController:
 
         return unexpected_beh
 
-def single_agent_main():
+def single_agent_main(control_type):
     dt = 0.05
 
     # temporal
@@ -377,19 +378,19 @@ def single_agent_main():
         'cam_range': 3.0
     }
     tracking_controller = LocalTrackingController(x_init, robot_spec,
-                                         control_type='cbf_qp',
+                                         control_type=control_type,
                                          dt=dt,
                                          show_animation=True,
                                          save_animation=False,
                                          ax=ax, fig=fig,
                                          env=env_handler)
 
-    unknown_obs = np.array([[2.6, 6.0, 0.3]]) 
+    unknown_obs = np.array([[2.6, 6.0, 0.9]]) 
     tracking_controller.set_unknown_obs(unknown_obs)
     tracking_controller.set_waypoints(waypoints)
     unexpected_beh = tracking_controller.run_all_steps(tf=30)
 
-def multi_agent_main():
+def multi_agent_main(control_type):
     dt = 0.05
 
     # temporal
@@ -418,7 +419,7 @@ def multi_agent_main():
 
     robot_spec['robot_id'] = 0
     controller_0 = LocalTrackingController(x_init, robot_spec,
-                                         control_type='cbf_qp',
+                                         control_type=control_type,
                                          dt=dt,
                                          show_animation=True,
                                          save_animation=False,
@@ -427,7 +428,7 @@ def multi_agent_main():
     
     robot_spec['robot_id'] = 1
     controller_1 = LocalTrackingController(x_goal, robot_spec,
-                                         control_type='cbf_qp',
+                                         control_type=control_type,
                                          dt=dt,
                                          show_animation=True,
                                          save_animation=False,
@@ -454,4 +455,4 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main()
+    single_agent_main('mpc_cbf')
