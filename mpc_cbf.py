@@ -95,18 +95,19 @@ class MPCCBF:
         mpc.set_objective(mterm=mterm, lterm=lterm)
         mpc.set_rterm(u=self.R) # Input penalty (R diagonal matrix in objective fun)
 
-        # FIXME:  need to set v_max
+        
         # State and input bounds
         if self.robot_spec['model'] == 'Unicycle2D':
             mpc.bounds['lower', '_u', 'u'] = np.array([-self.robot_spec['v_max'], -self.robot_spec['w_max']])
             mpc.bounds['upper', '_u', 'u'] = np.array([self.robot_spec['v_max'], self.robot_spec['w_max']])
         elif self.robot_spec['model'] == 'DynamicUnicycle2D':
+            mpc.bounds['lower', '_x', 'x', 3] = -self.robot_spec['v_max']
+            mpc.bounds['upper', '_x', 'x', 3] = self.robot_spec['v_max']
             mpc.bounds['lower', '_u', 'u'] = np.array([-self.robot_spec['a_max'], -self.robot_spec['w_max']])
             mpc.bounds['upper', '_u', 'u'] = np.array([self.robot_spec['a_max'], self.robot_spec['w_max']])
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
             mpc.bounds['lower', '_u', 'u'] = np.array([-self.robot_spec['ax_max'], -self.robot_spec['ay_max']])
             mpc.bounds['upper', '_u', 'u'] = np.array([self.robot_spec['ax_max'], self.robot_spec['ay_max']])
-
 
         mpc = self.set_tvp(mpc)
         mpc = self.set_cbf_constraint(mpc)

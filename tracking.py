@@ -53,6 +53,8 @@ class LocalTrackingController:
                 self.robot_spec['a_max'] = 0.5
             if 'w_max' not in self.robot_spec:
                 self.robot_spec['w_max'] = 0.5
+            if 'v_max' not in self.robot_spec:
+                self.robot_spec['v_max'] = 1.0
             if X0.shape[0] == 3: # set initial velocity to 0.0
                 X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
@@ -371,7 +373,7 @@ def single_agent_main(control_type):
     env_handler = env.Env()
 
     robot_spec = {
-        'model': 'Unicycle2D', #'DynamicUnicycle2D',
+        'model': 'DynamicUnicycle2D', #'DynamicUnicycle2D',
         'w_max': 0.5,
         'a_max': 0.5,
         'fov_angle': 70.0,
@@ -385,7 +387,7 @@ def single_agent_main(control_type):
                                          ax=ax, fig=fig,
                                          env=env_handler)
 
-    unknown_obs = np.array([[2.6, 6.0, 0.9]]) 
+    unknown_obs = np.array([[2.6, 6.0, 0.6]]) 
     tracking_controller.set_unknown_obs(unknown_obs)
     tracking_controller.set_waypoints(waypoints)
     unexpected_beh = tracking_controller.run_all_steps(tf=30)
@@ -455,4 +457,4 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main('mpc_cbf')
+    multi_agent_main('mpc_cbf')
