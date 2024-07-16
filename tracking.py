@@ -293,6 +293,7 @@ class LocalTrackingController:
             raise InfeasibleError("Infeasible or Collision")
 
         # 6. Step the robot
+        self.control_input = u
         self.robot.step(u)
         if self.show_animation:
             self.robot.render_plot()
@@ -309,6 +310,9 @@ class LocalTrackingController:
         if self.goal is None:
             return -1 # all waypoints reached
         return beyond_flag
+    
+    def get_control_input(self):
+        return self.control_input
     
     def draw_infeasible(self):
         if self.show_animation:
