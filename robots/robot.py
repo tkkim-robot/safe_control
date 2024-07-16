@@ -12,8 +12,8 @@ Created on June 21st, 2024
 @description: 
 This code implements a BaseRobot class for 2D robot simulation with unicycle dynamics.
 It includes functionalities for robot movement, FoV visualization, obstacle detection, and safety area calculation (maximum braking distance).
-The class supports both kinematic (Unicycle2D) and dynamic (DynamicUnicycle2D) unicycle models.
-It incorporates Control Barrier Function (CBF) constraints for obstacle avoidance, which can be used as within a CBF-QP formulation.
+The class supports kinematic (Unicycle2D) and dynamic (DynamicUnicycle2D) unicycle models, and double integrator with yaw angle.
+It incorporates Control Barrier Function (CBF) constraints for obstacle avoidance, which can be used as within a CBF-QP/MPC-CBF formulation.
 The main function demonstrates the robot's movement towards a goal while avoiding an obstacle, visualizing the process in real-time.
 
 @required-scripts: robots/unicycle2D.py, robots/dynamic_unicycle2D.py
@@ -25,41 +25,41 @@ def angle_normalize(x):
 
 class BaseRobot:
     
-    def __init__(self, X0, dt, ax, fov_angle=70, cam_range=3.0, type='Unicycle2D', robot_id=0):
+    def __init__(self, X0, robot_spec, dt, ax):
         '''
         X0: iniytial state
         dt: simulation time step
         ax: plot axis handle
         '''
         
-        self.type = type
-        self.robot_id = robot_id
+        self.robot_spec = robot_spec
+        if 'robot_id' not in robot_spec:
+            self.robot_spec['robot_id'] = 0
 
         colors = plt.get_cmap('Pastel1').colors # color palette
-        color = colors[robot_id % len(colors) + 1]
+        color = colors[self.robot_spec['robot_id'] % len(colors) + 1]
 
-        self.test_type = 'gatekeeper' # or 'cbf_qp'
-        if type == 'Unicycle2D':
+        if self.robot_spec['model'] == 'Unicycle2D':
             try:
                 from unicycle2D import Unicycle2D
             except ImportError:
                 from robots.unicycle2D import Unicycle2D
             self.robot = Unicycle2D(dt)
-        elif type == 'DynamicUnicycle2D':
+        elif self.robot_spec['model'] == 'DynamicUnicycle2D':
             try:
                 from dynamic_unicycle2D import DynamicUnicycle2D
             except ImportError:
                 from robots.dynamic_unicycle2D import DynamicUnicycle2D
             self.robot = DynamicUnicycle2D(dt)
         else:
-            raise ValueError("Invalid robot type")
+            raise ValueError("Invalid robot model")
         
         self.X = X0.reshape(-1,1)
         self.dt = dt
       
         # FOV parameters
-        self.fov_angle = np.deg2rad(fov_angle)  # [rad]
-        self.cam_range = cam_range  # [m]
+        self.fov_angle = np.deg2rad(float(self.robot_spec['fov_angle']))  # [rad]
+        self.cam_range = self.robot_spec['cam_range']  # [m]
 
         self.robot_radius = 0.25 # including padding
         self.max_decel = 3.0 #0.5 # [m/s^2]
@@ -107,6 +107,12 @@ class BaseRobot:
     def g(self):
         return self.robot.g(self.X)
     
+    def f_casadi(self, X):
+        return self.robot.f(X, casadi=True)
+    
+    def g_casadi(self, X):
+        return self.robot.g(X, casadi=True)
+    
     def nominal_input(self, goal, d_min=0.05):
         return self.robot.nominal_input(self.X, goal, d_min)
 
@@ -121,6 +127,9 @@ class BaseRobot:
     
     def agent_barrier(self, obs):
         return self.robot.agent_barrier(self.X, obs, self.robot_radius)
+    
+    def agent_barrier_dt(self, x_k, u_k, obs):
+        return self.robot.agent_barrier_dt(x_k, u_k, obs, self.robot_radius)
 
     def step(self, U):
         # wrap step function
@@ -131,7 +140,7 @@ class BaseRobot:
     def render_plot(self):
         x = np.array([self.X[0,0],self.X[1,0],self.X[2,0]])
         self.body.set_offsets([x[0], x[1]])
-        if len(self.unsafe_points) > 0 and self.test_type == 'gatekeeper':
+        if len(self.unsafe_points) > 0:
             self.unsafe_points_handle.set_offsets(np.array(self.unsafe_points))
         
         self.axis.set_ydata([self.X[1,0],self.X[1,0]+self.vis_orient_len*np.sin(self.X[2,0])])
@@ -205,16 +214,15 @@ class BaseRobot:
         robot_position = (self.X[0, 0], self.X[1, 0])
         new_area = Polygon([robot_position, fov_left, fov_right])
     
-        #self.sensing_footprints = self.sensing_footprints.union(new_area).simplify(0.3)
-        self.sensing_footprints = custom_merge([self.sensing_footprints, new_area]).simplify(0.3)
+        self.sensing_footprints = custom_merge([self.sensing_footprints, new_area])
         #print(is_valid_reason(self.sensing_footprints))
         #self.sensing_footprints = self.sensing_footprints.simplify(0.1)
 
     def update_safety_area(self):
         theta = self.X[2, 0]  # Current heading angle in radians
-        if self.type == 'Unicycle2D':
+        if self.robot_spec['model'] == 'Unicycle2D':
             v = self.U[0, 0]  # Linear velocity
-        elif self.type == 'DynamicUnicycle2D':
+        elif self.robot_spec['model'] == 'DynamicUnicycle2D':
             v = self.X[3, 0]
         omega = self.U[1, 0]  # Angular velocity
         
@@ -356,7 +364,7 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     import cvxpy as cp
 
-    type = 'DynamicUnicycle2D'
+    model = 'DynamicUnicycle2D'
 
     plt.ion()
     fig = plt.figure()
@@ -368,10 +376,10 @@ if __name__ == "__main__":
     dt = 0.02
     tf = 20
     num_steps = int(tf/dt)
-    if type == 'Unicycle2D':
-        robot = BaseRobot( np.array([-1,-1,np.pi/4]).reshape(-1,1), dt, ax, type='Unicycle2D')
-    elif type == 'DynamicUnicycle2D':
-        robot = BaseRobot( np.array([-1,-1,np.pi/4, 0.0]).reshape(-1,1), dt, ax, type='DynamicUnicycle2D')
+    if model == 'Unicycle2D':
+        robot = BaseRobot( np.array([-1,-1,np.pi/4]).reshape(-1,1), dt, ax, model='Unicycle2D')
+    elif model == 'DynamicUnicycle2D':
+        robot = BaseRobot( np.array([-1,-1,np.pi/4, 0.0]).reshape(-1,1), dt, ax, model='DynamicUnicycle2D')
     obs = np.array([0.5, 0.3, 0.5]).reshape(-1,1)
     goal = np.array([2,0.5])
     ax.scatter(goal[0], goal[1], c='g')
@@ -392,12 +400,12 @@ if __name__ == "__main__":
     for i in range(num_steps):
         u_ref.value = robot.nominal_input( goal )
         print("u ref: ", u_ref.value.T)
-        if type == 'Unicycle2D':
+        if model == 'Unicycle2D':
             alpha = 5.0 #10.0
             h, dh_dx = robot.agent_barrier( obs)
             A1.value[0,:] = dh_dx @ robot.g()
             b1.value[0,:] = dh_dx @ robot.f() + alpha * h
-        elif type == 'DynamicUnicycle2D':
+        elif model == 'DynamicUnicycle2D':
             alpha1 = 2.0
             alpha2 = 2.0
             h, h_dot, dh_dot_dx = robot.agent_barrier( obs)
