@@ -421,8 +421,12 @@ if __name__ == "__main__":
     tf = 20
     num_steps = int(tf/dt)
 
+    model = 'DoubleIntegrator2D'
+    #model = 'DynamicUnicycle2D'
+    #model = 'Unicycle2D'
+
     robot_spec = {
-        'model': 'DynamicUnicycle2D',
+        'model': model,
         'w_max': 0.5,
         'a_max': 0.5,
         'fov_angle': 70.0,
@@ -462,8 +466,12 @@ if __name__ == "__main__":
             h, h_dot, dh_dot_dx = robot.agent_barrier( obs)
             A1.value[0,:] = dh_dot_dx @ robot.g()
             b1.value[0,:] = dh_dot_dx @ robot.f() + (alpha1+alpha2) * h_dot + alpha1*alpha2*h
-
-            print(dh_dot_dx)
+        elif robot_spec['model'] == 'DoubleIntegrator2D':
+            alpha1 = 2.0
+            alpha2 = 2.0
+            h, h_dot, dh_dot_dx = robot.agent_barrier( obs)
+            A1.value[0,:] = dh_dot_dx @ robot.g()
+            b1.value[0,:] = dh_dot_dx @ robot.f() + (alpha1+alpha2) * h_dot + alpha1*alpha2*h
 
         cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
         
