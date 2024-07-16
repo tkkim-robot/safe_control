@@ -21,15 +21,17 @@ def angle_normalize(x):
 
 class DynamicUnicycle2D:
     
-    def __init__(self, dt):
+    def __init__(self, dt, robot_spec):
         '''
             X: [x, y, theta, v]
             U: [a, omega]
             cbf: h(x) = ||x-x_obs||^2 - beta*d_min^2
             relative degree: 2
-        '''
-        self.model = 'DynamicUnicycle'   
+        ''' 
         self.dt = dt     
+        self.robot_spec = robot_spec
+        if 'v_max' not in self.robot_spec:
+            self.robot_spec['v_max'] = 1.0
 
     def f(self, X, casadi = False):
         if casadi:
@@ -76,7 +78,7 @@ class DynamicUnicycle2D:
         nominal input for CBF-QP
         '''
         G = np.copy(G.reshape(-1,1)) # goal state
-        max_v = 1.0
+        v_max = self.robot_spec['v_max']
 
         distance = max(np.linalg.norm( X[0:2,0]-G[0:2,0] ) - d_min, 0.0) # don't need a min dist since it has accel
         theta_d = np.arctan2( G[1,0]-X[1,0], G[0,0]-X[0,0] )
@@ -86,7 +88,7 @@ class DynamicUnicycle2D:
         if abs(error_theta) > np.deg2rad(90):
             v = 0.0
         else:
-            v = min(k_v * distance * np.cos(error_theta), max_v)
+            v = min(k_v * distance * np.cos(error_theta), v_max)
         #print("distance: ", distance, "v: ", v, "error_theta: ", error_theta)
         
         accel = k_a * ( v - X[3,0] )

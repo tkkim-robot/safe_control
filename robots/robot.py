@@ -44,15 +44,24 @@ class BaseRobot:
                 from unicycle2D import Unicycle2D
             except ImportError:
                 from robots.unicycle2D import Unicycle2D
-            self.robot = Unicycle2D(dt)
+            self.robot = Unicycle2D(dt, robot_spec)
         elif self.robot_spec['model'] == 'DynamicUnicycle2D':
             try:
                 from dynamic_unicycle2D import DynamicUnicycle2D
             except ImportError:
                 from robots.dynamic_unicycle2D import DynamicUnicycle2D
-            self.robot = DynamicUnicycle2D(dt)
+            self.robot = DynamicUnicycle2D(dt, robot_spec)
+        elif self.robot_spec['model'] == 'DoubleIntegrator2D':
+            try:
+                from double_integrator2D import DoubleIntegrator2D
+            except ImportError:
+                from robots.double_integrator2D import DoubleIntegrator2D
+            self.robot = DoubleIntegrator2D(dt, robot_spec)
+            self.theta = X0[4, 0]  # Separate yaw angle
+            X0 = X0[:4]  # Keep only position and velocity
         else:
             raise ValueError("Invalid robot model")
+        
         
         self.X = X0.reshape(-1,1)
         self.dt = dt

@@ -21,7 +21,7 @@ def angle_normalize(x):
 
 class DoubleIntegrator2D:
     
-    def __init__(self, dt):
+    def __init__(self, dt, robot_spec):
         '''
             X: [x, y, vx, vy]
             theta: yaw angle
@@ -30,8 +30,12 @@ class DoubleIntegrator2D:
             cbf: h(x) = ||x-x_obs||^2 - beta*d_min^2
             relative degree: 2
         '''
-        self.model = 'DoubleIntegrator2D'   
-        self.dt = dt     
+        self.dt = dt
+        self.robot_spec = robot_spec
+        if 'v_max' not in self.robot_spec:
+            self.robot_spec['v_max'] = 1.0
+        if 'a_max' not in self.robot_spec:
+            self.robot_spec['a_max'] = 1.0
 
     def f(self, X, casadi = False):
         if casadi:
@@ -79,8 +83,8 @@ class DoubleIntegrator2D:
         nominal input for CBF-QP (position control)
         '''
         G = np.copy(G.reshape(-1,1))  # goal state
-        max_v = 1.0  # Maximum velocity (x+y)
-        max_a = 1.0  # Maximum acceleration
+        v_max = self.robot_spec['v_max']  # Maximum velocity (x+y)
+        a_max = self.robot_spec['a_max']  # Maximum acceleration
 
         pos_errors = G[0:2,0] - X[0:2,0]
         pos_errors = np.sign(pos_errors) * np.maximum(np.abs(pos_errors) - d_min, 0.0)
@@ -88,15 +92,15 @@ class DoubleIntegrator2D:
         # Compute desired velocities for x and y
         v_des = k_v * pos_errors
         v_mag = np.linalg.norm(v_des)
-        if v_mag > max_v:
-            v_des = v_des * max_v / v_mag
+        if v_mag > v_max:
+            v_des = v_des * v_max / v_mag
         
         # Compute accelerations
         current_v = X[2:4,0]
         a = k_a * (v_des - current_v)
         a_mag = np.linalg.norm(a)
-        if a_mag > max_a:
-            a = a * max_a / a_mag
+        if a_mag > a_max:
+            a = a * a_max / a_mag
 
         return a.reshape(-1,1)
     
