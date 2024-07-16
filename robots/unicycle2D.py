@@ -87,8 +87,8 @@ class Unicycle2D:
         # unicycle can always stop immediately
         return True
 
-    def rotate_to(self, X, theta, k_omega = 2.0):
-        error_theta = angle_normalize( theta - X[2,0] )
+    def rotate_to(self, X, theta_des, k_omega = 2.0):
+        error_theta = angle_normalize( theta_des - X[2,0] )
         omega = k_omega * error_theta
         return np.array([0.0, omega]).reshape(-1,1)
     
