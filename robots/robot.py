@@ -32,6 +32,8 @@ class BaseRobot:
         ax: plot axis handle
         '''
         
+        self.X = X0.reshape(-1,1)
+        self.dt = dt
         self.robot_spec = robot_spec
         if 'robot_id' not in robot_spec:
             self.robot_spec['robot_id'] = 0
@@ -45,26 +47,23 @@ class BaseRobot:
             except ImportError:
                 from robots.unicycle2D import Unicycle2D
             self.robot = Unicycle2D(dt, robot_spec)
+            self.yaw = self.X[2, 0]
         elif self.robot_spec['model'] == 'DynamicUnicycle2D':
             try:
                 from dynamic_unicycle2D import DynamicUnicycle2D
             except ImportError:
                 from robots.dynamic_unicycle2D import DynamicUnicycle2D
             self.robot = DynamicUnicycle2D(dt, robot_spec)
+            self.yaw = self.X[2, 0]
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
             try:
                 from double_integrator2D import DoubleIntegrator2D
             except ImportError:
                 from robots.double_integrator2D import DoubleIntegrator2D
             self.robot = DoubleIntegrator2D(dt, robot_spec)
-            self.theta = X0[4, 0]  # Separate yaw angle
-            X0 = X0[:4]  # Keep only position and velocity
+            self.yaw = 0.0 # double integrator has a separate yaw angle state
         else:
             raise ValueError("Invalid robot model")
-        
-        
-        self.X = X0.reshape(-1,1)
-        self.dt = dt
       
         # FOV parameters
         self.fov_angle = np.deg2rad(float(self.robot_spec['fov_angle']))  # [rad]
@@ -84,7 +83,7 @@ class BaseRobot:
         self.unsafe_points = []
         self.unsafe_points_handle = ax.scatter([],[],s=40,facecolors='r',edgecolors='r')
         # Robot's orientation axis represented as a line
-        self.axis,  = ax.plot([self.X[0,0],self.X[0,0]+self.vis_orient_len*np.cos(self.X[2,0])],[self.X[1,0],self.X[1,0]+self.vis_orient_len*np.sin(self.X[2,0])], color='r')
+        self.axis,  = ax.plot([self.X[0,0],self.X[0,0]+self.vis_orient_len*np.cos(self.yaw)],[self.X[1,0],self.X[1,0]+self.vis_orient_len*np.sin(self.yaw)], color='r')
         # Initialize FOV line handle with placeholder data
         self.fov, = ax.plot([], [], 'k--')  # Unpack the tuple returned by plot
         # Initialize FOV fill handle with placeholder data
@@ -103,12 +102,26 @@ class BaseRobot:
         # initialize the sensing_footprints with the initial robot location with radius 1 
         init_robot_position = Point(self.X[0, 0], self.X[1, 0]).buffer(0.1)
         self.sensing_footprints = self.sensing_footprints.union(init_robot_position)
-    
+
     def get_position(self):
         return self.X[0:2].reshape(-1)
     
     def get_orientation(self):
-        return self.X[2, 0]
+        return self.yaw
+    
+    def get_yaw_rate(self):
+        if self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D']:
+            return self.U[1, 0] 
+        elif self.robot_spec['model'] == 'DoubleIntegrator2D':
+            return self.U_attitude[0, 0]
+        else:
+            raise NotImplementedError("get_yaw_rate is not implemented for this model")
+    
+    def set_orientation(self, theta):
+        '''Currently only used for DoubleIntegrator2D model'''
+        self.yaw = theta
+        if self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D']:
+            self.X[2, 0] = theta
     
     def f(self):
         return self.robot.f(self.X)
@@ -125,6 +138,12 @@ class BaseRobot:
     def nominal_input(self, goal, d_min=0.05):
         return self.robot.nominal_input(self.X, goal, d_min)
 
+    def nominal_attitude_input(self, theta_des):
+        if self.robot_spec['model'] == 'DoubleIntegrator2D':
+            return self.robot.nominal_attitude_input(self.yaw, theta_des)
+        else:
+            raise NotImplementedError("nominal_attitude_input is not implemented for this model")
+
     def stop(self):
         return self.robot.stop(self.X)
     
@@ -132,6 +151,8 @@ class BaseRobot:
         return self.robot.has_stopped(self.X)
     
     def rotate_to(self, theta):
+        if self.robot_spec['model'] == 'DoubleIntegrator2D':
+            return self.robot.rotate_to(self.yaw, theta)
         return self.robot.rotate_to(self.X, theta)
     
     def agent_barrier(self, obs):
@@ -140,20 +161,25 @@ class BaseRobot:
     def agent_barrier_dt(self, x_k, u_k, obs):
         return self.robot.agent_barrier_dt(x_k, u_k, obs, self.robot_radius)
 
-    def step(self, U):
+    def step(self, U, U_attitude=None):
         # wrap step function
         self.U = U.reshape(-1,1)
         self.X = self.robot.step(self.X, self.U)
+        if self.robot_spec['model'] == 'DoubleIntegrator2D' and U_attitude is not None:
+            self.U_attitude = U_attitude.reshape(-1,1)
+            self.yaw = self.robot.step_rotate(self.yaw, self.U_attitude)
+        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D']:
+            self.yaw = self.X[2, 0]
         return self.X
     
     def render_plot(self):
-        x = np.array([self.X[0,0],self.X[1,0],self.X[2,0]])
-        self.body.set_offsets([x[0], x[1]])
+        self.body.set_offsets([self.X[0,0], self.X[1,0]])
+        
         if len(self.unsafe_points) > 0:
             self.unsafe_points_handle.set_offsets(np.array(self.unsafe_points))
         
-        self.axis.set_ydata([self.X[1,0],self.X[1,0]+self.vis_orient_len*np.sin(self.X[2,0])])
-        self.axis.set_xdata( [self.X[0,0],self.X[0,0]+self.vis_orient_len*np.cos(self.X[2,0])] )
+        self.axis.set_ydata([self.X[1,0],self.X[1,0]+self.vis_orient_len*np.sin(self.yaw)])
+        self.axis.set_xdata( [self.X[0,0],self.X[0,0]+self.vis_orient_len*np.cos(self.yaw)] )
 
         # Calculate FOV points
         fov_left, fov_right = self.calculate_fov_points()
@@ -228,14 +254,17 @@ class BaseRobot:
         #self.sensing_footprints = self.sensing_footprints.simplify(0.1)
 
     def update_safety_area(self):
-        theta = self.X[2, 0]  # Current heading angle in radians
         if self.robot_spec['model'] == 'Unicycle2D':
             v = self.U[0, 0]  # Linear velocity
         elif self.robot_spec['model'] == 'DynamicUnicycle2D':
             v = self.X[3, 0]
-        omega = self.U[1, 0]  # Angular velocity
+        elif self.robot_spec['model'] == 'DoubleIntegrator2D':
+            vx = self.X[2, 0]
+            vy = self.X[3, 0]
+            v = np.linalg.norm([vx, vy])
+        yaw_rate = self.get_yaw_rate()
         
-        if omega != 0:
+        if yaw_rate != 0.0:
             # Stopping times
             t_stop_linear = v / self.max_decel
             
@@ -246,12 +275,12 @@ class BaseRobot:
                 v_current = max(v - self.max_decel * t, 0)
                 if v_current == 0:
                     break  # Stop computing trajectory once v reaches 0
-                omega_current = omega - np.sign(omega) * self.max_ang_decel * t
-                if np.sign(omega_current) != np.sign(omega):  # If sign of omega changes, it has passed through 0
+                omega_current = yaw_rate - np.sign(yaw_rate) * self.max_ang_decel * t
+                if np.sign(omega_current) != np.sign(yaw_rate):  # If sign of omega changes, it has passed through 0
                     omega_current = 0  
-                theta += omega_current * self.dt
-                x = trajectory_points[-1].x + v_current * np.cos(theta) * self.dt
-                y = trajectory_points[-1].y + v_current * np.sin(theta) * self.dt
+                self.yaw += omega_current * self.dt
+                x = trajectory_points[-1].x + v_current * np.cos(self.yaw) * self.dt
+                y = trajectory_points[-1].y + v_current * np.sin(self.yaw) * self.dt
                 trajectory_points.append(Point(x, y))
                 t += self.dt
 
@@ -264,8 +293,8 @@ class BaseRobot:
         else:    
             braking_distance = v**2 / (2 * self.max_decel)  # Braking distance
             # Straight motion
-            front_center = (self.X[0, 0] + braking_distance * np.cos(theta),
-                            self.X[1, 0] + braking_distance * np.sin(theta))
+            front_center = (self.X[0, 0] + braking_distance * np.cos(self.yaw),
+                            self.X[1, 0] + braking_distance * np.sin(self.yaw))
             self.safety_area = LineString([Point(self.X[0, 0], self.X[1, 0]), Point(front_center)]).buffer(self.robot_radius)
     
     def is_beyond_sensing_footprints(self):
@@ -277,8 +306,8 @@ class BaseRobot:
     def find_extreme_points(self, detected_points):
         # Convert points and robot position to numpy arrays for vectorized operations
         points = np.array(detected_points)
-        robot_pos = self.X[0:2].reshape(-1)
-        robot_yaw = self.X[2, 0]
+        robot_pos = self.get_position()
+        robot_yaw = self.get_orientation()
         vectors_to_points = points - robot_pos
         robot_heading_vector = np.array([np.cos(robot_yaw), np.sin(robot_yaw)])
         angles = np.arctan2(vectors_to_points[:, 1], vectors_to_points[:, 0]) - np.arctan2(robot_heading_vector[1], robot_heading_vector[0])
@@ -301,7 +330,8 @@ class BaseRobot:
         self.detected_points = []
 
         # sort unknown_obs by distance to the robot, closest first
-        sorted_unknown_obs = sorted(unknown_obs, key=lambda obs: np.linalg.norm(np.array(obs[0:2]) - self.X[0:2].reshape(-1)))
+        robot_pos = self.get_position()
+        sorted_unknown_obs = sorted(unknown_obs, key=lambda obs: np.linalg.norm(np.array(obs[0:2]) - robot_pos))
         for obs in sorted_unknown_obs:
             obs_circle = Point(obs[0], obs[1]).buffer(obs[2]-obs_margin)
             intersected_area = self.sensing_footprints.intersection(obs_circle)
@@ -347,33 +377,38 @@ class BaseRobot:
         Calculate the left and right boundary points of the robot's FOV.
         """
         # Calculate left and right boundary angles
-        angle_left = self.X[2,0] - self.fov_angle / 2
-        angle_right = self.X[2,0] + self.fov_angle / 2
+        robot_pos = self.get_position()
+        robot_yaw = self.get_orientation()
+
+        angle_left = robot_yaw - self.fov_angle / 2
+        angle_right = robot_yaw + self.fov_angle / 2
 
         # Calculate points at the boundary of the FOV
-        fov_left = (self.X[0,0] + self.cam_range * np.cos(angle_left), self.X[1,0] + self.cam_range * np.sin(angle_left))
-        fov_right = (self.X[0,0] + self.cam_range * np.cos(angle_right), self.X[1,0] + self.cam_range * np.sin(angle_right))
+        fov_left = (robot_pos[0] + self.cam_range * np.cos(angle_left), robot_pos[1] + self.cam_range * np.sin(angle_left))
+        fov_right = (robot_pos[0] + self.cam_range * np.cos(angle_right), robot_pos[1] + self.cam_range * np.sin(angle_right))
 
         return fov_left, fov_right
     
     def is_in_fov(self, point):
-        robot_pos = self.X[:2].flatten()
-        robot_orientation = self.X[2, 0]
+        robot_pos = self.get_position()
+        robot_yaw = self.get_orientation()
 
         to_point = point - robot_pos
         angle_to_point = np.arctan2(to_point[1], to_point[0])
-        angle_diff = abs(angle_normalize(angle_to_point - robot_orientation))
+        angle_diff = abs(angle_normalize(angle_to_point - robot_yaw))
 
         # Check if goal is within FOV
         return angle_diff <= self.fov_angle / 2 and np.linalg.norm(to_point) <= self.cam_range
 
         
 if __name__ == "__main__":
-
     import matplotlib.pyplot as plt
     import cvxpy as cp
 
-    model = 'DynamicUnicycle2D'
+    '''
+    A simple template to use robot class.
+    tracking.py has a lot well-organized code
+    '''
 
     plt.ion()
     fig = plt.figure()
@@ -385,10 +420,17 @@ if __name__ == "__main__":
     dt = 0.02
     tf = 20
     num_steps = int(tf/dt)
-    if model == 'Unicycle2D':
-        robot = BaseRobot( np.array([-1,-1,np.pi/4]).reshape(-1,1), dt, ax, model='Unicycle2D')
-    elif model == 'DynamicUnicycle2D':
-        robot = BaseRobot( np.array([-1,-1,np.pi/4, 0.0]).reshape(-1,1), dt, ax, model='DynamicUnicycle2D')
+
+    robot_spec = {
+        'model': 'DynamicUnicycle2D',
+        'w_max': 0.5,
+        'a_max': 0.5,
+        'fov_angle': 70.0,
+        'cam_range': 3.0
+    }
+
+    robot = BaseRobot( np.array([-1,-1,np.pi/4, 0.0]).reshape(-1,1), robot_spec, dt, ax)
+
     obs = np.array([0.5, 0.3, 0.5]).reshape(-1,1)
     goal = np.array([2,0.5])
     ax.scatter(goal[0], goal[1], c='g')
@@ -409,12 +451,12 @@ if __name__ == "__main__":
     for i in range(num_steps):
         u_ref.value = robot.nominal_input( goal )
         print("u ref: ", u_ref.value.T)
-        if model == 'Unicycle2D':
-            alpha = 5.0 #10.0
+        if robot_spec['model'] == 'Unicycle2D':
+            alpha = 1.0 #10.0
             h, dh_dx = robot.agent_barrier( obs)
             A1.value[0,:] = dh_dx @ robot.g()
             b1.value[0,:] = dh_dx @ robot.f() + alpha * h
-        elif model == 'DynamicUnicycle2D':
+        elif robot_spec['model'] == 'DynamicUnicycle2D':
             alpha1 = 2.0
             alpha2 = 2.0
             h, h_dot, dh_dot_dx = robot.agent_barrier( obs)

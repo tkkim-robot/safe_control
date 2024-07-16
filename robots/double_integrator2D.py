@@ -74,7 +74,7 @@ class DoubleIntegrator2D:
         X = X + (self.f(X) + self.g(X) @ U) * self.dt
         return X
     
-    def step_yaw(self, theta, U_attitude):
+    def step_rotate(self, theta, U_attitude):
         theta = angle_normalize(theta + U_attitude[0] * self.dt)
         return theta
 
