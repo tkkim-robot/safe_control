@@ -58,10 +58,10 @@ class LocalTrackingController:
             if X0.shape[0] == 3: # set initial velocity to 0.0
                 X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
-            if 'ax_max' not in self.robot_spec:
-                self.robot_spec['ax_max'] = 1.0
-            if 'ay_max' not in self.robot_spec:
-                self.robot_spec['ay_max'] = 1.0
+            if 'a_max' not in self.robot_spec:
+                self.robot_spec['a_max'] = 1.0
+            if 'v_max' not in self.robot_spec:
+                self.robot_spec['v_max'] = 1.0
             if X0.shape[0] == 3:
                 X0 = np.array([X0[0], X0[1], 0.0, 0.0, X0[2]]).reshape(-1, 1)
             elif X0.shape[0] == 2:
@@ -174,7 +174,6 @@ class LocalTrackingController:
                     alpha=0.4
                 )
             )
-        self.robot.test_type = 'cbf_qp'
 
     def get_nearest_obs(self, detected_obs):
         # if there was new obstacle detected, update the obs
@@ -216,7 +215,7 @@ class LocalTrackingController:
         '''
         if self.state_machine == 'rotate':
             # in-place rotation
-            current_angle = self.robot.X[2, 0]
+            current_angle = self.robot.get_orientation()
             goal_angle = np.arctan2(self.waypoints[0][1] - self.robot.X[1, 0],
                                     self.waypoints[0][0] - self.robot.X[0, 0])
             if abs(current_angle - goal_angle) > self.rotation_threshold:
@@ -274,7 +273,7 @@ class LocalTrackingController:
         if self.state_machine == 'rotate':
             goal_angle = np.arctan2(self.goal[1] - self.robot.X[1, 0],
                                     self.goal[0] - self.robot.X[0, 0])
-            u_ref = self.robot.rotate_to(goal_angle)
+            u_ref = self.robot.rotate_to(goal_angle) # TODO: implement attitude control for double integrator
         elif self.goal is None:
             u_ref = self.robot.stop()
         else:
@@ -313,7 +312,7 @@ class LocalTrackingController:
     def draw_infeasible(self):
         if self.show_animation:
             self.robot.render_plot()
-            current_position = self.robot.X[:2].flatten()
+            current_position = self.robot.get_position()
             self.ax.text(current_position[0]+0.5, current_position[1]+0.5, '!', color='red', weight='bold', fontsize=22)
             self.draw_plot(pause=5, force_save=True)
 
@@ -373,7 +372,7 @@ def single_agent_main(control_type):
     env_handler = env.Env()
 
     robot_spec = {
-        'model': 'DynamicUnicycle2D', #'DynamicUnicycle2D',
+        'model': 'DoubleIntegrator2D', #'DynamicUnicycle2D',
         'w_max': 0.5,
         'a_max': 0.5,
         'fov_angle': 70.0,
@@ -457,4 +456,4 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    multi_agent_main('mpc_cbf')
+    single_agent_main('cbf_qp')

@@ -16,7 +16,7 @@ The class supports kinematic (Unicycle2D) and dynamic (DynamicUnicycle2D) unicyc
 It incorporates Control Barrier Function (CBF) constraints for obstacle avoidance, which can be used as within a CBF-QP/MPC-CBF formulation.
 The main function demonstrates the robot's movement towards a goal while avoiding an obstacle, visualizing the process in real-time.
 
-@required-scripts: robots/unicycle2D.py, robots/dynamic_unicycle2D.py
+@required-scripts: robots/unicycle2D.py, robots/dynamic_unicycle2D.py, robots/double_integrator2D.py
 """
 
 def angle_normalize(x):
@@ -61,7 +61,9 @@ class BaseRobot:
             except ImportError:
                 from robots.double_integrator2D import DoubleIntegrator2D
             self.robot = DoubleIntegrator2D(dt, robot_spec)
-            self.yaw = 0.0 # double integrator has a separate yaw angle state
+            # X0: [x, y, vx, vy, theta]
+            self.set_orientation(self.X[4, 0])
+            self.X = self.X[0:4] # Remove the yaw angle from the state
         else:
             raise ValueError("Invalid robot model")
       
@@ -74,6 +76,7 @@ class BaseRobot:
         self.max_ang_decel = 3.0 #0.25  # [rad/s^2]
 
         self.U = np.array([0,0]).reshape(-1,1)
+        self.U_attitude = np.array([0]).reshape(-1,1)
         
         # Plot handles
         self.vis_orient_len = 0.3
@@ -152,6 +155,8 @@ class BaseRobot:
     
     def rotate_to(self, theta):
         if self.robot_spec['model'] == 'DoubleIntegrator2D':
+            # FIXME: currnetly only consider position control
+            return np.array([0.0, 0.0]).reshape(-1,1)
             return self.robot.rotate_to(self.yaw, theta)
         return self.robot.rotate_to(self.X, theta)
     
@@ -460,19 +465,12 @@ if __name__ == "__main__":
             h, dh_dx = robot.agent_barrier( obs)
             A1.value[0,:] = dh_dx @ robot.g()
             b1.value[0,:] = dh_dx @ robot.f() + alpha * h
-        elif robot_spec['model'] == 'DynamicUnicycle2D':
+        elif robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D']:
             alpha1 = 2.0
             alpha2 = 2.0
             h, h_dot, dh_dot_dx = robot.agent_barrier( obs)
             A1.value[0,:] = dh_dot_dx @ robot.g()
             b1.value[0,:] = dh_dot_dx @ robot.f() + (alpha1+alpha2) * h_dot + alpha1*alpha2*h
-        elif robot_spec['model'] == 'DoubleIntegrator2D':
-            alpha1 = 2.0
-            alpha2 = 2.0
-            h, h_dot, dh_dot_dx = robot.agent_barrier( obs)
-            A1.value[0,:] = dh_dot_dx @ robot.g()
-            b1.value[0,:] = dh_dot_dx @ robot.f() + (alpha1+alpha2) * h_dot + alpha1*alpha2*h
-
         cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
         
         if cbf_controller.status!='optimal':
