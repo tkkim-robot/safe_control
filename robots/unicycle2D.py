@@ -21,15 +21,15 @@ def angle_normalize(x):
 
 class Unicycle2D:
     
-    def __init__(self, dt):
+    def __init__(self, dt, robot_spec):
         '''
             X: [x, y, theta]
             U: [v, omega]
             cbf: h(x) = ||x-x_obs||^2 - beta*d_min^2 - sigma(s)
             relative degree: 1
         '''
-        self.model = 'Unicycle2D'
         self.dt = dt
+        self.robot_spec = robot_spec # not used in this model
       
         # for exp (CBF for unicycle)
         self.k1 = 0.5 #=#1.0
