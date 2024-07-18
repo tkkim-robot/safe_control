@@ -82,7 +82,8 @@ class LocalTrackingController:
         self.ax = ax
         self.fig = fig
         self.obs = np.array(env.obs_circle)
-        self.unknown_obs = None
+        self.detected_obs_online = []
+        self.unknown_obs = []
 
         if show_animation:
             self.setup_animation_plot()
@@ -151,7 +152,11 @@ class LocalTrackingController:
         distances = np.linalg.norm(np.diff(aug_waypoints, axis=0), axis=1)
         mask = np.concatenate(([False], distances >= self.reached_threshold))
         return aug_waypoints[mask]
-    
+
+    def set_robot_state(self, pose, orientation, velocity):
+        self.robot.set_robot_state(pose, orientation, velocity)
+        # TODO: need to support double integrator based on updated code
+
     def goal_reached(self, current_position, goal_position):
         return np.linalg.norm(current_position[:2] - goal_position[:2]) < self.reached_threshold
     
@@ -176,22 +181,28 @@ class LocalTrackingController:
             )
         self.robot.test_type = 'cbf_qp'
 
-    def get_nearest_obs(self, detected_obs):
-        # if there was new obstacle detected, update the obs
-        if len(detected_obs) != 0:
-            if len(self.obs) == 0:
-                all_obs = np.array(detected_obs)
-            else:
-                all_obs = np.vstack((self.obs, detected_obs))
-            #return np.array(detected_obs).reshape(-1, 1) just returning the detected obs
-        else:
-            all_obs = self.obs
+    def set_detected_obs(self, obs_list):
+        '''Use this function when you test with real sensors'''
+        self.detected_obs_online = np.array(obs_list)
 
-        if len(all_obs) == 0:
+    def get_nearest_obs(self, detected_obs):
+        '''Combine all sources of obstacles and return the nearest one'''
+        all_obs = []
+        
+        if len(detected_obs) != 0:
+            detected_obs = np.array(detected_obs).reshape(-1, 3)
+            all_obs.append(detected_obs)
+        
+        if len(self.obs) != 0:
+            all_obs.append(self.obs)
+        
+        if len(self.detected_obs_online) != 0:
+            all_obs.append(self.detected_obs_online)
+        
+        if not all_obs:
             return None
         
-        if all_obs.ndim == 1:
-            all_obs = all_obs.reshape(1, -1)
+        all_obs = np.vstack(all_obs)
 
         radius = all_obs[:, 2]
         distances = np.linalg.norm(all_obs[:, :2] - self.robot.X[:2].T, axis=1)
@@ -200,7 +211,7 @@ class LocalTrackingController:
         return nearest_obstacle.reshape(-1, 1)
     
     def is_collide_unknown(self):
-        if self.unknown_obs is None:
+        if len(self.unknown_obs) == 0:
             return False
         robot_radius = self.robot.robot_radius
         for obs in self.unknown_obs:

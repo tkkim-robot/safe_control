@@ -95,6 +95,22 @@ class BaseRobot:
         init_robot_position = Point(self.X[0, 0], self.X[1, 0]).buffer(0.1)
         self.sensing_footprints = self.sensing_footprints.union(init_robot_position)
     
+    def set_robot_state(self, pose, orientation, velocity):
+        if self.robot_spec['model'] == 'Unicycle2D':
+            self.X[0, 0] = pose.x
+            self.X[1, 0] = pose.y
+            self.X[2, 0] = orientation[2] # yaw
+        elif self.robot_spec['model'] == 'DynamicUnicycle2D':
+            self.X[0, 0] = pose.x
+            self.X[1, 0] = pose.y
+            self.X[2, 0] = orientation[2] # yaw
+            self.X[3, 0] = velocity.x
+        elif self.robot_spec['model'] == 'DoubleIntegrator2D':
+            self.X[0, 0] = pose.x
+            self.X[1, 0] = pose.y
+            self.X[2, 0] = velocity.x
+            self.X[3, 0] = velocity.y
+
     def get_position(self):
         return self.X[0:2].reshape(-1)
     

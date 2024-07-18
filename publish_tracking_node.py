@@ -8,9 +8,12 @@ import math
 
 from utils import plotting
 from utils import env
+from utils.utils import euler_from_quaternion
 from tracking import LocalTrackingController
 
+from nav_msgs.msg import Odometry
 from std_msgs.msg import Float32MultiArray
+
 
 """
 Created on July 16th, 2024
@@ -27,17 +30,16 @@ control inputs via ROS2 messages.
 class TrackingControllerNode(Node):
     def __init__(self, control_type):
         super().__init__('tracking_controller_node')
+        self.subscriber_odom = self.create_subscription(Float32MultiArray, '/control/obstacle_circles', self.obs_circles_callback, QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT))
+        self.subscriber_obs = self.create_subscription(Odometry, '/visual_slam/tracking/odometry', self.odom_callback, QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT))
         self.publisher_ = self.create_publisher(Float32MultiArray, 'ctrl_vel', 10)
+        
         self.control_type = control_type
-        self.dt = 0.05
-        self.timer = self.create_timer(self.dt, self.timer_callback)
 
         # Initialize waypoints and tracking controller
         waypoints = [
-            [2, 2, math.pi/2],
-            [2, 12, 0],
-            [10, 12, 0],
-            [10, 2, 0]
+            [0, 0, 0],
+            [2, 2, 0]
         ]
         waypoints = np.array(waypoints, dtype=np.float64)
         x_init = waypoints[0]
@@ -54,29 +56,38 @@ class TrackingControllerNode(Node):
             'cam_range': 3.0
         }
         self.tracking_controller = LocalTrackingController(
-            x_init, robot_spec, control_type=self.control_type, dt=self.dt,
+            x_init, robot_spec, control_type=self.control_type, dt=0.05,
             show_animation=False, save_animation=False, ax=self.ax, fig=self.fig,
             env=self.env_handler
         )
 
         self.tracking_controller.set_waypoints(waypoints)
-        self.tf = 50
-        self.steps = int(self.tf / self.dt)
 
-    def timer_callback(self):
-        if self.steps <= 0:
-            return
+    def obs_circles_callback(self, msg):
+        obs_circles = msg.data
+        # reshape it as [[x,y,radius], ]
+        obs_circles = np.array(obs_circles).reshape(-1, 3)
+        self.tracking_controller.set_detected_obs(obs_circles)
+
+    def odom_callback(self, msg):
+        pose = msg.pose.pose.position
+        orientation = msg.pose.pose.orientation
+        velocity = msg.twist.twist.linear
+        # Convert quaternion to euler angles
+        orientation = euler_from_quaternion(orientation) # roll, pitch, yaw order
+
+        self.tracking_controller.set_robot_state(pose, orientation, velocity)
+        print(self.tracking_controller.robot.X)
 
         ret = self.tracking_controller.control_step()
         u = self.tracking_controller.get_control_input()
+        print(u)
 
         # Convert control input to Float32MultiArray and publish
         msg = Float32MultiArray()
         msg.data = [float(val) for val in u.flatten()]
         self.publisher_.publish(msg)
         self.get_logger().info(f'Publishing: {msg.data}')
-
-        self.steps -= 1
 
         if ret == -1:
             # Infeasible
