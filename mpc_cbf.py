@@ -214,7 +214,6 @@ class MPCCBF:
         if nearest_obs is not None:
             cbf_constraint = self.compute_cbf_constraint(
                 x_next, u, nearest_obs)  # here use actual value, not symbolic
-            print(cbf_constraint)
         # self.status = 'optimal' if self.mpc.optimal else 'infeasible'
 
         return u

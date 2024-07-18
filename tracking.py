@@ -387,7 +387,7 @@ def single_agent_main(control_type):
     env_handler = env.Env()
 
     robot_spec = {
-        'model': 'DoubleIntegrator2D',  # 'DynamicUnicycle2D',
+        'model': 'DynamicUnicycle2D',
         'w_max': 0.5,
         'a_max': 0.5,
         'fov_angle': 70.0,
@@ -472,4 +472,4 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    multi_agent_main('mpc_cbf')
+    single_agent_main('mpc_cbf')
