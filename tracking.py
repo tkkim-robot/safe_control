@@ -415,7 +415,7 @@ def multi_agent_main(control_type):
         [2, 2, math.pi/2],
         [2, 12, 0],
         [10, 12, 0],
-        [10, 2, 0]
+        [10, 2, math.pi/2]
     ]
     waypoints = np.array(waypoints, dtype=np.float64)
 
@@ -427,7 +427,7 @@ def multi_agent_main(control_type):
     env_handler = env.Env()
 
     robot_spec = {
-        'model': 'DynamicUnicycle2D',
+        'model': 'DoubleIntegrator2D',  # 'DynamicUnicycle2D',
         'w_max': 0.5,
         'a_max': 0.5,
         'fov_angle': 70.0,
@@ -472,4 +472,4 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main('mpc_cbf')
+    multi_agent_main('mpc_cbf')
