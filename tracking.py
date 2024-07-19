@@ -101,10 +101,10 @@ class LocalTrackingController:
         self.setup_robot(X0)
 
         if control_type == 'cbf_qp':
-            from cbf_qp import CBFQP
+            from position_control.cbf_qp import CBFQP
             self.controller = CBFQP(self.robot, self.robot_spec)
         elif control_type == 'mpc_cbf':
-            from mpc_cbf import MPCCBF
+            from position_control.mpc_cbf import MPCCBF
             self.controller = MPCCBF(self.robot, self.robot_spec)
 
         self.goal = None
