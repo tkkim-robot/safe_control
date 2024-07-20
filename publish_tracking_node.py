@@ -37,11 +37,22 @@ class TrackingControllerNode(Node):
         self.control_type = control_type
 
         # Initialize waypoints and tracking controller
-        waypoints = [
-            [0, 0, 0],
-            [2, 2, 0]
-        ]
+        # waypoints = [
+        #     [0, 0, 0],
+        #     [1.0, 0.0, 0],
+        #     [1.5, -1.0, 0],
+        #     [2.0, 0.0, 0],
+        #     [2.5, 1.5, 0],
+        # ]
+        # load csv file waypoints_vis.csv
+        waypoints = np.loadtxt("/workspaces/colcon_ws/waypoints_vis.csv", delimiter=",")
         waypoints = np.array(waypoints, dtype=np.float64)
+        waypoints[:, 0] = waypoints[:, 0] - waypoints[0, 0]
+        waypoints[:, 1] = waypoints[:, 1] - waypoints[0, 1]
+        waypoints[:, 0], waypoints[:, 1] = waypoints[:, 1], -1*waypoints[:, 0]
+        waypoints[:, 2] -= np.pi/2
+
+        #print(waypoints)
         x_init = waypoints[0]
 
         plot_handler = plotting.Plotting()
@@ -50,7 +61,7 @@ class TrackingControllerNode(Node):
 
         robot_spec = {
             'model': 'DynamicUnicycle2D',
-            'w_max': 0.5,
+            'w_max': 1.0,
             'a_max': 0.5,
             'fov_angle': 70.0,
             'cam_range': 3.0
@@ -70,6 +81,15 @@ class TrackingControllerNode(Node):
         self.tracking_controller.set_detected_obs(obs_circles)
 
     def odom_callback(self, msg):
+        goal = self.tracking_controller.goal
+        if goal is None:
+            print("Reached all the waypoints")
+            msg = Float32MultiArray()
+            msg.data = [0.0, 0.0]
+            self.publisher_.publish(msg)
+            self.get_logger().info(f'Publishing: {msg.data}')
+            return False
+        
         pose = msg.pose.pose.position
         orientation = msg.pose.pose.orientation
         velocity = msg.twist.twist.linear
@@ -77,11 +97,12 @@ class TrackingControllerNode(Node):
         orientation = euler_from_quaternion(orientation) # roll, pitch, yaw order
 
         self.tracking_controller.set_robot_state(pose, orientation, velocity)
+        print("velocity: ", velocity.x, velocity.y)
         print(self.tracking_controller.robot.X)
 
         ret = self.tracking_controller.control_step()
         u = self.tracking_controller.get_control_input()
-        print(u)
+        print("Goal: ", self.tracking_controller.goal)
 
         # Convert control input to Float32MultiArray and publish
         msg = Float32MultiArray()
@@ -91,8 +112,12 @@ class TrackingControllerNode(Node):
 
         if ret == -1:
             # Infeasible
-            self.get_logger().info('Control infeasible, stopping...')
-            self.destroy_timer(self.timer)
+            print("Reached all the waypoints")
+            msg = Float32MultiArray()
+            msg.data = [0.0, 0.0]
+            self.publisher_.publish(msg)
+            self.get_logger().info(f'Publishing: {msg.data}')
+
 
 def main(args=None):
     rclpy.init(args=args)
