@@ -40,7 +40,7 @@ class LocalTrackingController:
         self.rotation_threshold = 0.1  # Radians
 
         self.current_goal_index = 0  # Index of the current goal in the path
-        self.reached_threshold = 1.0
+        self.reached_threshold = 0.3
 
         if self.robot_spec['model'] == 'Unicycle2D':
             if 'v_max' not in self.robot_spec:
@@ -128,18 +128,20 @@ class LocalTrackingController:
     def set_waypoints(self, waypoints):
         if type(waypoints) == list:
             waypoints = np.array(waypoints, dtype=float)
-        self.waypoints = self.filter_waypoints(waypoints)
+        #self.waypoints = self.filter_waypoints(waypoints)
+        self.waypoints = waypoints
         self.current_goal_index = 0
 
         self.goal = self.update_goal()
-        if self.goal is not None and not self.robot.is_in_fov(self.goal):
-            self.state_machine = 'stop'
-            self.goal = None # let the robot stop then rotate
+        # FIXME: currently don't use this 
+        # if self.goal is not None and not self.robot.is_in_fov(self.goal):
+        #     self.state_machine = 'stop'
+        #     self.goal = None # let the robot stop then rotate
 
         if self.show_animation:
             self.waypoints_scatter.set_offsets(self.waypoints[:, :2])
 
-    def filter_waypoints(self, waypoints):
+    def filter_waypoints(self, waypoints, threshold=0.01):
         '''
         Initially filter out waypoints that are too close to the robot
         '''
@@ -150,7 +152,7 @@ class LocalTrackingController:
         aug_waypoints = np.vstack((robot_pos, waypoints[:, :2]))
 
         distances = np.linalg.norm(np.diff(aug_waypoints, axis=0), axis=1)
-        mask = np.concatenate(([False], distances >= self.reached_threshold))
+        mask = np.concatenate(([False], distances >= threshold))
         return aug_waypoints[mask]
 
     def set_robot_state(self, pose, orientation, velocity):
@@ -280,6 +282,7 @@ class LocalTrackingController:
         # 1. Update the detected obstacles
         detected_obs = self.robot.detect_unknown_obs(self.unknown_obs)
         nearest_obs = self.get_nearest_obs(detected_obs)
+        print("nearest obs: ", nearest_obs)
 
         # 2. Compuite nominal control input, pre-defined in the robot class
         if self.state_machine == 'rotate':
