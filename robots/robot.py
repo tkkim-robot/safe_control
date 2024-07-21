@@ -61,7 +61,7 @@ class BaseRobot:
         self.fov_angle = np.deg2rad(float(self.robot_spec['fov_angle']))  # [rad]
         self.cam_range = self.robot_spec['cam_range']  # [m]
 
-        self.robot_radius = 0.25 # including padding
+        self.robot_radius = 0.40 # including padding
         self.max_decel = 3.0 #0.5 # [m/s^2]
         self.max_ang_decel = 3.0 #0.25  # [rad/s^2]
 
@@ -104,7 +104,8 @@ class BaseRobot:
             self.X[0, 0] = pose.x
             self.X[1, 0] = pose.y
             self.X[2, 0] = orientation[2] # yaw
-            self.X[3, 0] = velocity.x
+            # norm of x and y vel
+            self.X[3, 0] = np.sqrt(velocity.x**2 + velocity.y**2)
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
             self.X[0, 0] = pose.x
             self.X[1, 0] = pose.y

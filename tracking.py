@@ -128,8 +128,8 @@ class LocalTrackingController:
     def set_waypoints(self, waypoints):
         if type(waypoints) == list:
             waypoints = np.array(waypoints, dtype=float)
-        #self.waypoints = self.filter_waypoints(waypoints)
-        self.waypoints = waypoints
+        self.waypoints = self.filter_waypoints(waypoints)
+        #self.waypoints = waypoints
         self.current_goal_index = 0
 
         self.goal = self.update_goal()
@@ -141,7 +141,7 @@ class LocalTrackingController:
         if self.show_animation:
             self.waypoints_scatter.set_offsets(self.waypoints[:, :2])
 
-    def filter_waypoints(self, waypoints, threshold=0.01):
+    def filter_waypoints(self, waypoints, threshold=0.1):
         '''
         Initially filter out waypoints that are too close to the robot
         '''
@@ -150,10 +150,15 @@ class LocalTrackingController:
         
         robot_pos = self.robot.get_position()
         aug_waypoints = np.vstack((robot_pos, waypoints[:, :2]))
-
-        distances = np.linalg.norm(np.diff(aug_waypoints, axis=0), axis=1)
-        mask = np.concatenate(([False], distances >= threshold))
-        return aug_waypoints[mask]
+        
+        filtered_waypoints = [aug_waypoints[0]]  # Start with the robot's position
+        
+        for i in range(1, len(aug_waypoints)):
+            distance = np.linalg.norm(aug_waypoints[i] - filtered_waypoints[-1])
+            if distance >= threshold:
+                filtered_waypoints.append(aug_waypoints[i])
+        
+        return np.array(filtered_waypoints[1:])
 
     def set_robot_state(self, pose, orientation, velocity):
         self.robot.set_robot_state(pose, orientation, velocity)
