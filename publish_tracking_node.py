@@ -44,8 +44,9 @@ class TrackingControllerNode(Node):
         #     [2.0, 0.0, 0],
         #     [2.5, 1.5, 0],
         # ]
+
         # load csv file waypoints_vis.csv
-        waypoints = np.loadtxt("/workspaces/colcon_ws/exp_waypoints_vis_1.csv", delimiter=",")
+        waypoints = np.loadtxt("/workspaces/colcon_ws/exp_waypoints_rrt_2.csv", delimiter=",")
         waypoints = np.array(waypoints, dtype=np.float64)
         waypoints[:, 0] = waypoints[:, 0] - waypoints[0, 0]
         waypoints[:, 1] = waypoints[:, 1] - waypoints[0, 1]
@@ -65,7 +66,7 @@ class TrackingControllerNode(Node):
             'model': 'DynamicUnicycle2D',
             'w_max': 1.5,
             'a_max': 0.5,
-            'v_max': 1.0,
+            'v_max': 1.1,
             'fov_angle': 70.0,
             'cam_range': 3.0
         }
