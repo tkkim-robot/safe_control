@@ -61,7 +61,7 @@ class BaseRobot:
         self.fov_angle = np.deg2rad(float(self.robot_spec['fov_angle']))  # [rad]
         self.cam_range = self.robot_spec['cam_range']  # [m]
 
-        self.robot_radius = 0.40 # including padding
+        self.robot_radius = 0.25 # including padding
         self.max_decel = 3.0 #0.5 # [m/s^2]
         self.max_ang_decel = 3.0 #0.25  # [rad/s^2]
 

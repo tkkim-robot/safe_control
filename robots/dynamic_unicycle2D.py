@@ -71,7 +71,7 @@ class DynamicUnicycle2D:
         X[2,0] = angle_normalize(X[2,0])
         return X
 
-    def nominal_input(self, X, G, d_min = 0.05, k_omega = 2.0, k_a = 1.0, k_v = 1.0):
+    def nominal_input(self, X, G, d_min = 0.05, k_omega = 2.0, k_a = 1.0, k_v = 1.2):
         '''
         nominal input for CBF-QP
         '''
@@ -83,7 +83,7 @@ class DynamicUnicycle2D:
         error_theta = angle_normalize( theta_d - X[2,0] )
 
         omega = k_omega * error_theta
-        if abs(error_theta) > np.deg2rad(70):
+        if abs(error_theta) > np.deg2rad(140):
             v = 0.0
         else:
             v = min(k_v * distance * np.cos(error_theta), max_v)
