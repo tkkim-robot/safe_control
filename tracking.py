@@ -214,8 +214,8 @@ class LocalTrackingController:
         robot_radius = self.robot.robot_radius
         for obs in self.unknown_obs:
             # check if the robot collides with the obstacle
-            distance = np.linalg.norm(self.robot.X[:2] - obs[:2])
-            if distance < obs[2] + robot_radius:
+            distance = np.linalg.norm(self.robot.X[:2,0] - obs[:2])
+            if distance < (obs[2] + robot_radius):
                 return True
         return False
 
@@ -278,6 +278,7 @@ class LocalTrackingController:
         # 1. Update the detected obstacles
         detected_obs = self.robot.detect_unknown_obs(self.unknown_obs)
         nearest_obs = self.get_nearest_obs(detected_obs)
+        # nearest_obs = self.get_nearest_obs(self.unknown_obs)
 
         # 2. Compuite nominal control input, pre-defined in the robot class
         if self.state_machine == 'rotate':
