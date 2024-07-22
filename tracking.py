@@ -40,7 +40,7 @@ class LocalTrackingController:
         self.rotation_threshold = 0.1  # Radians
 
         self.current_goal_index = 0  # Index of the current goal in the path
-        self.reached_threshold = 0.3
+        self.reached_threshold = 0.5
 
         if self.robot_spec['model'] == 'Unicycle2D':
             if 'v_max' not in self.robot_spec:
@@ -223,8 +223,8 @@ class LocalTrackingController:
         robot_radius = self.robot.robot_radius
         for obs in self.unknown_obs:
             # check if the robot collides with the obstacle
-            distance = np.linalg.norm(self.robot.X[:2] - obs[:2])
-            if distance < obs[2] + robot_radius:
+            distance = np.linalg.norm(self.robot.X[:2, 0] - obs[:2, 0])
+            if distance < (obs[2] + robot_radius):
                 return True
         return False
 
@@ -307,7 +307,9 @@ class LocalTrackingController:
 
         # 5. Raise an error if the QP is infeasible, or the robot collides with the obstacle
         collide = self.is_collide_unknown()
-        if self.controller.status != 'optimal' or collide:
+        if collide:
+            print("Collision!!")
+        if self.controller.status != 'optimal':
             self.draw_infeasible()
             raise InfeasibleError("Infeasible or Collision")
 
