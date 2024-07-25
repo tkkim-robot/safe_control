@@ -141,9 +141,12 @@ class LocalTrackingController:
         self.current_goal_index = 0
 
         self.goal = self.update_goal()
-        if self.goal is not None and not self.robot.is_in_fov(self.goal):
-            self.state_machine = 'stop'
-            self.goal = None  # let the robot stop then rotate
+        if self.goal is not None:
+            if not self.robot.is_in_fov(self.goal):
+                self.state_machine = 'stop'
+                self.goal = None  # let the robot stop then rotate
+            else:
+                self.state_machine = 'track'
 
         if self.show_animation:
             self.waypoints_scatter.set_offsets(self.waypoints[:, :2])
@@ -214,8 +217,8 @@ class LocalTrackingController:
         robot_radius = self.robot.robot_radius
         for obs in self.unknown_obs:
             # check if the robot collides with the obstacle
-            distance = np.linalg.norm(self.robot.X[:2] - obs[:2])
-            if distance < obs[2] + robot_radius:
+            distance = np.linalg.norm(self.robot.X[:2, 0] - obs[:2])
+            if distance < (obs[2] + robot_radius):
                 return True
         return False
 
@@ -317,7 +320,7 @@ class LocalTrackingController:
             pass
             # print("Visibility Violation")
 
-        if self.goal is None:
+        if self.goal is None and self.state_machine != 'stop':
             return -1  # all waypoints reached
         return beyond_flag
 
@@ -374,7 +377,7 @@ def single_agent_main(control_type):
     # temporal
     waypoints = [
         [2, 2, math.pi/2],
-        [2, 12, 0],
+        [19, 12, 0],
         [10, 12, 0],
         [10, 2, 0]
     ]
@@ -401,10 +404,11 @@ def single_agent_main(control_type):
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
 
-    unknown_obs = np.array([[2.6, 6.0, 0.6]])
+    unknown_obs = np.array([[2.6, 6.0, 1.2],
+                            [10.0, 7.3, 0.7],])
     tracking_controller.set_unknown_obs(unknown_obs)
     tracking_controller.set_waypoints(waypoints)
-    unexpected_beh = tracking_controller.run_all_steps(tf=30)
+    unexpected_beh = tracking_controller.run_all_steps(tf=100)
 
 
 def multi_agent_main(control_type):
