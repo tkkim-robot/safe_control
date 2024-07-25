@@ -27,7 +27,7 @@ class BaseRobot:
     
     def __init__(self, X0, robot_spec, dt, ax):
         '''
-        X0: iniytial state
+        X0: initial state
         dt: simulation time step
         ax: plot axis handle
         '''
@@ -394,16 +394,20 @@ class BaseRobot:
 
         return fov_left, fov_right
     
-    def is_in_fov(self, point):
+    def is_in_fov(self, point, is_in_cam_range=False):
         robot_pos = self.get_position()
         robot_yaw = self.get_orientation()
 
         to_point = point - robot_pos
+        
         angle_to_point = np.arctan2(to_point[1], to_point[0])
         angle_diff = abs(angle_normalize(angle_to_point - robot_yaw))
 
         # Check if goal is within FOV
-        return angle_diff <= self.fov_angle / 2 and np.linalg.norm(to_point) <= self.cam_range
+        # and np.linalg.norm(to_point) <= self.cam_range
+        if is_in_cam_range:
+            return angle_diff <= self.fov_angle / 2 and np.linalg.norm(to_point) <= self.cam_range
+        return angle_diff <= self.fov_angle / 2
 
         
 if __name__ == "__main__":

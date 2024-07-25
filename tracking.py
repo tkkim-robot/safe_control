@@ -278,7 +278,6 @@ class LocalTrackingController:
         # 1. Update the detected obstacles
         detected_obs = self.robot.detect_unknown_obs(self.unknown_obs)
         nearest_obs = self.get_nearest_obs(detected_obs)
-        # nearest_obs = self.get_nearest_obs(self.unknown_obs)
 
         # 2. Compuite nominal control input, pre-defined in the robot class
         if self.state_machine == 'rotate':
