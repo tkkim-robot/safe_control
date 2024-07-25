@@ -68,10 +68,13 @@ class MPCCBF:
             var_type='_tvp', var_name='obs', shape=(3, 1))
 
         if self.robot_spec['model'] == 'Unicycle2D':
-            _alpha = model.set_variable(var_type='_tvp', var_name='alpha', shape=(1, 1))
+            _alpha = model.set_variable(
+                var_type='_tvp', var_name='alpha', shape=(1, 1))
         elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D']:
-            _alpha1 = model.set_variable(var_type='_tvp', var_name='alpha1', shape=(1, 1))
-            _alpha2 = model.set_variable(var_type='_tvp', var_name='alpha2', shape=(1, 1))
+            _alpha1 = model.set_variable(
+                var_type='_tvp', var_name='alpha1', shape=(1, 1))
+            _alpha2 = model.set_variable(
+                var_type='_tvp', var_name='alpha2', shape=(1, 1))
 
         # System dynamics
         f_x = self.robot.f_casadi(_x)
@@ -146,13 +149,13 @@ class MPCCBF:
                     [self.goal+1000, [0]])
             else:
                 tvp_template['_tvp', :, 'obs'] = self.obs
-                
+
             if self.robot_spec['model'] == 'Unicycle2D':
                 tvp_template['_tvp', :, 'alpha'] = self.cbf_param['alpha']
             elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D']:
                 tvp_template['_tvp', :, 'alpha1'] = self.cbf_param['alpha1']
                 tvp_template['_tvp', :, 'alpha2'] = self.cbf_param['alpha2']
-                
+
             return tvp_template
 
         mpc.set_tvp_fun(tvp_fun)
@@ -182,7 +185,8 @@ class MPCCBF:
             _alpha1 = self.model.tvp['alpha1']
             _alpha2 = self.model.tvp['alpha2']
             h_k, d_h, dd_h = self.robot.agent_barrier_dt(_x, _u, _obs)
-            cbf_constraint = dd_h + (_alpha1 + _alpha2) * d_h + _alpha1 * _alpha2 * h_k
+            cbf_constraint = dd_h + (_alpha1 + _alpha2) * \
+                d_h + _alpha1 * _alpha2 * h_k
         else:
             raise NotImplementedError('Model not implemented')
 
@@ -202,7 +206,7 @@ class MPCCBF:
     def update_tvp(self, goal, obs):
         # Update the tvp variables
         self.goal = np.array(goal)
-        if obs is None:
+        if obs is None and goal is not None:
             self.obs = np.concatenate([self.goal[:2]*1000, [0]])
         else:
             self.obs = np.array(obs).flatten()
