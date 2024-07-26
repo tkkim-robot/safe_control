@@ -280,7 +280,7 @@ class LocalTrackingController:
 
         # 1. Update the detected obstacles
         detected_obs = self.robot.detect_unknown_obs(self.unknown_obs)
-        nearest_obs = self.get_nearest_obs(detected_obs)
+        self.nearest_obs = self.get_nearest_obs(detected_obs)
 
         # 2. Compuite nominal control input, pre-defined in the robot class
         if self.state_machine == 'rotate':
@@ -298,7 +298,7 @@ class LocalTrackingController:
                        'u_ref': u_ref,
                        'goal': self.goal}
         u = self.controller.solve_control_problem(
-            self.robot.X, control_ref, nearest_obs)
+            self.robot.X, control_ref, self.nearest_obs)
 
         # 5. Raise an error if the QP is infeasible, or the robot collides with the obstacle
         collide = self.is_collide_unknown()

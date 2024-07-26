@@ -1,5 +1,3 @@
-
-
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import utils.env as env
@@ -31,11 +29,19 @@ class Plotting:
         self.plot_visited_connect(V1, V2)
         self.plot_path(path)
 
-    def plot_grid(self, name):
-        fig, ax = plt.subplots()
+    def plot_grid(self, name, with_right_subplot=False):
+        if with_right_subplot:
+            fig = plt.figure(constrained_layout=True)
+            gs = fig.add_gridspec(1, 2, width_ratios=[3, 3], wspace=0.5)
+            main_ax = fig.add_subplot(gs[0, 0])
+            right_ax = fig.add_subplot(gs[0, 1])
+            right_ax.axis('off')
+            right_ax.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
+        else:
+            fig, main_ax = plt.subplots()
 
         for (ox, oy, w, h) in self.obs_bound:
-            ax.add_patch(
+            main_ax.add_patch(
                 patches.Rectangle(
                     (ox, oy), w, h,
                     edgecolor='black',
@@ -45,7 +51,7 @@ class Plotting:
             )
 
         for (ox, oy, w, h) in self.obs_rectangle:
-            ax.add_patch(
+            main_ax.add_patch(
                 patches.Rectangle(
                     (ox, oy), w, h,
                     edgecolor='black',
@@ -55,7 +61,7 @@ class Plotting:
             )
 
         for (ox, oy, r) in self.obs_circle:
-            ax.add_patch(
+            main_ax.add_patch(
                 patches.Circle(
                     (ox, oy), r,
                     edgecolor='black',
@@ -64,14 +70,17 @@ class Plotting:
                 )
             )
 
-        plt.title(name)
+        main_ax.set_title(name)
         eps = 1.0
-        plt.xlim(self.env.x_range[0] - eps, self.env.x_range[1] + eps)
-        plt.ylim(self.env.y_range[0] - eps, self.env.y_range[1] + eps)
-        plt.gca().set_aspect('equal', adjustable='box')
+        main_ax.set_xlim(self.env.x_range[0] - eps, self.env.x_range[1] + eps)
+        main_ax.set_ylim(self.env.y_range[0] - eps, self.env.y_range[1] + eps)
+        main_ax.set_aspect('equal', adjustable='box')
         plt.tight_layout()
 
-        return ax, fig
+        if with_right_subplot:
+            return (main_ax, right_ax, gs), fig
+        else:
+            return main_ax, fig
 
     @staticmethod
     def plot_visited(nodelist, animation):
