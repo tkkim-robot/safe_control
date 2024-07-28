@@ -1,7 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-import cvxpy as cp
 import os
 import glob
 import subprocess
@@ -76,6 +75,8 @@ class LocalTrackingController:
             elif X0.shape[0] != 5:
                 raise ValueError(
                     "Invalid initial state dimension for DoubleIntegrator2D")
+            
+        self.u_att = None
 
         if 'fov_angle' not in self.robot_spec:
             self.robot_spec['fov_angle'] = 70.0
@@ -102,10 +103,14 @@ class LocalTrackingController:
 
         if control_type == 'cbf_qp':
             from position_control.cbf_qp import CBFQP
-            self.controller = CBFQP(self.robot, self.robot_spec)
+            self.pos_controller = CBFQP(self.robot, self.robot_spec)
         elif control_type == 'mpc_cbf':
             from position_control.mpc_cbf import MPCCBF
-            self.controller = MPCCBF(self.robot, self.robot_spec)
+            self.pos_controller = MPCCBF(self.robot, self.robot_spec)
+
+        if True:  # TODO: currently only have one attitude controller
+            from attitude_control.simple_attitude import SimpleAttitude
+            self.att_controller = SimpleAttitude(self.robot, self.robot_spec)
 
         self.goal = None
 
@@ -235,6 +240,8 @@ class LocalTrackingController:
                 return self.waypoints[0][:2]
             else:
                 self.state_machine = 'track'
+                self.u_att = None
+                print("set u_att to none")
 
         # Check if all waypoints are reached;
         if self.current_goal_index >= len(self.waypoints):
@@ -286,8 +293,11 @@ class LocalTrackingController:
         if self.state_machine == 'rotate':
             goal_angle = np.arctan2(self.goal[1] - self.robot.X[1, 0],
                                     self.goal[0] - self.robot.X[0, 0])
-            # TODO: implement attitude control for double integrator
-            u_ref = self.robot.rotate_to(goal_angle)
+            if self.robot_spec['model'] == 'DoubleIntegrator2D':
+                self.u_att = self.robot.rotate_to(goal_angle)
+                u_ref = self.robot.stop()
+            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D']:
+                u_ref = self.robot.rotate_to(goal_angle)
         elif self.goal is None:
             u_ref = self.robot.stop()
         else:
@@ -297,17 +307,17 @@ class LocalTrackingController:
         control_ref = {'state_machine': self.state_machine,
                        'u_ref': u_ref,
                        'goal': self.goal}
-        u = self.controller.solve_control_problem(
+        u = self.pos_controller.solve_control_problem(
             self.robot.X, control_ref, nearest_obs)
 
         # 5. Raise an error if the QP is infeasible, or the robot collides with the obstacle
         collide = self.is_collide_unknown()
-        if self.controller.status != 'optimal' or collide:
+        if self.pos_controller.status != 'optimal' or collide:
             self.draw_infeasible()
             raise InfeasibleError("Infeasible or Collision")
 
         # 6. Step the robot
-        self.robot.step(u)
+        self.robot.step(u, self.u_att)
         if self.show_animation:
             self.robot.render_plot()
 
@@ -389,8 +399,15 @@ def single_agent_main(control_type):
     ax, fig = plot_handler.plot_grid("Local Tracking Controller")
     env_handler = env.Env()
 
+    # robot_spec = {
+    #     'model': 'DynamicUnicycle2D',
+    #     'w_max': 0.5,
+    #     'a_max': 0.5,
+    #     'fov_angle': 70.0,
+    #     'cam_range': 3.0
+    # }
     robot_spec = {
-        'model': 'DynamicUnicycle2D',
+        'model': 'DoubleIntegrator2D',
         'w_max': 0.5,
         'a_max': 0.5,
         'fov_angle': 70.0,

@@ -78,7 +78,7 @@ class BaseRobot:
         self.max_ang_decel = 3.0  # 0.25  # [rad/s^2]
 
         self.U = np.array([0, 0]).reshape(-1, 1)
-        self.U_attitude = np.array([0]).reshape(-1, 1)
+        self.U_att = np.array([0]).reshape(-1, 1)
 
         # Plot handles
         self.vis_orient_len = 0.3
@@ -127,7 +127,10 @@ class BaseRobot:
         if self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D']:
             return self.U[1, 0]
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
-            return self.U_attitude[0, 0]
+            if self.U_att is not None:
+                return self.U_att[0, 0]
+            else:
+                return 0.0
         else:
             raise NotImplementedError(
                 "get_yaw_rate is not implemented for this model")
@@ -168,8 +171,6 @@ class BaseRobot:
 
     def rotate_to(self, theta):
         if self.robot_spec['model'] == 'DoubleIntegrator2D':
-            # FIXME: currnetly only consider position control
-            return np.array([0.0, 0.0]).reshape(-1, 1)
             return self.robot.rotate_to(self.yaw, theta)
         return self.robot.rotate_to(self.X, theta)
 
@@ -179,13 +180,14 @@ class BaseRobot:
     def agent_barrier_dt(self, x_k, u_k, obs):
         return self.robot.agent_barrier_dt(x_k, u_k, obs, self.robot_radius)
 
-    def step(self, U, U_attitude=None):
+    def step(self, U, U_att=None):
         # wrap step function
         self.U = U.reshape(-1, 1)
         self.X = self.robot.step(self.X, self.U)
-        if self.robot_spec['model'] == 'DoubleIntegrator2D' and U_attitude is not None:
-            self.U_attitude = U_attitude.reshape(-1, 1)
-            self.yaw = self.robot.step_rotate(self.yaw, self.U_attitude)
+        self.U_att = U_att
+        if self.robot_spec['model'] == 'DoubleIntegrator2D' and self.U_att is not None:
+            self.U_att = U_att.reshape(-1, 1)
+            self.yaw = self.robot.step_rotate(self.yaw, self.U_att)
         elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D']:
             self.yaw = self.X[2, 0]
         return self.X
@@ -422,11 +424,10 @@ class BaseRobot:
         angle_right = robot_yaw + self.fov_angle / 2
 
         # Calculate points at the boundary of the FOV
-        fov_left = (robot_pos[0] + self.cam_range * np.cos(angle_left),
-                    robot_pos[1] + self.cam_range * np.sin(angle_left))
-        fov_right = (robot_pos[0] + self.cam_range * np.cos(angle_right),
-                     robot_pos[1] + self.cam_range * np.sin(angle_right))
-
+        fov_left = [robot_pos[0] + self.cam_range * np.cos(angle_left),
+                    robot_pos[1] + self.cam_range * np.sin(angle_left)]
+        fov_right = [robot_pos[0] + self.cam_range * np.cos(angle_right),
+                     robot_pos[1] + self.cam_range * np.sin(angle_right)]
         return fov_left, fov_right
 
     def is_in_fov(self, point, is_in_cam_range=False):
@@ -500,7 +501,6 @@ if __name__ == "__main__":
 
     for i in range(num_steps):
         u_ref.value = robot.nominal_input(goal)
-        print("u ref: ", u_ref.value.T)
         if robot_spec['model'] == 'Unicycle2D':
             alpha = 1.0  # 10.0
             h, dh_dx = robot.agent_barrier(obs)
