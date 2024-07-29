@@ -302,6 +302,8 @@ class LocalTrackingController:
             u_ref = self.robot.stop()
         else:
             u_ref = self.robot.nominal_input(self.goal)
+            self.u_att = self.att_controller.solve_control_problem(
+                    self.robot.X)
 
         # 3. Update the CBF constraints & # 4. Solve the control problem
         control_ref = {'state_machine': self.state_machine,
