@@ -77,7 +77,7 @@ class DoubleIntegrator2D:
         return X
 
     def step_rotate(self, theta, U_attitude):
-        theta = angle_normalize(theta + U_attitude[0] * self.dt)
+        theta = angle_normalize(theta + U_attitude[0, 0] * self.dt)
         return theta
 
     def nominal_input(self, X, G, d_min=0.05, k_v=1.0, k_a=1.0):
