@@ -6,8 +6,8 @@ import math
 import numpy as np
 
 class Plotting:
-    def __init__(self):
-        self.env = env.Env()
+    def __init__(self, width=20.0, height=20.0, known_obs = []):
+        self.env = env.Env(width=width, height=height, known_obs = known_obs)
         self.obs_bound = self.env.obs_boundary
         self.obs_circle = self.env.obs_circle
         self.obs_rectangle = self.env.obs_rectangle
@@ -71,7 +71,7 @@ class Plotting:
             )
 
         main_ax.set_title(name)
-        eps = 1.0
+        eps = 0.2
         main_ax.set_xlim(self.env.x_range[0] - eps, self.env.x_range[1] + eps)
         main_ax.set_ylim(self.env.y_range[0] - eps, self.env.y_range[1] + eps)
         main_ax.set_aspect('equal', adjustable='box')
