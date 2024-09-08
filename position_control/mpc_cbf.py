@@ -233,5 +233,5 @@ class MPCCBF:
             cbf_constraint = self.compute_cbf_constraint(
                 x_next, u, nearest_obs)  # here use actual value, not symbolic
         # self.status = 'optimal' if self.mpc.optimal else 'infeasible'
-
+        # print(self.mpc.opt_x_num['_x', :, 0, 0])
         return u
