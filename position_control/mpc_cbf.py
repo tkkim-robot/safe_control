@@ -65,7 +65,7 @@ class MPCCBF:
         _goal = model.set_variable(
             var_type='_tvp', var_name='goal', shape=(self.n_states, 1))
         _obs = model.set_variable(
-            var_type='_tvp', var_name='obs', shape=(3, 1))
+            var_type='_tvp', var_name='obs', shape=(5, 3))
 
         if self.robot_spec['model'] == 'Unicycle2D':
             _alpha = model.set_variable(
@@ -140,15 +140,24 @@ class MPCCBF:
         # Set time-varying parameters
         def tvp_fun(t_now):
             tvp_template = mpc.get_tvp_template()
-            # for k in range(self.horizon + 1):
-            tvp_template['_tvp', :, 'goal'] = np.concatenate(
-                [self.goal, [0] * (self.n_states - 2)])
+
+            # Set goal
+            tvp_template['_tvp', :, 'goal'] = np.concatenate([self.goal, [0] * (self.n_states - 2)])
+
+            # Handle up to 5 obstacles (if fewer than 5, substitute dummy obstacles)
             if self.obs is None:
-                # before detecting any obstacle, set a dummy obstacle far away
-                tvp_template['_tvp', :, 'obs'] = np.concatenate(
-                    [self.goal+1000, [0]])
+                # Before detecting any obstacle, set 5 dummy obstacles far away
+                dummy_obstacles = np.tile(np.array([1000, 1000, 0]), (5, 1))  # 5 far away obstacles
+                tvp_template['_tvp', :, 'obs'] = dummy_obstacles
             else:
-                tvp_template['_tvp', :, 'obs'] = self.obs
+                num_obstacles = self.obs.shape[0]
+                if num_obstacles < 5:
+                    # Add dummy obstacles for missing ones
+                    dummy_obstacles = np.tile(np.array([1000, 1000, 0]), (5 - num_obstacles, 1))
+                    tvp_template['_tvp', :, 'obs'] = np.vstack([self.obs, dummy_obstacles])
+                else:
+                    # Use the detected obstacles directly
+                    tvp_template['_tvp', :, 'obs'] = self.obs[:5, :]  # Limit to 5 obstacles
 
             if self.robot_spec['model'] == 'Unicycle2D':
                 tvp_template['_tvp', :, 'alpha'] = self.cbf_param['alpha']
@@ -162,14 +171,15 @@ class MPCCBF:
         return mpc
 
     def set_cbf_constraint(self, mpc):
-        # set CBF constraint for MPC, and it will be automatically updated if you update self.tvp
         _x = self.model.x['x']
         _u = self.model.u['u']  # Current control input [0] acc, [1] omega
         _obs = self.model.tvp['obs']
 
-        cbf_constraint = self.compute_cbf_constraint(
-            _x, _u, _obs)  # here, use symbolic variable
-        mpc.set_nl_cons('cbf', -cbf_constraint, ub=0)
+        # Add a separate constraint for each of the 5 obstacles
+        for i in range(5):
+            obs_i = _obs[i, :]  # Select the i-th obstacle
+            cbf_constraint = self.compute_cbf_constraint(_x, _u, obs_i)
+            mpc.set_nl_cons(f'cbf_{i}', -cbf_constraint, ub=0)
 
         return mpc
 
@@ -206,10 +216,19 @@ class MPCCBF:
     def update_tvp(self, goal, obs):
         # Update the tvp variables
         self.goal = np.array(goal)
-        if obs is None and goal is not None:
-            self.obs = np.concatenate([self.goal[:2]*1000, [0]])
+        
+        if obs is None or len(obs) == 0:
+            # No obstacles detected, set 5 dummy obstacles far away
+            self.obs = np.tile(np.array([1000, 1000, 0]), (5, 1))
         else:
-            self.obs = np.array(obs).flatten()
+            num_obstacles = len(obs)
+            if num_obstacles < 5:
+                # Add dummy obstacles for missing ones
+                dummy_obstacles = np.tile(np.array([1000, 1000, 0]), (5 - num_obstacles, 1))
+                self.obs = np.vstack([obs, dummy_obstacles])
+            else:
+                # Use the detected obstacles directly (up to 5)
+                self.obs = np.array(obs[:5])
 
     def solve_control_problem(self, robot_state, control_ref, nearest_obs):
         # Set initial state and reference
@@ -229,9 +248,9 @@ class MPCCBF:
         y_next = self.simulator.make_step(u)
         x_next = self.estimator.make_step(y_next)
 
-        if nearest_obs is not None:
-            cbf_constraint = self.compute_cbf_constraint(
-                x_next, u, nearest_obs)  # here use actual value, not symbolic
+        # if nearest_obs is not None:
+        #     cbf_constraint = self.compute_cbf_constraint(
+        #         x_next, u, nearest_obs)  # here use actual value, not symbolic
         # self.status = 'optimal' if self.mpc.optimal else 'infeasible'
         # print(self.mpc.opt_x_num['_x', :, 0, 0])
         return u

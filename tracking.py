@@ -201,8 +201,9 @@ class LocalTrackingController:
     def get_nearest_unpassed_obs(self, detected_obs):
         def angle_normalize(x):
             return (((x + np.pi) % (2 * np.pi)) - np.pi)
+        
         '''
-        Get the nearest obstacle that hasn't been passed by (i.e., it's still in front of the robot).
+        Get the nearest 5 obstacles that haven't been passed by (i.e., they're still in front of the robot).
         '''
         if len(detected_obs) == 0:
             return None
@@ -225,19 +226,19 @@ class LocalTrackingController:
             if angle_diff <= np.pi / 2:
                 unpassed_obs.append(obs)
         
-        # If no unpassed obstacles are found, return the nearest obstacle from the full detected_obs list
+        # If no unpassed obstacles are found, return the nearest obstacles from the full detected_obs list
         if len(unpassed_obs) == 0:
             detected_obs = np.array(detected_obs)
             distances = np.linalg.norm(detected_obs[:, :2] - robot_pos, axis=1)
-            nearest_index = np.argmin(distances)
-            return detected_obs[nearest_index].reshape(-1, 1)
+            nearest_indices = np.argsort(distances)[:5]  # Get indices of the nearest 5 obstacles
+            return detected_obs[nearest_indices]
         
-        # Now, find the nearest unpassed obstacle
+        # Now, find the nearest unpassed obstacles
         unpassed_obs = np.array(unpassed_obs)
         distances = np.linalg.norm(unpassed_obs[:, :2] - robot_pos, axis=1)
-        nearest_index = np.argmin(distances)
+        nearest_indices = np.argsort(distances)[:5]  # Get indices of the nearest 5 unpassed obstacles
         
-        return unpassed_obs[nearest_index].reshape(-1, 1)
+        return unpassed_obs[nearest_indices]
 
     def get_nearest_obs(self, detected_obs):
         # if there was new obstacle detected, update the obs
@@ -342,7 +343,8 @@ class LocalTrackingController:
 
         # 1. Update the detected obstacles
         # detected_obs = self.robot.detect_unknown_obs(self.unknown_obs)
-        self.nearest_obs = self.get_nearest_unpassed_obs(self.obs)
+        self.nearest_5obs = self.get_nearest_unpassed_obs(self.obs)
+        self.nearest_obs = self.nearest_5obs[0]
         # self.nearest_obs = self.get_nearest_obs(self.nearest_obs)
 
         # 2. Compuite nominal control input, pre-defined in the robot class
@@ -366,7 +368,7 @@ class LocalTrackingController:
                        'u_ref': u_ref,
                        'goal': self.goal}
         u = self.pos_controller.solve_control_problem(
-            self.robot.X, control_ref, self.nearest_obs)
+            self.robot.X, control_ref, self.nearest_5obs)
 
         # 5. Raise an error if the QP is infeasible, or the robot collides with the obstacle
         collide = self.is_collide_unknown()
@@ -466,27 +468,27 @@ def single_agent_main(control_type):
     waypoints = np.array(waypoints, dtype=np.float64)
     x_init = waypoints[0]
     
-    known_obs = np.array([[2.6, 3.0, 0.2], [2.2, 5.0, 0.2],
+    known_obs = np.array([[1.5, 3.0, 0.2],[2.6, 3.0, 0.2], [1.2, 5.0, 0.2], [2.2, 5.0, 0.2], [3.0, 5.0, 0.2],
                             [10.0, 7.3, 0.4],])
     
     plot_handler = plotting.Plotting(known_obs=known_obs)
     ax, fig = plot_handler.plot_grid("Local Tracking Controller")
     env_handler = env.Env()
 
-    # robot_spec = {
-    #     'model': 'DynamicUnicycle2D',
-    #     'w_max': 0.5,
-    #     'a_max': 0.5,
-    #     'fov_angle': 70.0,
-    #     'cam_range': 3.0
-    # }
     robot_spec = {
-        'model': 'DoubleIntegrator2D',
+        'model': 'DynamicUnicycle2D',
         'w_max': 0.5,
         'a_max': 0.5,
         'fov_angle': 70.0,
-        'cam_range': 5.0
+        'cam_range': 3.0
     }
+    # robot_spec = {
+    #     'model': 'DoubleIntegrator2D',
+    #     'w_max': 0.5,
+    #     'a_max': 0.5,
+    #     'fov_angle': 70.0,
+    #     'cam_range': 5.0
+    # }
     tracking_controller = LocalTrackingController(x_init, robot_spec,
                                                   control_type=control_type,
                                                   dt=dt,
@@ -496,8 +498,8 @@ def single_agent_main(control_type):
                                                   env=env_handler)
 
     # Set gamma values
-    tracking_controller.controller.cbf_param['alpha1'] = 0.5
-    tracking_controller.controller.cbf_param['alpha2'] = 0.5
+    tracking_controller.pos_controller.cbf_param['alpha1'] = 0.15
+    tracking_controller.pos_controller.cbf_param['alpha2'] = 0.15
     
     tracking_controller.obs = known_obs
     # tracking_controller.set_unknown_obs(known_obs)
