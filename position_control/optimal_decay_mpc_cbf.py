@@ -1,6 +1,7 @@
 import numpy as np
 import casadi as ca
 import do_mpc
+import copy
 
 
 class OptimalDecayMPCCBF:
@@ -71,11 +72,11 @@ class OptimalDecayMPCCBF:
         _goal = model.set_variable(
             var_type='_tvp', var_name='goal', shape=(self.n_states, 1))
         _obs = model.set_variable(
-            var_type='_tvp', var_name='obs', shape=(3, 1))
+            var_type='_tvp', var_name='obs', shape=(5, 3))
 
         # Add omega parameters
-        _omega1 = model.set_variable(var_type='_tvp', var_name='omega1', shape=(1, 1))
-        _omega2 = model.set_variable(var_type='_tvp', var_name='omega2', shape=(1, 1))
+        _omega1 = model.set_variable(var_type='_z', var_name='omega1', shape=(1, 1))
+        _omega2 = model.set_variable(var_type='_z', var_name='omega2', shape=(1, 1))
 
         if self.robot_spec['model'] == 'Unicycle2D':
             _alpha = model.set_variable(
@@ -90,9 +91,15 @@ class OptimalDecayMPCCBF:
         f_x = self.robot.f_casadi(_x)
         g_x = self.robot.g_casadi(_x)
         x_next = _x + (f_x + ca.mtimes(g_x, _u)) * self.dt
-
+        _omega1_next = ca.SX(_omega1)
+        _omega2_next = ca.SX(_omega2)
+        # _omega2_next = _omega2 * 1
         # Set right hand side of ODE
         model.set_rhs('x', x_next)
+        model.set_alg('omega1', _omega1_next)
+        model.set_alg('omega2', _omega2_next)
+        # model.set_rhs('omega1', _omega1)
+        # model.set_rhs('omega2', _omega2)
 
         # Defines the objective function wrt the state cost
         cost = ca.mtimes([(_x - _goal).T, self.Q, (_x - _goal)]) + \
@@ -152,15 +159,24 @@ class OptimalDecayMPCCBF:
         # Set time-varying parameters
         def tvp_fun(t_now):
             tvp_template = mpc.get_tvp_template()
-            # for k in range(self.horizon + 1):
-            tvp_template['_tvp', :, 'goal'] = np.concatenate(
-                [self.goal, [0] * (self.n_states - 2)])
+
+            # Set goal
+            tvp_template['_tvp', :, 'goal'] = np.concatenate([self.goal, [0] * (self.n_states - 2)])
+
+            # Handle up to 5 obstacles (if fewer than 5, substitute dummy obstacles)
             if self.obs is None:
-                # before detecting any obstacle, set a dummy obstacle far away
-                tvp_template['_tvp', :, 'obs'] = np.concatenate(
-                    [self.goal+1000, [0]])
+                # Before detecting any obstacle, set 5 dummy obstacles far away
+                dummy_obstacles = np.tile(np.array([1000, 1000, 0]), (5, 1))  # 5 far away obstacles
+                tvp_template['_tvp', :, 'obs'] = dummy_obstacles
             else:
-                tvp_template['_tvp', :, 'obs'] = self.obs
+                num_obstacles = self.obs.shape[0]
+                if num_obstacles < 5:
+                    # Add dummy obstacles for missing ones
+                    dummy_obstacles = np.tile(np.array([1000, 1000, 0]), (5 - num_obstacles, 1))
+                    tvp_template['_tvp', :, 'obs'] = np.vstack([self.obs, dummy_obstacles])
+                else:
+                    # Use the detected obstacles directly
+                    tvp_template['_tvp', :, 'obs'] = self.obs[:5, :]  # Limit to 5 obstacles
 
             if self.robot_spec['model'] == 'Unicycle2D':
                 tvp_template['_tvp', :, 'alpha'] = self.cbf_param['alpha']
@@ -168,32 +184,21 @@ class OptimalDecayMPCCBF:
                 tvp_template['_tvp', :, 'alpha1'] = self.cbf_param['alpha1']
                 tvp_template['_tvp', :, 'alpha2'] = self.cbf_param['alpha2']
 
-            tvp_template['_tvp', :, 'omega1'] = self.cbf_param['omega1']
-            tvp_template['_tvp', :, 'omega2'] = self.cbf_param['omega2']
-            
             return tvp_template
 
         mpc.set_tvp_fun(tvp_fun)
         return mpc
 
     def set_cbf_constraint(self, mpc):
-        # set CBF constraint for MPC, and it will be automatically updated if you update self.tvp
         _x = self.model.x['x']
         _u = self.model.u['u']  # Current control input [0] acc, [1] omega
         _obs = self.model.tvp['obs']
 
-        # num_obstacles = _obs.shape[1]  # Assuming _obs is (3, num_obstacles)
-        
-        # # Use horzsplit to separate each obstacle
-        # obs_list = ca.horzsplit(_obs, range(num_obstacles))
-
-        # for i, obs_i in enumerate(obs_list):
-        #     cbf_constraint = self.compute_cbf_constraint(_x, _u, obs_i)
-        #     mpc.set_nl_cons(f'cbf_constraint_{i}', -cbf_constraint, ub=0)
-
-        cbf_constraint = self.compute_cbf_constraint(
-            _x, _u, _obs)  # here, use symbolic variable
-        mpc.set_nl_cons('cbf', -cbf_constraint, ub=0)
+        # Add a separate constraint for each of the 5 obstacles
+        for i in range(5):
+            obs_i = _obs[i, :]  # Select the i-th obstacle
+            cbf_constraint = self.compute_cbf_constraint(_x, _u, obs_i)
+            mpc.set_nl_cons(f'cbf_{i}', -cbf_constraint, ub=0)
 
         return mpc
 
@@ -207,8 +212,8 @@ class OptimalDecayMPCCBF:
         elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D']:
             _alpha1 = self.model.tvp['alpha1']
             _alpha2 = self.model.tvp['alpha2']
-            omega1 = self.cbf_param['omega1']
-            omega2 = self.cbf_param['omega2']
+            omega1 = self.model.x['omega1']
+            omega2 = self.model.x['omega2']
             h_k, d_h, dd_h = self.robot.agent_barrier_dt(_x, _u, _obs)
             cbf_constraint = (dd_h + (_alpha1 * omega1 + _alpha2 * omega2) * d_h 
                             + _alpha1 * _alpha2 * h_k * omega1 * omega2)
@@ -230,12 +235,19 @@ class OptimalDecayMPCCBF:
     def update_tvp(self, goal, obs):
         # Update the tvp variables
         self.goal = np.array(goal)
-        if obs is None and goal is not None:
-            self.obs = np.concatenate([self.goal[:2]*1000, [0]])
+        
+        if obs is None or len(obs) == 0:
+            # No obstacles detected, set 5 dummy obstacles far away
+            self.obs = np.tile(np.array([1000, 1000, 0]), (5, 1))
         else:
-            # if isinstance(obs[0], float):
-            #     obs = [obs]
-            self.obs = np.array(obs).flatten()
+            num_obstacles = len(obs)
+            if num_obstacles < 5:
+                # Add dummy obstacles for missing ones
+                dummy_obstacles = np.tile(np.array([1000, 1000, 0]), (5 - num_obstacles, 1))
+                self.obs = np.vstack([obs, dummy_obstacles])
+            else:
+                # Use the detected obstacles directly (up to 5)
+                self.obs = np.array(obs[:5])
 
     def solve_control_problem(self, robot_state, control_ref, nearest_obs):
         # Set initial state and reference
@@ -255,9 +267,9 @@ class OptimalDecayMPCCBF:
         y_next = self.simulator.make_step(u)
         x_next = self.estimator.make_step(y_next)
 
-        if nearest_obs is not None:
-            cbf_constraint = self.compute_cbf_constraint(
-                x_next, u, nearest_obs)  # here use actual value, not symbolic
+        # if nearest_obs is not None:
+        #     cbf_constraint = self.compute_cbf_constraint(
+        #         x_next, u, nearest_obs)  # here use actual value, not symbolic
         # self.status = 'optimal' if self.mpc.optimal else 'infeasible'
-
+        print(self.mpc.opt_x_num['omega1', :, 0, 0])
         return u

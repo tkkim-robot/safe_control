@@ -344,7 +344,7 @@ class LocalTrackingController:
         # 1. Update the detected obstacles
         # detected_obs = self.robot.detect_unknown_obs(self.unknown_obs)
         self.nearest_5obs = self.get_nearest_unpassed_obs(self.obs)
-        self.nearest_obs = self.nearest_5obs[0]
+        self.nearest_obs = self.nearest_5obs[0].reshape(3,1)
         # self.nearest_obs = self.get_nearest_obs(self.nearest_obs)
 
         # 2. Compuite nominal control input, pre-defined in the robot class
@@ -367,8 +367,12 @@ class LocalTrackingController:
         control_ref = {'state_machine': self.state_machine,
                        'u_ref': u_ref,
                        'goal': self.goal}
-        u = self.pos_controller.solve_control_problem(
-            self.robot.X, control_ref, self.nearest_5obs)
+        try:
+            u = self.pos_controller.solve_control_problem(
+                self.robot.X, control_ref, self.nearest_5obs)
+        except:
+            u = self.pos_controller.solve_control_problem(
+                self.robot.X, control_ref, self.nearest_obs)
 
         # 5. Raise an error if the QP is infeasible, or the robot collides with the obstacle
         collide = self.is_collide_unknown()
@@ -572,7 +576,7 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main('mpc_cbf')
+    # single_agent_main('mpc_cbf')
     # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
-    # single_agent_main('optimal_decay_mpc_cbf')
+    single_agent_main('optimal_decay_mpc_cbf')
