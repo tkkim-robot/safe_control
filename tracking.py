@@ -198,7 +198,7 @@ class LocalTrackingController:
                 )
             )
 
-    def get_nearest_unpassed_obs(self, detected_obs):
+    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi):
         def angle_normalize(x):
             return (((x + np.pi) % (2 * np.pi)) - np.pi)
         
@@ -223,7 +223,7 @@ class LocalTrackingController:
             angle_diff = abs(angle_normalize(angle_to_obs - robot_yaw))
             
             # If the obstacle is within the forward-facing 180 degrees, consider it
-            if angle_diff <= np.pi / 2:
+            if angle_diff <= angle_unpassed/2:
                 unpassed_obs.append(obs)
         
         # If no unpassed obstacles are found, return the nearest obstacles from the full detected_obs list
@@ -236,6 +236,7 @@ class LocalTrackingController:
         # Now, find the nearest unpassed obstacles
         unpassed_obs = np.array(unpassed_obs)
         distances = np.linalg.norm(unpassed_obs[:, :2] - robot_pos, axis=1)
+        # FIXME: obs number to arg
         nearest_indices = np.argsort(distances)[:5]  # Get indices of the nearest 5 unpassed obstacles
         
         return unpassed_obs[nearest_indices]
@@ -343,6 +344,7 @@ class LocalTrackingController:
 
         # 1. Update the detected obstacles
         # detected_obs = self.robot.detect_unknown_obs(self.unknown_obs)
+        # FIXME: 
         self.nearest_5obs = self.get_nearest_unpassed_obs(self.obs)
         self.nearest_obs = self.nearest_5obs[0].reshape(3,1)
         # self.nearest_obs = self.get_nearest_obs(self.nearest_obs)
@@ -578,5 +580,5 @@ if __name__ == "__main__":
 
     # single_agent_main('mpc_cbf')
     # single_agent_main('cbf_qp')
-    # single_agent_main('optimal_decay_cbf_qp')
-    single_agent_main('optimal_decay_mpc_cbf')
+    single_agent_main('optimal_decay_cbf_qp')
+    # single_agent_main('optimal_decay_mpc_cbf')

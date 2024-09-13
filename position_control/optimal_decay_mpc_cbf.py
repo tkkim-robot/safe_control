@@ -77,9 +77,8 @@ class OptimalDecayMPCCBF:
             var_type='_tvp', var_name='obs', shape=(5, 3))
 
         # Add omega parameters
-        _omega1 = model.set_variable(var_type='_x', var_name='omega1', shape=(1, 1))
-        _omega2 = model.set_variable(var_type='_x', var_name='omega2', shape=(1, 1))
-
+        _omega1 = model.set_variable(var_type='_u', var_name='omega1', shape=(1, 1))
+        _omega2 = model.set_variable(var_type='_u', var_name='omega2', shape=(1, 1))
 
         if self.robot_spec['model'] == 'Unicycle2D':
             _alpha = model.set_variable(
@@ -94,18 +93,15 @@ class OptimalDecayMPCCBF:
         f_x = self.robot.f_casadi(_x)
         g_x = self.robot.g_casadi(_x)
         x_next = _x + (f_x + ca.mtimes(g_x, _u)) * self.dt
-        _omega1_next = _omega1  # omega1 stays constant
-        _omega2_next = _omega2  # omega2 stays constant
 
         # Set right hand side of ODE
         model.set_rhs('x', x_next)
-        model.set_rhs('omega1', _omega1_next)
-        model.set_rhs('omega2', _omega2_next)
 
         # Defines the objective function wrt the state cost
-        cost = ca.mtimes([(_x - _goal).T, self.Q, (_x - _goal)]) + \
-            self.cbf_param['p_sb1'] * ca.sumsqr(_omega1 - self.cbf_param['omega1']) + \
-            self.cbf_param['p_sb2'] * ca.sumsqr(_omega2 - self.cbf_param['omega2'])
+        # cost = ca.mtimes([(_x - _goal).T, self.Q, (_x - _goal)]) + \
+        #     self.cbf_param['p_sb1'] * ca.sumsqr(_omega1 - self.cbf_param['omega1']) + \
+        #     self.cbf_param['p_sb2'] * ca.sumsqr(_omega2 - self.cbf_param['omega2'])
+        cost = ca.mtimes([(_x - _goal).T, self.Q, (_x - _goal)])
         model.set_expression(expr_name='cost', expr=cost)
 
         model.setup()
@@ -129,7 +125,14 @@ class OptimalDecayMPCCBF:
         lterm = self.model.aux['cost']  # Stage cost
         mpc.set_objective(mterm=mterm, lterm=lterm)
         # Input penalty (R diagonal matrix in objective fun)
-        mpc.set_rterm(u=self.R)
+        expression = sum(self.R[i] * self.model.u['u'][i]**2 for i in range(self.n_controls))
+        control_input_rterm = expression
+        omega1_rterm = self.cbf_param['p_sb1'] * (self.model.u['omega1'] - self.cbf_param['omega1'])**2
+        omega2_rterm = self.cbf_param['p_sb2'] * (self.model.u['omega2'] - self.cbf_param['omega2'])**2
+        mpc.set_rterm(control_input_rterm)
+        mpc.set_rterm(omega1_rterm + omega2_rterm)
+        # MPC.set_rterm(u=self.R)
+
 
         # State and input bounds
         if self.robot_spec['model'] == 'Unicycle2D':
@@ -213,8 +216,8 @@ class OptimalDecayMPCCBF:
         elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D']:
             _alpha1 = self.model.tvp['alpha1']
             _alpha2 = self.model.tvp['alpha2']
-            omega1 = self.model.x['omega1']
-            omega2 = self.model.x['omega2']
+            omega1 = self.model.u['omega1']
+            omega2 = self.model.u['omega2']
             h_k, d_h, dd_h = self.robot.agent_barrier_dt(_x, _u, _obs)
             cbf_constraint = (dd_h + (_alpha1 * omega1 + _alpha2 * omega2) * d_h 
                             + _alpha1 * _alpha2 * h_k * omega1 * omega2)
@@ -253,11 +256,6 @@ class OptimalDecayMPCCBF:
                 self.obs = np.array(obs[:5])
 
     def solve_control_problem(self, robot_state, control_ref, nearest_obs):
-        if robot_state.shape[0] == self.n_states:  # If omega1 and omega2 are missing
-            self.omega1 = 1.0 if self.omega1 is None else self.omega1
-            self.omega2 = 1.0 if self.omega2 is None else self.omega2
-            robot_state = np.vstack((robot_state, np.array([[self.omega1], [self.omega2]])))
-
         # Set initial state and reference
         self.mpc.x0 = robot_state
         self.mpc.set_initial_guess()
@@ -275,12 +273,17 @@ class OptimalDecayMPCCBF:
         y_next = self.simulator.make_step(u)
         x_next = self.estimator.make_step(y_next)
         
-        self.omega1 = x_next[4][0]
-        self.omega2 = x_next[5][0]
+        omega1 = float(self.mpc.opt_x_num['_u', 0, 0][2])
+        omega2 = float(self.mpc.opt_x_num['_u', 0, 0][3])
+        print(f"Omega1: {omega1}, Omega2: {omega2}")
 
         # if nearest_obs is not None:
         #     cbf_constraint = self.compute_cbf_constraint(
         #         x_next, u, nearest_obs)  # here use actual value, not symbolic
         # self.status = 'optimal' if self.mpc.optimal else 'infeasible'
-        print(self.mpc.opt_x_num['_x', 4:6, 0, 0])
-        return u
+        
+        # print(self.mpc.opt_x_num['_u', :, 0])
+        # cost_value = self.mpc.opt_aux_num['_aux'][0]  # Access the 'cost' expression
+        # print(f"Cost: {cost_value}")
+        
+        return u[:self.n_controls]
