@@ -36,8 +36,8 @@ class OptimalDecayCBFQP:
 
         constraints = [
             self.A1 @ self.u + self.b1 + 
-            (self.cbf_param['alpha1'] + self.cbf_param['alpha2'])* self.omega1 * self.h_dot +
-            self.cbf_param['alpha1'] * self.cbf_param['alpha2'] * self.h * self.omega2 >= 0,
+            (self.cbf_param['alpha1'] + self.cbf_param['alpha2'])* self.omega1 @ self.h_dot +
+            self.cbf_param['alpha1'] * self.cbf_param['alpha2'] * self.h @ self.omega2 >= 0,
             cp.abs(self.u[0]) <= self.robot_spec['a_max'],
             cp.abs(self.u[1]) <= self.robot_spec['w_max'],
         ]
