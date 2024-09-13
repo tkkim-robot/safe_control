@@ -45,6 +45,8 @@ class OptimalDecayMPCCBF:
         self.cbf_param['p_sb1'] = 10**4  # Penalty parameter for omega1
         self.cbf_param['omega2'] = 1.0  # Initial omega2
         self.cbf_param['p_sb2'] = 10**4  # Penalty parameter for omega2
+        self.omega1 = None
+        self.omega2 = None
 
         self.goal = np.array([0, 0])
         self.obs = None
@@ -75,8 +77,9 @@ class OptimalDecayMPCCBF:
             var_type='_tvp', var_name='obs', shape=(5, 3))
 
         # Add omega parameters
-        _omega1 = model.set_variable(var_type='_z', var_name='omega1', shape=(1, 1))
-        _omega2 = model.set_variable(var_type='_z', var_name='omega2', shape=(1, 1))
+        _omega1 = model.set_variable(var_type='_x', var_name='omega1', shape=(1, 1))
+        _omega2 = model.set_variable(var_type='_x', var_name='omega2', shape=(1, 1))
+
 
         if self.robot_spec['model'] == 'Unicycle2D':
             _alpha = model.set_variable(
@@ -91,15 +94,13 @@ class OptimalDecayMPCCBF:
         f_x = self.robot.f_casadi(_x)
         g_x = self.robot.g_casadi(_x)
         x_next = _x + (f_x + ca.mtimes(g_x, _u)) * self.dt
-        _omega1_next = ca.SX(_omega1)
-        _omega2_next = ca.SX(_omega2)
-        # _omega2_next = _omega2 * 1
+        _omega1_next = _omega1  # omega1 stays constant
+        _omega2_next = _omega2  # omega2 stays constant
+
         # Set right hand side of ODE
         model.set_rhs('x', x_next)
-        model.set_alg('omega1', _omega1_next)
-        model.set_alg('omega2', _omega2_next)
-        # model.set_rhs('omega1', _omega1)
-        # model.set_rhs('omega2', _omega2)
+        model.set_rhs('omega1', _omega1_next)
+        model.set_rhs('omega2', _omega2_next)
 
         # Defines the objective function wrt the state cost
         cost = ca.mtimes([(_x - _goal).T, self.Q, (_x - _goal)]) + \
@@ -236,6 +237,8 @@ class OptimalDecayMPCCBF:
         # Update the tvp variables
         self.goal = np.array(goal)
         
+        obs = obs.reshape(-1,3)
+        
         if obs is None or len(obs) == 0:
             # No obstacles detected, set 5 dummy obstacles far away
             self.obs = np.tile(np.array([1000, 1000, 0]), (5, 1))
@@ -250,6 +253,11 @@ class OptimalDecayMPCCBF:
                 self.obs = np.array(obs[:5])
 
     def solve_control_problem(self, robot_state, control_ref, nearest_obs):
+        if robot_state.shape[0] == self.n_states:  # If omega1 and omega2 are missing
+            self.omega1 = 1.0 if self.omega1 is None else self.omega1
+            self.omega2 = 1.0 if self.omega2 is None else self.omega2
+            robot_state = np.vstack((robot_state, np.array([[self.omega1], [self.omega2]])))
+
         # Set initial state and reference
         self.mpc.x0 = robot_state
         self.mpc.set_initial_guess()
@@ -266,10 +274,13 @@ class OptimalDecayMPCCBF:
         # Update simulator and estimator
         y_next = self.simulator.make_step(u)
         x_next = self.estimator.make_step(y_next)
+        
+        self.omega1 = x_next[4][0]
+        self.omega2 = x_next[5][0]
 
         # if nearest_obs is not None:
         #     cbf_constraint = self.compute_cbf_constraint(
         #         x_next, u, nearest_obs)  # here use actual value, not symbolic
         # self.status = 'optimal' if self.mpc.optimal else 'infeasible'
-        print(self.mpc.opt_x_num['omega1', :, 0, 0])
+        print(self.mpc.opt_x_num['_x', 4:6, 0, 0])
         return u

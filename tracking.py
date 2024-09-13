@@ -470,7 +470,7 @@ def single_agent_main(control_type):
         [10, 2, 0]
     ]
     waypoints = np.array(waypoints, dtype=np.float64)
-    x_init = waypoints[0]
+    x_init = np.append(waypoints[0], 1.0)
     
     known_obs = np.array([[1.5, 3.0, 0.2],[2.6, 3.0, 0.2], [1.2, 5.0, 0.2], [2.2, 5.0, 0.2], [3.0, 5.0, 0.2],
                             [10.0, 7.3, 0.4],])
@@ -481,8 +481,8 @@ def single_agent_main(control_type):
 
     robot_spec = {
         'model': 'DynamicUnicycle2D',
-        'w_max': 0.5,
-        'a_max': 0.5,
+        'w_max': 0.1,
+        'a_max': 0.1,
         'fov_angle': 70.0,
         'cam_range': 3.0
     }
