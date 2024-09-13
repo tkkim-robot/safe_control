@@ -483,8 +483,8 @@ def single_agent_main(control_type):
 
     robot_spec = {
         'model': 'DynamicUnicycle2D',
-        'w_max': 0.1,
-        'a_max': 0.1,
+        'w_max': 0.5,
+        'a_max': 0.5,
         'fov_angle': 70.0,
         'cam_range': 3.0
     }
@@ -578,7 +578,7 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    # single_agent_main('mpc_cbf')
+    single_agent_main('mpc_cbf')
     # single_agent_main('cbf_qp')
-    single_agent_main('optimal_decay_cbf_qp')
+    # single_agent_main('optimal_decay_cbf_qp')
     # single_agent_main('optimal_decay_mpc_cbf')

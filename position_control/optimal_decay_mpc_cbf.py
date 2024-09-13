@@ -273,9 +273,10 @@ class OptimalDecayMPCCBF:
         y_next = self.simulator.make_step(u)
         x_next = self.estimator.make_step(y_next)
         
-        omega1 = float(self.mpc.opt_x_num['_u', 0, 0][2])
-        omega2 = float(self.mpc.opt_x_num['_u', 0, 0][3])
-        print(f"Omega1: {omega1}, Omega2: {omega2}")
+        # omega1 = float(self.mpc.opt_x_num['_u', 0, 0][2])
+        # omega2 = float(self.mpc.opt_x_num['_u', 0, 0][3])
+        # # print(f"Omega1: {omega1}, Omega2: {omega2}")
+        # print(self.mpc.opt_x_num['_u', :, 0])
 
         # if nearest_obs is not None:
         #     cbf_constraint = self.compute_cbf_constraint(
