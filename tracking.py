@@ -424,6 +424,22 @@ class LocalTrackingController:
             for file_name in glob.glob(self.current_directory_path +
                                        "/output/animations/*.png"):
                 os.remove(file_name)
+
+    # # If the 'upper' function is not compatible with your device, please use the function provided below
+    # def export_video(self):
+    #     # convert the image sequence to a video
+    #     if self.show_animation and self.save_animation:
+    #         subprocess.call(['ffmpeg',
+    #                          # Input framerate (adjust if needed)
+    #                          '-framerate', '30',
+    #                          '-i', self.current_directory_path+"/output/animations/t_step_%04d.png",
+    #                          '-filter:v', 'fps=60',  # Output framerate
+    #                          '-pix_fmt', 'yuv420p',
+    #                          self.current_directory_path+"/output/animations/tracking.mp4"])
+
+    #         for file_name in glob.glob(self.current_directory_path +
+    #                                    "/output/animations/*.png"):
+    #             os.remove(file_name)
     
     def run_all_steps(self, tf=30):
         print("===================================")
