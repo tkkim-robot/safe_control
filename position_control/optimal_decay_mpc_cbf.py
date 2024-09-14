@@ -3,11 +3,21 @@ import casadi as ca
 import do_mpc
 import copy
 
+class NotCompatibleError(Exception):
+    '''
+    Exception raised for errors when the robot model is not compatible with the controller.
+    '''
+
+    def __init__(self, message="Currently not compatible with the robot model. Only compatible with DynamicUnicycle2D now"):
+        self.message = message
+        super().__init__(self.message)
 
 class OptimalDecayMPCCBF:
     def __init__(self, robot, robot_spec):
         self.robot = robot
         self.robot_spec = robot_spec
+        if self.robot_spec['model'] != 'DynamicUnicycle2D': # TODO: not compatible with other robot models yet
+            raise NotCompatibleError("Infeasible or Collision")
         self.status = 'optimal'  # TODO: not implemented
 
         # MPC parameters

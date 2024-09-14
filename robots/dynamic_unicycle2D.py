@@ -73,7 +73,7 @@ class DynamicUnicycle2D:
         X[2, 0] = angle_normalize(X[2, 0])
         return X
 
-    def nominal_input(self, X, G, d_min=0.05, k_omega=3.0, k_a=0.5, k_v=0.5):
+    def nominal_input(self, X, G, d_min=0.05, k_omega=2.0, k_a=1.0, k_v=1.0):
         '''
         nominal input for CBF-QP
         '''

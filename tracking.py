@@ -100,7 +100,8 @@ class LocalTrackingController:
 
         # Setup control problem
         self.setup_robot(X0)
-
+        self.control_type = control_type
+        self.num_constraints = 5 # number of max obstacle constraints to consider in the controller
         if control_type == 'cbf_qp':
             from position_control.cbf_qp import CBFQP
             self.pos_controller = CBFQP(self.robot, self.robot_spec)
@@ -198,10 +199,9 @@ class LocalTrackingController:
                 )
             )
 
-    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi):
+    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi, obs_num=5):
         def angle_normalize(x):
             return (((x + np.pi) % (2 * np.pi)) - np.pi)
-        
         '''
         Get the nearest 5 obstacles that haven't been passed by (i.e., they're still in front of the robot).
         '''
@@ -236,8 +236,7 @@ class LocalTrackingController:
         # Now, find the nearest unpassed obstacles
         unpassed_obs = np.array(unpassed_obs)
         distances = np.linalg.norm(unpassed_obs[:, :2] - robot_pos, axis=1)
-        # FIXME: obs number to arg
-        nearest_indices = np.argsort(distances)[:5]  # Get indices of the nearest 5 unpassed obstacles
+        nearest_indices = np.argsort(distances)[:obs_num]  # Get indices of the nearest 'obs_num' (max 5) unpassed obstacles
         
         return unpassed_obs[nearest_indices]
 
@@ -344,10 +343,9 @@ class LocalTrackingController:
 
         # 1. Update the detected obstacles
         # detected_obs = self.robot.detect_unknown_obs(self.unknown_obs)
-        # FIXME: 
-        self.nearest_5obs = self.get_nearest_unpassed_obs(self.obs)
-        self.nearest_obs = self.nearest_5obs[0].reshape(3,1)
-        # self.nearest_obs = self.get_nearest_obs(self.nearest_obs)
+        # self.nearest_obs = self.get_nearest_obs(detected_obs)
+        self.nearest_multi_obs = self.get_nearest_unpassed_obs(self.obs, obs_num=self.num_constraints)
+        self.nearest_obs = self.nearest_multi_obs[0].reshape(3,1)
 
         # 2. Compuite nominal control input, pre-defined in the robot class
         if self.state_machine == 'rotate':
@@ -361,7 +359,10 @@ class LocalTrackingController:
         elif self.goal is None:
             u_ref = self.robot.stop()
         else:
-            u_ref = self.robot.nominal_input(self.goal)
+            if self.control_type == 'optimal_decay_cbf_qp':
+                u_ref = self.robot.nominal_input(self.goal, k_omega=3.0, k_a=0.5, k_v=0.5)
+            else:
+                u_ref = self.robot.nominal_input(self.goal)
             self.u_att = self.att_controller.solve_control_problem(
                     self.robot.X)
 
@@ -369,18 +370,19 @@ class LocalTrackingController:
         control_ref = {'state_machine': self.state_machine,
                        'u_ref': u_ref,
                        'goal': self.goal}
-        try:
-            u = self.pos_controller.solve_control_problem(
-                self.robot.X, control_ref, self.nearest_5obs)
-        except:
+        if self.control_type == 'optimal_decay_cbf_qp' or self.control_type == 'cbf_qp':
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_obs)
+        else:
+            u = self.pos_controller.solve_control_problem(
+                self.robot.X, control_ref, self.nearest_multi_obs)
 
         # 5. Raise an error if the QP is infeasible, or the robot collides with the obstacle
         collide = self.is_collide_unknown()
         if self.pos_controller.status != 'optimal' or collide:
             self.draw_infeasible()
-            return -1  # all waypoints reached
+            print("Infeasible or Collision")
+            return -1
             # raise InfeasibleError("Infeasible or Collision")
 
         # 6. Step the robot
@@ -413,30 +415,15 @@ class LocalTrackingController:
         # convert the image sequence to a video
         if self.show_animation and self.save_animation:
             subprocess.call(['ffmpeg',
-                             # Input framerate (adjust if needed)
-                             '-framerate', '30',
-                             '-i', self.current_directory_path+"/output/animations/t_step_%04d.png",
-                             '-filter:v', 'fps=60',  # Output framerate
+                             '-framerate', '30',  # Input framerate (adjust if needed)
+                             '-i', self.current_directory_path + "/output/animations/t_step_%04d.png",
+                             '-vf', 'scale=1920:982,fps=60',  # Ensure height is divisible by 2 and set output framerate
                              '-pix_fmt', 'yuv420p',
-                             self.current_directory_path+"/output/animations/tracking.mp4"])
+                             self.current_directory_path + "/output/animations/tracking.mp4"])
 
             for file_name in glob.glob(self.current_directory_path +
                                        "/output/animations/*.png"):
                 os.remove(file_name)
-                
-    # def export_video(self):
-    #     # convert the image sequence to a video
-    #     if self.show_animation and self.save_animation:
-    #         subprocess.call(['ffmpeg',
-    #                          '-framerate', '30',  # Input framerate (adjust if needed)
-    #                          '-i', self.current_directory_path + "/output/animations/t_step_%04d.png",
-    #                          '-vf', 'scale=1920:982,fps=60',  # Ensure height is divisible by 2 and set output framerate
-    #                          '-pix_fmt', 'yuv420p',
-    #                          self.current_directory_path + "/output/animations/tracking.mp4"])
-
-    #         for file_name in glob.glob(self.current_directory_path +
-    #                                    "/output/animations/*.png"):
-    #             os.remove(file_name)
     
     def run_all_steps(self, tf=30):
         print("===================================")
@@ -512,7 +499,6 @@ def single_agent_main(control_type):
     tracking_controller.set_waypoints(waypoints)
     unexpected_beh = tracking_controller.run_all_steps(tf=100)
 
-
 def multi_agent_main(control_type):
     dt = 0.05
 
@@ -578,7 +564,7 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main('mpc_cbf')
+    # single_agent_main('mpc_cbf')
     # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
-    # single_agent_main('optimal_decay_mpc_cbf')
+    single_agent_main('optimal_decay_mpc_cbf')

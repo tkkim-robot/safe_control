@@ -1,14 +1,21 @@
 import numpy as np
 import cvxpy as cp
 
+class NotCompatibleError(Exception):
+    '''
+    Exception raised for errors when the robot model is not compatible with the controller.
+    '''
 
-
-# FIXME: Only works for DynamicUnicycle2D for now
+    def __init__(self, message="Currently not compatible with the robot model. Only compatible with DynamicUnicycle2D now"):
+        self.message = message
+        super().__init__(self.message)
+        
 class OptimalDecayCBFQP:
     def __init__(self, robot, robot_spec):
         self.robot = robot
         self.robot_spec = robot_spec
-
+        if self.robot_spec['model'] != 'DynamicUnicycle2D': # TODO: not compatible with other robot models yet
+            raise NotCompatibleError("Infeasible or Collision")
         self.cbf_param = {}
         
         self.cbf_param['alpha1'] = 1.5 
