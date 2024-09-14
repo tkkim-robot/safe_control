@@ -153,8 +153,13 @@ class BaseRobot:
     def g_casadi(self, X):
         return self.robot.g(X, casadi=True)
 
-    def nominal_input(self, goal, d_min=0.05):
-        return self.robot.nominal_input(self.X, goal, d_min)
+    def nominal_input(self, goal, d_min=0.05, k_omega = 2.0, k_a = 1.0, k_v = 1.0):
+        if self.robot_spec['model'] == 'Unicycle2D':
+            return self.robot.nominal_input(self.X, goal, d_min, k_omega, k_v)
+        elif self.robot_spec['model'] == 'DynamicUnicycle2D':
+            return self.robot.nominal_input(self.X, goal, d_min, k_omega, k_a, k_v)
+        elif self.robot_spec['model'] == 'DoubleIntegrator2D':
+            return self.robot.nominal_input(self.X, goal, d_min, k_v, k_a)
 
     def nominal_attitude_input(self, theta_des):
         if self.robot_spec['model'] == 'DoubleIntegrator2D':

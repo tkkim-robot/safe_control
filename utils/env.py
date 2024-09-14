@@ -1,13 +1,13 @@
 import numpy as np
 class Env:
-    def __init__(self, width=20.0, height=20.0, resolution=0.1):
+    def __init__(self, width=20.0, height=20.0, known_obs = [], resolution=0.1):
         self.width = width
         self.height = height
         self.resolution = resolution  # meters per cell
         self.x_range = (0, width)
         self.y_range = (0, height)
         self.obs_boundary = self.set_obs_boundary(width, height)
-        self.obs_circle = self.set_obs_circle()
+        self.obs_circle = self.set_obs_circle(known_obs)
         self.obs_rectangle = self.set_obs_rectangle()
         self._discretize_map()
 
@@ -48,7 +48,7 @@ class Env:
     def set_obs_boundary(width, height):  # circle
         w = width
         h = height
-        linewidth = 0.1
+        linewidth = 0.05
         obs_boundary = [
             [0, 0, linewidth, h],
             [0, h, w, linewidth],
@@ -69,7 +69,8 @@ class Env:
         obs_rectangle = []
         return obs_rectangle
     @staticmethod
-    def set_obs_circle():
-        obs_cir = [[18, 18, 1]]
-        obs_cir = []
+    def set_obs_circle(known_obs):
+        # obs_cir = [[18, 18, 1]]
+        # obs_cir = []
+        obs_cir = known_obs
         return obs_cir

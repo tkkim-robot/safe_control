@@ -1,12 +1,23 @@
 import numpy as np
 import casadi as ca
 import do_mpc
+import copy
 
+class NotCompatibleError(Exception):
+    '''
+    Exception raised for errors when the robot model is not compatible with the controller.
+    '''
 
-class MPCCBF:
+    def __init__(self, message="Currently not compatible with the robot model. Only compatible with DynamicUnicycle2D now"):
+        self.message = message
+        super().__init__(self.message)
+
+class OptimalDecayMPCCBF:
     def __init__(self, robot, robot_spec):
         self.robot = robot
         self.robot_spec = robot_spec
+        if self.robot_spec['model'] != 'DynamicUnicycle2D': # TODO: not compatible with other robot models yet
+            raise NotCompatibleError("Infeasible or Collision")
         self.status = 'optimal'  # TODO: not implemented
 
         # MPC parameters
@@ -39,6 +50,14 @@ class MPCCBF:
             self.n_states = 4
         self.n_controls = 2
 
+        # Optimal-decay parameters
+        self.cbf_param['omega1'] = 1.0  # Initial omega1
+        self.cbf_param['p_sb1'] = 10**4  # Penalty parameter for omega1
+        self.cbf_param['omega2'] = 1.0  # Initial omega2
+        self.cbf_param['p_sb2'] = 10**4  # Penalty parameter for omega2
+        self.omega1 = None
+        self.omega2 = None
+
         self.goal = np.array([0, 0])
         self.obs = None
 
@@ -67,6 +86,10 @@ class MPCCBF:
         _obs = model.set_variable(
             var_type='_tvp', var_name='obs', shape=(5, 3))
 
+        # Add omega parameters
+        _omega1 = model.set_variable(var_type='_u', var_name='omega1', shape=(1, 1))
+        _omega2 = model.set_variable(var_type='_u', var_name='omega2', shape=(1, 1))
+
         if self.robot_spec['model'] == 'Unicycle2D':
             _alpha = model.set_variable(
                 var_type='_tvp', var_name='alpha', shape=(1, 1))
@@ -85,6 +108,9 @@ class MPCCBF:
         model.set_rhs('x', x_next)
 
         # Defines the objective function wrt the state cost
+        # cost = ca.mtimes([(_x - _goal).T, self.Q, (_x - _goal)]) + \
+        #     self.cbf_param['p_sb1'] * ca.sumsqr(_omega1 - self.cbf_param['omega1']) + \
+        #     self.cbf_param['p_sb2'] * ca.sumsqr(_omega2 - self.cbf_param['omega2'])
         cost = ca.mtimes([(_x - _goal).T, self.Q, (_x - _goal)])
         model.set_expression(expr_name='cost', expr=cost)
 
@@ -109,7 +135,14 @@ class MPCCBF:
         lterm = self.model.aux['cost']  # Stage cost
         mpc.set_objective(mterm=mterm, lterm=lterm)
         # Input penalty (R diagonal matrix in objective fun)
-        mpc.set_rterm(u=self.R)
+        expression = sum(self.R[i] * self.model.u['u'][i]**2 for i in range(self.n_controls))
+        control_input_rterm = expression
+        omega1_rterm = self.cbf_param['p_sb1'] * (self.model.u['omega1'] - self.cbf_param['omega1'])**2
+        omega2_rterm = self.cbf_param['p_sb2'] * (self.model.u['omega2'] - self.cbf_param['omega2'])**2
+        mpc.set_rterm(control_input_rterm)
+        mpc.set_rterm(omega1_rterm + omega2_rterm)
+        # MPC.set_rterm(u=self.R)
+
 
         # State and input bounds
         if self.robot_spec['model'] == 'Unicycle2D':
@@ -186,7 +219,6 @@ class MPCCBF:
     def compute_cbf_constraint(self, _x, _u, _obs):
         '''compute cbf constraint value
         We reuse this function to print the CBF constraint'''
-
         if self.robot_spec['model'] == 'Unicycle2D':
             _alpha = self.model.tvp['alpha']
             h_k, d_h = self.robot.agent_barrier_dt(_x, _u, _obs)
@@ -194,12 +226,13 @@ class MPCCBF:
         elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D']:
             _alpha1 = self.model.tvp['alpha1']
             _alpha2 = self.model.tvp['alpha2']
+            omega1 = self.model.u['omega1']
+            omega2 = self.model.u['omega2']
             h_k, d_h, dd_h = self.robot.agent_barrier_dt(_x, _u, _obs)
-            cbf_constraint = dd_h + (_alpha1 + _alpha2) * \
-                d_h + _alpha1 * _alpha2 * h_k
+            cbf_constraint = (dd_h + (_alpha1 * omega1 + _alpha2 * omega2) * d_h 
+                            + _alpha1 * _alpha2 * h_k * omega1 * omega2)
         else:
             raise NotImplementedError('Model not implemented')
-
         return cbf_constraint
 
     def create_simulator(self):
@@ -216,6 +249,8 @@ class MPCCBF:
     def update_tvp(self, goal, obs):
         # Update the tvp variables
         self.goal = np.array(goal)
+        
+        obs = obs.reshape(-1,3)
         
         if obs is None or len(obs) == 0:
             # No obstacles detected, set 5 dummy obstacles far away
@@ -247,10 +282,19 @@ class MPCCBF:
         # Update simulator and estimator
         y_next = self.simulator.make_step(u)
         x_next = self.estimator.make_step(y_next)
+        
+        # omega1 = float(self.mpc.opt_x_num['_u', 0, 0][2])
+        # omega2 = float(self.mpc.opt_x_num['_u', 0, 0][3])
+        # # print(f"Omega1: {omega1}, Omega2: {omega2}")
+        # print(self.mpc.opt_x_num['_u', :, 0])
 
         # if nearest_obs is not None:
         #     cbf_constraint = self.compute_cbf_constraint(
         #         x_next, u, nearest_obs)  # here use actual value, not symbolic
         # self.status = 'optimal' if self.mpc.optimal else 'infeasible'
-        # print(self.mpc.opt_x_num['_x', :, 0, 0])
-        return u
+        
+        # print(self.mpc.opt_x_num['_u', :, 0])
+        # cost_value = self.mpc.opt_aux_num['_aux'][0]  # Access the 'cost' expression
+        # print(f"Cost: {cost_value}")
+        
+        return u[:self.n_controls]
