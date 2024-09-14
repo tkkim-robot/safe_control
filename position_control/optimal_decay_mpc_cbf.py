@@ -52,9 +52,9 @@ class OptimalDecayMPCCBF:
 
         # Optimal-decay parameters
         self.cbf_param['omega1'] = 1.0  # Initial omega1
-        self.cbf_param['p_sb1'] = 10**4  # Penalty parameter for omega1
+        self.cbf_param['p_sb1'] = 10**1  # Penalty parameter for omega1
         self.cbf_param['omega2'] = 1.0  # Initial omega2
-        self.cbf_param['p_sb2'] = 10**4  # Penalty parameter for omega2
+        self.cbf_param['p_sb2'] = 10**1  # Penalty parameter for omega2
         self.omega1 = None
         self.omega2 = None
 
