@@ -120,6 +120,9 @@ class LocalTrackingController:
             self.att_controller = SimpleAttitude(self.robot, self.robot_spec)
         self.goal = None
 
+    def set_robot_state(self, pose, orientation, velocity):
+        self.robot.set_robot_state(pose, orientation, velocity)
+
     def setup_animation_saving(self):
         self.current_directory_path = os.getcwd()
         if not os.path.exists(self.current_directory_path + "/output/animations"):
