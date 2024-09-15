@@ -20,7 +20,7 @@ from sklearn.preprocessing import MinMaxScaler
 
 
 class AdaptiveCBFParameterSelector:
-    def __init__(self, model_name, scaler_name, distance_margin=0.07, step_size=0.02, epistemic_threshold=0.2):
+    def __init__(self, model_name, scaler_name, distance_margin=0.07, step_size=0.02, epistemic_threshold=0.5):
         self.penn = ProbabilisticEnsembleNN()
         self.penn.load_model(model_name)
         self.penn.load_scaler(scaler_name)
@@ -45,12 +45,18 @@ class AdaptiveCBFParameterSelector:
         
         distance = np.linalg.norm(robot_pos - near_obs[:2]) - 0.45 + robot_radius + near_obs[2]
         velocity = robot_state[3][0]
-        theta = np.arctan2(near_obs[1] - robot_pos[1], near_obs[0] - robot_pos[0])
-        theta = ((theta + np.pi) % (2 * np.pi)) - np.pi
+        theta_obs = np.arctan2(near_obs[1] - robot_pos[1], near_obs[0] - robot_pos[0])
+        d_theta = theta_obs - robot_state[2][0]
+        d_theta = ((d_theta + np.pi) % (2 * np.pi)) - np.pi
         gamma1 = controller.cbf_param['alpha1']
         gamma2 = controller.cbf_param['alpha2']
+
+        print("robot_pos: ", robot_pos[0], robot_pos[1])
+        print("near_obs: ", near_obs[0], near_obs[1])
+
+        print("d: ", distance, "dtheta: ", d_theta, "v: ", velocity)
         
-        return [distance, velocity, theta, gamma1, gamma2], robot_pos, robot_radius, near_obs
+        return [distance, velocity, d_theta, gamma1, gamma2], robot_pos, robot_radius, near_obs
         # return [distance, 7, 9, velocity, theta, gamma1, gamma2]
 
     def predict_with_penn(self, current_state, gamma1_range, gamma2_range):
@@ -384,17 +390,26 @@ class MPC_ICCBF:
                 # Use the detected obstacles directly (up to 5)
                 self.obs = np.array(obs[:5])
 
-    def solve_control_problem(self, robot_state, control_ref, nearest_obs):
-        nearest_obs = nearest_obs[0]
+    def solve_control_problem(self, robot_state, control_ref, nearby_obs):
+        nearest_obs = nearby_obs[0]
+        print(nearby_obs)
         best_gamma1, best_gamma2 = self.adaptive_selector.adaptive_parameter_selection(self, robot_state, nearest_obs)
         self.cbf_param['alpha1'] = best_gamma1
         self.cbf_param['alpha2'] = best_gamma2
+        # create the file if it doesn't exist
+        if not os.path.exists('240915_best_gamma.csv'):
+            with open('240915_best_gamma.csv', 'w') as f:
+                f.write("gamma1,gamma2\n")
+        # save the best gamma1 and gamma2 into a csv file
+        with open('240915_best_gamma.csv', 'a') as f:
+            f.write(f"{best_gamma1},{best_gamma2}\n")
+
         
         # Set initial state and reference
         self.mpc.x0 = robot_state
         self.mpc.set_initial_guess()
         goal = control_ref['goal']
-        self.update_tvp(goal, nearest_obs)
+        self.update_tvp(goal, nearby_obs)
 
         
         if control_ref['state_machine'] != 'track':

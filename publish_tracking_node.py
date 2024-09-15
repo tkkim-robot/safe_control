@@ -64,9 +64,9 @@ class TrackingControllerNode(Node):
 
         robot_spec = {
             'model': 'DynamicUnicycle2D',
-            'w_max': 1.0,
+            'w_max': 0.5,
             'a_max': 0.5,
-            'v_max': 0.95, # 1.1
+            'v_max': 0.85, # 1.1
             'fov_angle': 70.0,
             'cam_range': 3.0
         }
@@ -75,7 +75,7 @@ class TrackingControllerNode(Node):
             show_animation=False, save_animation=False, ax=self.ax, fig=self.fig,
             env=self.env_handler
         )
-        #test_type = 'high'
+        test_type = 'high'
         test_type = 'optimal_decay_mpc_cbf'
         if test_type == 'low':
             self.tracking_controller.pos_controller.cbf_param['alpha1'] = 0.01
@@ -86,14 +86,16 @@ class TrackingControllerNode(Node):
         else:
             pass
 
-        self.tracking_controller.obs = np.array([[1.5, 0.3, 0.45],
-                                                [0.3, -1.8, 0.45],
-                                                 [-0.15, 0.3, 0.45]])
+        self.tracking_controller.obs = np.array([[1.6, 0.3, 0.45],
+                                                [0.3, -1.5, 0.45],
+                                                 [-0.6, 0.3, 0.45]])
         #np.array([[-0.3, 0.3, 0.35]])
         #np.array([[1.5, 0.3, 0.4],
                                                 #[0.3, -2.1, 0.4]])
 #                                                [-0.3, 0.3, 0.4],
         self.tracking_controller.set_waypoints(waypoints)
+        self.prev_u = np.array([0.0, 0.0])
+        self.infeasible_flag = False
 
     def odom_callback(self, msg):
         print("goal: ", self.tracking_controller.goal)
@@ -117,6 +119,7 @@ class TrackingControllerNode(Node):
         velocity = Odometry().twist.twist.linear
         velocity.x = msg.vx # in earth-fixed frame
         velocity.y = msg.vy # in earth-fixed frame
+        print("theta robot: ", angle_normalize(msg.heading+np.pi/2))
         # Convert quaternion to euler angles
         #orientation = euler_from_quaternion(orientation) # roll, pitch, yaw order
 
@@ -127,6 +130,10 @@ class TrackingControllerNode(Node):
         ret = self.tracking_controller.control_step()
         u = self.tracking_controller.get_control_input()
 
+        if ret == -2 or self.infeasible_flag == True:
+            print("Infeasible!!!!")
+            self.infeasible_flag = True
+            u = np.array([0.2, 0.0])
         # Convert control input to Float32MultiArray and publish
         msg = Float32MultiArray()
         msg.data = [float(val) for val in u.flatten()]
@@ -142,12 +149,13 @@ class TrackingControllerNode(Node):
             self.get_logger().info(f'Publishing: {msg.data}')
 
 
+
 def main(args=None):
     rclpy.init(args=args)
-    #control_type = 'mpc_cbf'
-    #control_type = 'optimal_decay_mpc_cbf'
-    control_type = 'optimal_decay_cbf_qp'
-    control_type = 'mpc_iccbf'
+    control_type = 'mpc_cbf'
+    control_type = 'optimal_decay_mpc_cbf'
+    #control_type = 'optimal_decay_cbf_qp'
+    #control_type = 'mpc_iccbf'
     node = TrackingControllerNode(control_type)
     rclpy.spin(node)
     node.destroy_node()

@@ -391,7 +391,7 @@ class LocalTrackingController:
         if self.pos_controller.status != 'optimal' or collide:
             self.draw_infeasible()
             print("Infeasible or Collision")
-            return -1
+            return -2
             # raise InfeasibleError("Infeasible or Collision")
 
         # 6. Step the robot
