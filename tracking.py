@@ -114,6 +114,9 @@ class LocalTrackingController:
         elif control_type == 'optimal_decay_mpc_cbf':
             from position_control.optimal_decay_mpc_cbf import OptimalDecayMPCCBF
             self.pos_controller = OptimalDecayMPCCBF(self.robot, self.robot_spec)
+        elif control_type == 'mpc_iccbf':
+            from position_control.mpc_iccbf import MPC_ICCBF
+            self.pos_controller = MPC_ICCBF(self.robot, self.robot_spec)
             
         if True:  # TODO: currently only have one attitude controller
             from attitude_control.simple_attitude import SimpleAttitude
@@ -487,7 +490,7 @@ def single_agent_main(control_type):
     waypoints = np.array(waypoints, dtype=np.float64)
     x_init = np.append(waypoints[0], 1.0)
     
-    known_obs = np.array([[1.5, 3.0, 0.2],[2.6, 3.0, 0.2], [1.2, 5.0, 0.2], [2.2, 5.0, 0.2], [3.0, 5.0, 0.2],
+    known_obs = np.array([[1.5, 3.0, 0.2],[2.6, 3.0, 0.2],[2.2, 5.0, 0.2], [3.0, 5.0, 0.2],
                             [10.0, 7.3, 0.4],])
     
     plot_handler = plotting.Plotting(known_obs=known_obs)
@@ -593,4 +596,5 @@ if __name__ == "__main__":
     # single_agent_main('mpc_cbf')
     # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
-    single_agent_main('optimal_decay_mpc_cbf')
+    # single_agent_main('optimal_decay_mpc_cbf')
+    single_agent_main('mpc_iccbf')
