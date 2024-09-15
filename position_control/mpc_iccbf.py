@@ -177,22 +177,24 @@ class MPC_ICCBF:
         # DT CBF parameters should scale from 0 to 1
         self.cbf_param = {}
         if self.robot_spec['model'] == 'Unicycle2D':
-            self.cbf_param['alpha'] = 0.05
+            self.cbf_param['alpha'] = 0.01
             self.n_states = 3
         elif self.robot_spec['model'] == 'DynamicUnicycle2D':
-            self.cbf_param['alpha1'] = 0.15
-            self.cbf_param['alpha2'] = 0.15
+            self.cbf_param['alpha1'] = 0.01
+            self.cbf_param['alpha2'] = 0.01
             self.n_states = 4
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
-            self.cbf_param['alpha1'] = 0.15
-            self.cbf_param['alpha2'] = 0.15
+            self.cbf_param['alpha1'] = 0.01
+            self.cbf_param['alpha2'] = 0.01
             self.n_states = 4
         self.n_controls = 2
 
         self.goal = np.array([0, 0])
         self.obs = None
 
-        self.adaptive_selector = AdaptiveCBFParameterSelector('penn_model_0907.pth', 'scaler_0907.save')
+        scaler_path = '/workspaces/colcon_ws/src/dasc_ros/dasc_ros_utils/scripts/cbf_tracking/position_control/scaler_0907.save'
+        model_path = '/workspaces/colcon_ws/src/dasc_ros/dasc_ros_utils/scripts/cbf_tracking/position_control/penn_model_0907.pth'
+        self.adaptive_selector = AdaptiveCBFParameterSelector(model_path, scaler_path)
 
         self.setup_control_problem()
 

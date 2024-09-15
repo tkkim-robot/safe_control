@@ -147,6 +147,7 @@ def main(args=None):
     #control_type = 'mpc_cbf'
     #control_type = 'optimal_decay_mpc_cbf'
     control_type = 'optimal_decay_cbf_qp'
+    control_type = 'mpc_iccbf'
     node = TrackingControllerNode(control_type)
     rclpy.spin(node)
     node.destroy_node()

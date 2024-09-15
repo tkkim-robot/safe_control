@@ -18,8 +18,8 @@ class OptimalDecayCBFQP:
             raise NotCompatibleError("Infeasible or Collision")
         self.cbf_param = {}
         
-        self.cbf_param['alpha1'] = 1.5 
-        self.cbf_param['alpha2'] = 1.5
+        self.cbf_param['alpha1'] = 0.5 
+        self.cbf_param['alpha2'] = 0.5
         self.cbf_param['omega1'] = 1.0  # Initial omega
         self.cbf_param['p_sb1'] = 10**4  # Penalty parameter for soft decay
         self.cbf_param['omega2'] = 1.0  # Initial omega
