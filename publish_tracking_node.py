@@ -8,7 +8,6 @@ import math
 
 from utils import plotting
 from utils import env
-from utils.utils import euler_from_quaternion
 from tracking import LocalTrackingController
 
 from nav_msgs.msg import Odometry
@@ -27,6 +26,10 @@ control inputs via ROS2 messages.
 
 @required-scripts: tracking.py
 """
+
+
+def angle_normalize(x):
+    return (((x + np.pi) % (2 * np.pi)) - np.pi)
 
 class TrackingControllerNode(Node):
     def __init__(self, control_type):
@@ -48,14 +51,11 @@ class TrackingControllerNode(Node):
         # ]
 
         # load csv file waypoints_vis.csv
-        waypoints = [[0, 0, 0],
-                     [3, 3, 0]]
+        waypoints = np.array([[-1.2, -2.4, 0]])
 
         #print(waypoints)
-        x_init = waypoints[0]
-        waypoints[0][0] += 0.1
-
-        self.tracking_controller.obs = np.array([[0.0, 0.0, 0.5]])
+        x_init = np.array([1.8, 1.8, 0])
+        #waypoints[0][0] += 0.1
 
 
         plot_handler = plotting.Plotting()
@@ -64,9 +64,9 @@ class TrackingControllerNode(Node):
 
         robot_spec = {
             'model': 'DynamicUnicycle2D',
-            'w_max': 1.5,
+            'w_max': 1.0,
             'a_max': 0.5,
-            'v_max': 1.1,
+            'v_max': 0.95, # 1.1
             'fov_angle': 70.0,
             'cam_range': 3.0
         }
@@ -75,12 +75,30 @@ class TrackingControllerNode(Node):
             show_animation=False, save_animation=False, ax=self.ax, fig=self.fig,
             env=self.env_handler
         )
+        #test_type = 'high'
+        test_type = 'optimal_decay_mpc_cbf'
+        if test_type == 'low':
+            self.tracking_controller.pos_controller.cbf_param['alpha1'] = 0.01
+            self.tracking_controller.pos_controller.cbf_param['alpha1'] = 0.01
+        elif test_type == 'high':
+            self.tracking_controller.pos_controller.cbf_param['alpha1'] = 0.2
+            self.tracking_controller.pos_controller.cbf_param['alpha1'] = 0.2
+        else:
+            pass
 
+        self.tracking_controller.obs = np.array([[1.5, 0.3, 0.45],
+                                                [0.3, -1.8, 0.45],
+                                                 [-0.15, 0.3, 0.45]])
+        #np.array([[-0.3, 0.3, 0.35]])
+        #np.array([[1.5, 0.3, 0.4],
+                                                #[0.3, -2.1, 0.4]])
+#                                                [-0.3, 0.3, 0.4],
         self.tracking_controller.set_waypoints(waypoints)
 
     def odom_callback(self, msg):
+        print("goal: ", self.tracking_controller.goal)
         goal = self.tracking_controller.goal
-        if goal is None:
+        if goal is None and self.tracking_controller.state_machine != 'stop':
             print("Reached all the waypoints")
             msg = Float32MultiArray()
             msg.data = [0.0, 0.0]
@@ -91,24 +109,23 @@ class TrackingControllerNode(Node):
         # pose = msg.pose.pose.position
         # orientation = msg.pose.pose.orientation
         # velocity = msg.twist.twist.linear
-        pose = {}
-        pose['x'] = msg.x
-        pose['y'] = msg.y
-        pose['z'] = msg.z
-        orientation = [0, 0, msg.heading]
-        velocity = {}
-        velocity['x'] = msg.vx # in earth-fixed frame
-        velocity['y'] = msg.vy # in earth-fixed frame
+        pose = Odometry().pose.pose.position
+        pose.x = msg.x
+        pose.y = msg.y
+        pose.z = msg.z
+        orientation = [0, 0, angle_normalize(msg.heading+np.pi/2)]
+        velocity = Odometry().twist.twist.linear
+        velocity.x = msg.vx # in earth-fixed frame
+        velocity.y = msg.vy # in earth-fixed frame
         # Convert quaternion to euler angles
         #orientation = euler_from_quaternion(orientation) # roll, pitch, yaw order
 
         self.tracking_controller.set_robot_state(pose, orientation, velocity)
         print("velocity: ", velocity.x, velocity.y)
-        print(self.tracking_controller.robot.X)
+        #print(self.tracking_controller.robot.X)
 
         ret = self.tracking_controller.control_step()
         u = self.tracking_controller.get_control_input()
-        print("Goal: ", self.tracking_controller.goal)
 
         # Convert control input to Float32MultiArray and publish
         msg = Float32MultiArray()
@@ -127,7 +144,9 @@ class TrackingControllerNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    control_type = 'mpc_cbf'
+    #control_type = 'mpc_cbf'
+    #control_type = 'optimal_decay_mpc_cbf'
+    control_type = 'optimal_decay_cbf_qp'
     node = TrackingControllerNode(control_type)
     rclpy.spin(node)
     node.destroy_node()

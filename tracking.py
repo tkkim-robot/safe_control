@@ -292,15 +292,17 @@ class LocalTrackingController:
         '''
         if self.state_machine == 'rotate':
             # in-place rotation
-            current_angle = self.robot.get_orientation()
-            goal_angle = np.arctan2(self.waypoints[0][1] - self.robot.X[1, 0],
-                                    self.waypoints[0][0] - self.robot.X[0, 0])
-            if abs(current_angle - goal_angle) > self.rotation_threshold:
-                return self.waypoints[0][:2]
-            else:
-                self.state_machine = 'track'
-                self.u_att = None
-                print("set u_att to none")
+            self.state_machine = 'track'
+            self.u_att = None
+            # current_angle = self.robot.get_orientation()
+            # goal_angle = np.arctan2(self.waypoints[0][1] - self.robot.X[1, 0],
+            #                         self.waypoints[0][0] - self.robot.X[0, 0])
+            # if abs(current_angle - goal_angle) > self.rotation_threshold:
+            #     return self.waypoints[0][:2]
+            # else:
+            #     self.state_machine = 'track'
+            #     self.u_att = None
+            #     print("set u_att to none")
 
         # Check if all waypoints are reached;
         if self.current_goal_index >= len(self.waypoints):
@@ -373,6 +375,7 @@ class LocalTrackingController:
         control_ref = {'state_machine': self.state_machine,
                        'u_ref': u_ref,
                        'goal': self.goal}
+        print(self.state_machine)
         if self.control_type == 'optimal_decay_cbf_qp' or self.control_type == 'cbf_qp':
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_obs)

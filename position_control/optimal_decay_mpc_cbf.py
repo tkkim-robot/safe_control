@@ -38,15 +38,15 @@ class OptimalDecayMPCCBF:
         # DT CBF parameters should scale from 0 to 1
         self.cbf_param = {}
         if self.robot_spec['model'] == 'Unicycle2D':
-            self.cbf_param['alpha'] = 0.05
+            self.cbf_param['alpha'] = 0.01
             self.n_states = 3
         elif self.robot_spec['model'] == 'DynamicUnicycle2D':
-            self.cbf_param['alpha1'] = 0.15
-            self.cbf_param['alpha2'] = 0.15
+            self.cbf_param['alpha1'] = 0.01
+            self.cbf_param['alpha2'] = 0.01
             self.n_states = 4
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
-            self.cbf_param['alpha1'] = 0.15
-            self.cbf_param['alpha2'] = 0.15
+            self.cbf_param['alpha1'] = 0.01
+            self.cbf_param['alpha2'] = 0.01
             self.n_states = 4
         self.n_controls = 2
 
