@@ -55,6 +55,8 @@ class TrackingControllerNode(Node):
         x_init = waypoints[0]
         waypoints[0][0] += 0.1
 
+        self.tracking_controller.obs = np.array([[0.0, 0.0, 0.5]])
+
 
         plot_handler = plotting.Plotting()
         self.ax, self.fig = plot_handler.plot_grid("Local Tracking Controller")
@@ -76,12 +78,6 @@ class TrackingControllerNode(Node):
 
         self.tracking_controller.set_waypoints(waypoints)
 
-    def obs_circles_callback(self, msg):
-        obs_circles = msg.data
-        # reshape it as [[x,y,radius], ]
-        obs_circles = np.array(obs_circles).reshape(-1, 3)
-        self.tracking_controller.set_detected_obs(obs_circles)
-
     def odom_callback(self, msg):
         goal = self.tracking_controller.goal
         if goal is None:
@@ -92,11 +88,19 @@ class TrackingControllerNode(Node):
             self.get_logger().info(f'Publishing: {msg.data}')
             return False
         
-        pose = msg.pose.pose.position
-        orientation = msg.pose.pose.orientation
-        velocity = msg.twist.twist.linear
+        # pose = msg.pose.pose.position
+        # orientation = msg.pose.pose.orientation
+        # velocity = msg.twist.twist.linear
+        pose = {}
+        pose['x'] = msg.x
+        pose['y'] = msg.y
+        pose['z'] = msg.z
+        orientation = [0, 0, msg.heading]
+        velocity = {}
+        velocity['x'] = msg.vx # in earth-fixed frame
+        velocity['y'] = msg.vy # in earth-fixed frame
         # Convert quaternion to euler angles
-        orientation = euler_from_quaternion(orientation) # roll, pitch, yaw order
+        #orientation = euler_from_quaternion(orientation) # roll, pitch, yaw order
 
         self.tracking_controller.set_robot_state(pose, orientation, velocity)
         print("velocity: ", velocity.x, velocity.y)
@@ -123,7 +127,7 @@ class TrackingControllerNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    control_type = 'cbf_qp'
+    control_type = 'mpc_cbf'
     node = TrackingControllerNode(control_type)
     rclpy.spin(node)
     node.destroy_node()
