@@ -9,13 +9,13 @@ class CBFQP:
         self.cbf_param = {}
 
         if self.robot_spec['model'] == 'Unicycle2D':
-            self.cbf_param['alpha'] = 1.0
+            self.cbf_param['alpha'] = 0.5
         elif self.robot_spec['model'] == 'DynamicUnicycle2D':
-            self.cbf_param['alpha1'] = 1.5
-            self.cbf_param['alpha2'] = 1.5
+            self.cbf_param['alpha1'] = 0.5
+            self.cbf_param['alpha2'] = 0.5
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
-            self.cbf_param['alpha1'] = 1.5
-            self.cbf_param['alpha2'] = 1.5
+            self.cbf_param['alpha1'] = 0.5
+            self.cbf_param['alpha2'] = 0.5
 
         self.setup_control_problem()
 
