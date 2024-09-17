@@ -208,15 +208,27 @@ class LocalTrackingController:
         '''
         Get the nearest 5 obstacles that haven't been passed by (i.e., they're still in front of the robot).
         '''
-        if len(detected_obs) == 0:
+        if len(detected_obs) != 0:
+            if len(self.obs) == 0:
+                all_obs = np.array(detected_obs)
+            else:
+                all_obs = np.vstack((self.obs, detected_obs))
+            # return np.array(detected_obs).reshape(-1, 1) just returning the detected obs
+        else:
+            all_obs = self.obs
+
+        if len(all_obs) == 0:
             return None
+
+        if all_obs.ndim == 1:
+            all_obs = all_obs.reshape(1, -1)
         
         unpassed_obs = []
         robot_pos = self.robot.get_position()
         robot_yaw = self.robot.get_orientation()
         
         # Iterate through each detected obstacle
-        for obs in detected_obs:
+        for obs in all_obs:
             obs_pos = np.array([obs[0], obs[1]])
             to_obs_vector = obs_pos - robot_pos
             
@@ -229,12 +241,12 @@ class LocalTrackingController:
             if angle_diff <= angle_unpassed/2:
                 unpassed_obs.append(obs)
         
-        # If no unpassed obstacles are found, return the nearest obstacles from the full detected_obs list
+        # If no unpassed obstacles are found, return the nearest obstacles from the full all_obs list
         if len(unpassed_obs) == 0:
-            detected_obs = np.array(detected_obs)
-            distances = np.linalg.norm(detected_obs[:, :2] - robot_pos, axis=1)
+            all_obs = np.array(all_obs)
+            distances = np.linalg.norm(all_obs[:, :2] - robot_pos, axis=1)
             nearest_indices = np.argsort(distances)[:5]  # Get indices of the nearest 5 obstacles
-            return detected_obs[nearest_indices]
+            return all_obs[nearest_indices]
         
         # Now, find the nearest unpassed obstacles
         unpassed_obs = np.array(unpassed_obs)
@@ -345,9 +357,9 @@ class LocalTrackingController:
             self.goal = self.update_goal()
 
         # 1. Update the detected obstacles
-        # detected_obs = self.robot.detect_unknown_obs(self.unknown_obs)
+        detected_obs = self.robot.detect_unknown_obs(self.unknown_obs)
         # self.nearest_obs = self.get_nearest_obs(detected_obs)
-        self.nearest_multi_obs = self.get_nearest_unpassed_obs(self.obs, obs_num=self.num_constraints)
+        self.nearest_multi_obs = self.get_nearest_unpassed_obs(detected_obs, obs_num=self.num_constraints)
         if self.nearest_multi_obs is not None:
             self.nearest_obs = self.nearest_multi_obs[0].reshape(3,1)
         else:
@@ -490,7 +502,7 @@ def single_agent_main(control_type):
                             [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
     
     plot_handler = plotting.Plotting(known_obs=known_obs)
-    ax, fig = plot_handler.plot_grid("Local Tracking Controller")
+    ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here
     env_handler = env.Env()
 
     robot_spec = {
@@ -505,17 +517,16 @@ def single_agent_main(control_type):
                                                   control_type=control_type,
                                                   dt=dt,
                                                   show_animation=True,
-                                                  save_animation=False,
+                                                  save_animation=True,
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
 
-    
     tracking_controller.obs = known_obs
-    # tracking_controller.set_unknown_obs(known_obs)
+    #tracking_controller.set_unknown_obs(unknown_obs)
     tracking_controller.set_waypoints(waypoints)
     unexpected_beh = tracking_controller.run_all_steps(tf=100)
 
-def multi_agent_main(control_type):
+def multi_agent_main(control_type, save_animation=False):
     dt = 0.05
 
     # temporal
@@ -531,14 +542,14 @@ def multi_agent_main(control_type):
     x_goal = waypoints[-1]
 
     plot_handler = plotting.Plotting()
-    ax, fig = plot_handler.plot_grid("Local Tracking Controller")
+    ax, fig = plot_handler.plot_grid("")
     env_handler = env.Env()
 
     robot_spec = {
         'model': 'DynamicUnicycle2D', #'DoubleIntegrator2D'
         'w_max': 0.5,
         'a_max': 0.5,
-        'fov_angle': 70.0,
+        'fov_angle': 45.0,
         'cam_range': 3.0,
         'radius': 0.25
     }
@@ -548,9 +559,19 @@ def multi_agent_main(control_type):
                                            control_type=control_type,
                                            dt=dt,
                                            show_animation=True,
-                                           save_animation=False,
+                                           save_animation=save_animation,
                                            ax=ax, fig=fig,
                                            env=env_handler)
+
+    robot_spec = {
+        'model': 'DynamicUnicycle2D', #'DoubleIntegrator2D'
+        'w_max': 1.0,
+        'a_max': 1.5,
+        'v_max': 2.0,
+        'fov_angle': 90.0,
+        'cam_range': 5.0,
+        'radius': 0.25
+    }
 
     robot_spec['robot_id'] = 1
     controller_1 = LocalTrackingController(x_goal, robot_spec,
@@ -575,6 +596,9 @@ def multi_agent_main(control_type):
         if all([ret == -1 for ret in ret_list]):
             break
 
+    if save_animation:
+        controller_0.export_video()
+
 
 if __name__ == "__main__":
     from utils import plotting
@@ -582,7 +606,7 @@ if __name__ == "__main__":
     import math
 
     single_agent_main('mpc_cbf')
-    #multi_agent_main('mpc_cbf')
+    #multi_agent_main('mpc_cbf', save_animation=True)
     #single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
     #single_agent_main('optimal_decay_mpc_cbf')
