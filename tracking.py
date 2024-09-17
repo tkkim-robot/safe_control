@@ -32,7 +32,7 @@ class InfeasibleError(Exception):
 
 class LocalTrackingController:
     def __init__(self, X0, robot_spec, control_type='cbf_qp', dt=0.05,
-                 show_animation=False, save_animation=False, ax=None, fig=None, env=None):
+                 show_animation=False, save_animation=False, raise_error=True, ax=None, fig=None, env=None):
 
         self.robot_spec = robot_spec
         self.control_type = control_type  # 'cbf_qp' or 'mpc_cbf'
@@ -87,6 +87,7 @@ class LocalTrackingController:
 
         self.show_animation = show_animation
         self.save_animation = save_animation
+        self.raise_error = raise_error
         if self.save_animation:
             self.setup_animation_saving()
 
@@ -330,10 +331,10 @@ class LocalTrackingController:
         '''
         Simulate one step of tracking control with CBF-QP with the given waypoints.
         Output: 
+            - -2 or QPError: if the QP is infeasible or the robot collides with the obstacle
             - -1: all waypoints reached
             - 0: normal
             - 1: visibility violation
-            - raise QPError: if the QP is infeasible or the robot collides with the obstacle
         '''
         # update state machine
         if self.state_machine == 'stop':
@@ -347,7 +348,10 @@ class LocalTrackingController:
         # detected_obs = self.robot.detect_unknown_obs(self.unknown_obs)
         # self.nearest_obs = self.get_nearest_obs(detected_obs)
         self.nearest_multi_obs = self.get_nearest_unpassed_obs(self.obs, obs_num=self.num_constraints)
-        self.nearest_obs = self.nearest_multi_obs[0].reshape(3,1)
+        if self.nearest_multi_obs is not None:
+            self.nearest_obs = self.nearest_multi_obs[0].reshape(3,1)
+        else:
+            self.nearest_obs = None
 
         # 2. Compuite nominal control input, pre-defined in the robot class
         if self.state_machine == 'rotate':
@@ -384,8 +388,10 @@ class LocalTrackingController:
         if self.pos_controller.status != 'optimal' or collide:
             self.draw_infeasible()
             print("Infeasible or Collision")
-            return -1
-            # raise InfeasibleError("Infeasible or Collision")
+            if self.raise_error:
+                raise InfeasibleError("Infeasible or Collision")
+            else:
+                return -2
 
         # 6. Step the robot
         self.robot.step(u, self.u_att)
@@ -495,13 +501,6 @@ def single_agent_main(control_type):
         'cam_range': 3.0,
         'radius': 0.25
     }
-    # robot_spec = {
-    #     'model': 'DoubleIntegrator2D',
-    #     'w_max': 0.5,
-    #     'a_max': 0.5,
-    #     'fov_angle': 70.0,
-    #     'cam_range': 5.0
-    # }
     tracking_controller = LocalTrackingController(x_init, robot_spec,
                                                   control_type=control_type,
                                                   dt=dt,
@@ -523,8 +522,8 @@ def multi_agent_main(control_type):
     waypoints = [
         [2, 2, math.pi/2],
         [2, 12, 0],
-        [10, 12, 0],
-        [10, 2, math.pi/2]
+        [12, 12, 0],
+        [12, 2, 0]
     ]
     waypoints = np.array(waypoints, dtype=np.float64)
 
@@ -536,7 +535,7 @@ def multi_agent_main(control_type):
     env_handler = env.Env()
 
     robot_spec = {
-        'model': 'DoubleIntegrator2D',  # 'DynamicUnicycle2D',
+        'model': 'DynamicUnicycle2D', #'DoubleIntegrator2D'
         'w_max': 0.5,
         'a_max': 0.5,
         'fov_angle': 70.0,
@@ -583,6 +582,7 @@ if __name__ == "__main__":
     import math
 
     single_agent_main('mpc_cbf')
-    # single_agent_main('cbf_qp')
+    #multi_agent_main('mpc_cbf')
+    #single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
     #single_agent_main('optimal_decay_mpc_cbf')
