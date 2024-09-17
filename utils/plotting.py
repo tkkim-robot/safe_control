@@ -6,7 +6,7 @@ import math
 import numpy as np
 
 class Plotting:
-    def __init__(self, width=20.0, height=20.0, known_obs = []):
+    def __init__(self, width=14.0, height=14.0, known_obs = []):
         self.env = env.Env(width=width, height=height, known_obs = known_obs)
         self.obs_bound = self.env.obs_boundary
         self.obs_circle = self.env.obs_circle

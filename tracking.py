@@ -473,14 +473,15 @@ def single_agent_main(control_type):
     waypoints = [
         [2, 2, math.pi/2],
         [2, 12, 0],
-        [10, 12, 0],
-        [10, 2, 0]
+        [12, 12, 0],
+        [12, 2, 0]
     ]
     waypoints = np.array(waypoints, dtype=np.float64)
     x_init = np.append(waypoints[0], 1.0)
     
-    known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2],
-                            [10.0, 7.3, 0.4],])
+    known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
+                            [10.0, 7.3, 0.4],
+                            [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
     
     plot_handler = plotting.Plotting(known_obs=known_obs)
     ax, fig = plot_handler.plot_grid("Local Tracking Controller")
@@ -491,7 +492,8 @@ def single_agent_main(control_type):
         'w_max': 0.5,
         'a_max': 0.5,
         'fov_angle': 70.0,
-        'cam_range': 3.0
+        'cam_range': 3.0,
+        'radius': 0.25
     }
     # robot_spec = {
     #     'model': 'DoubleIntegrator2D',
@@ -508,9 +510,6 @@ def single_agent_main(control_type):
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
 
-    # Set gamma values
-    tracking_controller.pos_controller.cbf_param['alpha1'] = 0.15
-    tracking_controller.pos_controller.cbf_param['alpha2'] = 0.15
     
     tracking_controller.obs = known_obs
     # tracking_controller.set_unknown_obs(known_obs)
@@ -541,7 +540,8 @@ def multi_agent_main(control_type):
         'w_max': 0.5,
         'a_max': 0.5,
         'fov_angle': 70.0,
-        'cam_range': 3.0
+        'cam_range': 3.0,
+        'radius': 0.25
     }
 
     robot_spec['robot_id'] = 0
@@ -582,7 +582,7 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    # single_agent_main('mpc_cbf')
+    single_agent_main('mpc_cbf')
     # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
-    single_agent_main('optimal_decay_mpc_cbf')
+    #single_agent_main('optimal_decay_mpc_cbf')
