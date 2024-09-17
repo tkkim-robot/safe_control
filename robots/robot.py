@@ -73,7 +73,9 @@ class BaseRobot:
             float(self.robot_spec['fov_angle']))  # [rad]
         self.cam_range = self.robot_spec['cam_range']  # [m]
 
-        self.robot_radius = 0.25  # including padding
+        if 'radius' not in self.robot_spec:
+            self.robot_spec['radius'] = 0.25
+        self.robot_radius = self.robot_spec['radius']  # including padding
         self.max_decel = 3.0  # 0.5 # [m/s^2]
         self.max_ang_decel = 3.0  # 0.25  # [rad/s^2]
 
@@ -113,7 +115,7 @@ class BaseRobot:
         self.positions = []  # List to store the positions for plotting
 
         # initialize the sensing_footprints with the initial robot location with radius 1
-        init_robot_position = Point(self.X[0, 0], self.X[1, 0]).buffer(0.1)
+        init_robot_position = Point(self.X[0, 0], self.X[1, 0]).buffer(self.robot_radius*2)
         self.sensing_footprints = self.sensing_footprints.union(
             init_robot_position)
 
@@ -469,8 +471,8 @@ if __name__ == "__main__":
     tf = 20
     num_steps = int(tf/dt)
 
-    model = 'DoubleIntegrator2D'
-    # model = 'DynamicUnicycle2D'
+    # model = 'DoubleIntegrator2D' #TODO: double integrator with yaw angle is not supported for this example
+    model = 'DynamicUnicycle2D'
     # model = 'Unicycle2D'
 
     robot_spec = {

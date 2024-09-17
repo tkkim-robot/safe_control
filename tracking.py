@@ -82,6 +82,8 @@ class LocalTrackingController:
             self.robot_spec['fov_angle'] = 70.0
         if 'cam_range' not in self.robot_spec:
             self.robot_spec['cam_range'] = 3.0
+        if 'radius' not in self.robot_spec:
+            self.robot_spec['radius'] = 0.25
 
         self.show_animation = show_animation
         self.save_animation = save_animation
