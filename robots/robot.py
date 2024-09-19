@@ -85,8 +85,11 @@ class BaseRobot:
         # Plot handles
         self.vis_orient_len = 0.3
         # Robot's body represented as a scatter plot
-        self.body = ax.scatter(
-            [], [], s=200, facecolors=color, edgecolors=color)  # facecolors='none'
+        # self.body = ax.scatter(
+        #     [], [], s=200, facecolors=color, edgecolors=color)  this is unitless
+        self.body = ax.add_patch(plt.Circle(
+            (0, 0), self.robot_radius, edgecolor='black', facecolor=color, fill=True))
+        
         # Store the unsafe points and scatter plot
         self.unsafe_points = []
         self.unsafe_points_handle = ax.scatter(
@@ -200,7 +203,8 @@ class BaseRobot:
         return self.X
 
     def render_plot(self):
-        self.body.set_offsets([self.X[0, 0], self.X[1, 0]])
+        #self.body.set_offsets([self.X[0, 0], self.X[1, 0]])
+        self.body.center = self.X[0, 0], self.X[1, 0]
 
         if len(self.unsafe_points) > 0:
             self.unsafe_points_handle.set_offsets(np.array(self.unsafe_points))
