@@ -28,8 +28,6 @@ To install `safe_control`, follow these steps:
    ```
    Or, install packages manually (see [`setup.py`](https://github.com/tkkim-robot/safe_control/blob/main/setup.py)).
 
-This will install `safe_control` in editable mode, allowing you to modify the source code and immediately see the effects without reinstalling.
-
 
 # Getting Started
 
