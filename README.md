@@ -16,7 +16,7 @@ To install `safe_control`, follow these steps:
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/safe_control.git
+   git clone https://github.com/tkkim-robot/safe_control.git
    cd safe_control
    ```
 
