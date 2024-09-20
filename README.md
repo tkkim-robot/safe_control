@@ -164,7 +164,7 @@ Supported attitude controllers can be found in the [`attitude_control/`](https:/
 
 ## Customizing Environments
 
-You can modify the environment in [`utils/env.py](https://github.com/tkkim-robot/safe_control/blob/main/utils/env.py).
+You can modify the environment in [`utils/env.py`](https://github.com/tkkim-robot/safe_control/blob/main/utils/env.py).
 
 ## Visualization
 The online visualization is performed using [`matplotlib.pyplot.ion`](https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.ion.html).
