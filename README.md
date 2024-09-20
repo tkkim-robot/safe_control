@@ -29,11 +29,11 @@ To install `safe_control`, follow these steps:
    Or, install packages manually (see [`setup.py`](https://github.com/tkkim-robot/safe_control/blob/main/setup.py)).
 
 
-# Getting Started
+## Getting Started
 
 Familiarize with APIs and examples with the scripts in [`tracking.py`](https://github.com/tkkim-robot/safe_control/blob/main/tracking.py)
 
-## Basic Example
+### Basic Example
 You can run our test example by:
 
 ```bash
@@ -79,7 +79,7 @@ The green points are the given waypoints, and the blue area is the accumulated s
 
 The gray circles are the obstacles that are known a priori.
 
-## Detect/Avoid Unknown Obstacles
+### Detect/Avoid Unknown Obstacles
 You can also simulate online detection of unknown obstacles and avoidance of obstacles that are detected on-the-fly using safety-critical constratins.
 The configuration of the obstacles is (x, y, radius).
 
@@ -97,7 +97,7 @@ The unknown obstacles are visualized in orange.
 |  <img src="https://github.com/user-attachments/assets/8be5453f-8629-4f1d-aa36-c0f9160fd2ee"  height="350px"> |
 
 
-## Multi-Robot Example
+### Multi-Robot Example
 
 You can simulate heterogeneous, multiple robots navigating in the same environment. 
 
@@ -128,9 +128,9 @@ First determine the specification of each robot (with different `id`), then run 
 |  <img src="https://github.com/user-attachments/assets/d55518d3-79ec-46ec-8cfb-3f78dd7d6e82"  height="200px"> | <img src="https://github.com/user-attachments/assets/7c3db292-f9fa-4734-8578-3034e85ab4fb"  height="200px"> |
 
 
-# Module Breakdown
+## Module Breakdown
 
-## Dynamics
+### Dynamics
 
 Supported robot dynamics can be found in the [`robots/`](https://github.com/tkkim-robot/safe_control/tree/main/robots) directory:
 
@@ -139,7 +139,7 @@ Supported robot dynamics can be found in the [`robots/`](https://github.com/tkki
 - `double_integrator2D`
 - `double_integrator2D with camera angle`: under development
 
-## Positional Control Algorithms
+### Positional Control Algorithms
 
 Supported positional controllers can be found in the [`position_control/`](https://github.com/tkkim-robot/safe_control/tree/main/position_control) directory:
 
@@ -154,17 +154,17 @@ To use a specific control algorithm, specify it when initializing the `LocalTrac
 controller = LocalTrackingController(..., control_type='cbf_qp', ...)
 ```
 
-## Attitude Control Algorithms
+### Attitude Control Algorithms
 
 Supported attitude controllers can be found in the [`attitude_control/`](https://github.com/tkkim-robot/safe_control/tree/main/attitude_control) directory:
 
 - `gatekeeper`: under development (ref: [[5]](https://ieeexplore.ieee.org/document/10665919))
 
-## Customizing Environments
+### Customizing Environments
 
 You can modify the environment in [`utils/env.py`](https://github.com/tkkim-robot/safe_control/blob/main/utils/env.py).
 
-## Visualization
+### Visualization
 The online visualization is performed using [`matplotlib.pyplot.ion`](https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.ion.html).
 
 It allows you to interatively scroll, resize, change view, etc. during simulation.
@@ -174,7 +174,7 @@ You can visualize and save animation by setting the arguments:
 controller = LocalTrackingController(..., show_animation=True, save_animation=True)
 ```
 
-# Citing
+## Citing
 
 If you find this repository useful, please consider citing our paper:
 
@@ -188,7 +188,7 @@ If you find this repository useful, please consider citing our paper:
 }
 ```
 
-# Related Works
+## Related Works
 
 This repository has been utilized in several other projects. Here are some repositories that build upon or use components from this library:
 
