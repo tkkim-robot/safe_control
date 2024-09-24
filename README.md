@@ -182,7 +182,7 @@ If you find this repository useful, please consider citing our paper:
 @inproceedings{kim2024learning, 
     author    = {Taekyung Kim and Robin Inho Kee and Dimitra Panagou},
     title     = {Learning to Refine Input Constrained Control Barrier Functions via Uncertainty-Aware Online Parameter Adaptation}, 
-    booktitle = {},
+    booktitle = {{{arXiv} preprint {arXiv}:2409.14616}},
     shorttitle = {Online-Adaptive-CBF},
     year      = {2024}
 }
