@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 
 from shapely.geometry import Polygon, Point, LineString
 from shapely import is_valid_reason
-from utils.geometry import custom_merge
+# from utils.geometry import custom_merge
 
 """
 Created on June 21st, 2024
@@ -65,6 +65,20 @@ class BaseRobot:
             # X0: [x, y, vx, vy, theta]
             self.set_orientation(self.X[4, 0])
             self.X = self.X[0:4]  # Remove the yaw angle from the state
+        elif self.robot_spec['model'] == 'KinematicBicycle2D':
+            try:
+                from dynamic_bicycle2D import DynamicBicycle2D
+            except ImportError:
+                from robots.dynamic_bicycle2D import DynamicBicycle2D
+            self.robot = DynamicBicycle2D(dt, robot_spec)
+            self.yaw = self.X[2, 0]
+        elif self.robot_spec['model'] == 'DynamicBicycle2D':
+            try:
+                from kinematic_bicycle2D import KinematicBicycle2D
+            except ImportError:
+                from robots.kinematic_bicycle2D import KinematicBicycle2D
+            self.robot = KinematicBicycle2D(dt, robot_spec)
+            self.yaw = self.X[2, 0]
         else:
             raise ValueError("Invalid robot model")
 
@@ -126,7 +140,7 @@ class BaseRobot:
         return self.yaw
 
     def get_yaw_rate(self):
-        if self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D']:
+        if self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'DynamicBicycle2D']:
             return self.U[1, 0]
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
             if self.U_att is not None:
@@ -156,9 +170,9 @@ class BaseRobot:
         return self.robot.g(X, casadi=True)
 
     def nominal_input(self, goal, d_min=0.05, k_omega = 2.0, k_a = 1.0, k_v = 1.0):
-        if self.robot_spec['model'] == 'Unicycle2D':
+        if self.robot_spec['model'] in ['Unicycle2D', 'KinematicBicycle2D']:
             return self.robot.nominal_input(self.X, goal, d_min, k_omega, k_v)
-        elif self.robot_spec['model'] == 'DynamicUnicycle2D':
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DynamicBicycle2D']:
             return self.robot.nominal_input(self.X, goal, d_min, k_omega, k_a, k_v)
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
             return self.robot.nominal_input(self.X, goal, d_min, k_v, k_a)
@@ -195,7 +209,7 @@ class BaseRobot:
         if self.robot_spec['model'] == 'DoubleIntegrator2D' and self.U_att is not None:
             self.U_att = U_att.reshape(-1, 1)
             self.yaw = self.robot.step_rotate(self.yaw, self.U_att)
-        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D']:
+        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'DynamicBicycle2D']:
             self.yaw = self.X[2, 0]
         return self.X
 
@@ -467,10 +481,12 @@ if __name__ == "__main__":
     ax.set_ylabel("Y")
     ax.set_aspect(1)
 
-    dt = 0.02
+    dt = 0.1
     tf = 20
     num_steps = int(tf/dt)
 
+    # model = 'DynamicBicycle2D'
+    # model = 'KinematicBicycle2D'
     # model = 'DoubleIntegrator2D' #TODO: double integrator with yaw angle is not supported for this example
     model = 'DynamicUnicycle2D'
     # model = 'Unicycle2D'
@@ -508,19 +524,20 @@ if __name__ == "__main__":
 
     for i in range(num_steps):
         u_ref.value = robot.nominal_input(goal)
-        if robot_spec['model'] == 'Unicycle2D':
+        if robot_spec['model'] in ['Unicycle2D', 'KinematicBicycle2D']:
             alpha = 1.0  # 10.0
             h, dh_dx = robot.agent_barrier(obs)
             A1.value[0, :] = dh_dx @ robot.g()
             b1.value[0, :] = dh_dx @ robot.f() + alpha * h
-        elif robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D']:
+        elif robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'DynamicBicycle2D']:
             alpha1 = 2.0
             alpha2 = 2.0
             h, h_dot, dh_dot_dx = robot.agent_barrier(obs)
             A1.value[0, :] = dh_dot_dx @ robot.g()
             b1.value[0, :] = dh_dot_dx @ robot.f() + (alpha1+alpha2) * \
                 h_dot + alpha1*alpha2*h
-        cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
+        # cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
+        cbf_controller.solve(solver=cp.GUROBI)
 
         if cbf_controller.status != 'optimal':
             print("ERROR in QP")
