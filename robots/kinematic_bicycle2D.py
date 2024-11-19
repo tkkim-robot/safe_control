@@ -36,13 +36,15 @@ class KinematicBicycle2D:
         self.dt = dt
         self.robot_spec = robot_spec
         if 'wheel_base' not in self.robot_spec:
-            self.robot_spec['wheel_base'] = 2.0
+            self.robot_spec['wheel_base'] = 0.25
+        if 'radius' not in self.robot_spec:
+            self.robot_spec['radius'] = 0.25
         if 'front_axle_distance' not in self.robot_spec:
-            self.robot_spec['front_axle_distance'] = 1.0
+            self.robot_spec['front_axle_distance'] = 0.1
         if 'rear_axle_distance' not in self.robot_spec:
-            self.robot_spec['rear_axle_distance'] = 1.0
+            self.robot_spec['rear_axle_distance'] = 0.15
         if 'v_max' not in self.robot_spec:
-            self.robot_spec['v_max'] = 2.0
+            self.robot_spec['v_max'] = 1.0
         if 'delta_max' not in self.robot_spec:
             self.robot_spec['delta_max'] = np.deg2rad(30)
 
@@ -104,15 +106,12 @@ class KinematicBicycle2D:
             ])
 
     def step(self, X, U):
-        a, beta = U.flatten() 
-        delta = self.beta_to_delta(beta)  # Convert beta to delta
-        U_with_delta = np.array([a, delta]).reshape(-1, 1)  # Replace beta with delta
-
-        X = X + (self.f(X) + self.g(X) @ U_with_delta) * self.dt
+        X = X + (self.f(X) + self.g(X) @ U) * self.dt
         X[2, 0] = angle_normalize(X[2, 0])
         return X
    
     def nominal_input(self, X, G, d_min=0.05, k_theta=2.0, k_v=1.0):
+        # Stick with u(beta)
         '''
         nominal input for CBF-QP
         '''
@@ -123,14 +122,13 @@ class KinematicBicycle2D:
         error_theta = angle_normalize(theta_d - X[2, 0])
 
         beta = k_theta * error_theta  # Steering velocity in terms of slip angle
-        delta = self.beta_to_delta(beta)
         
         if abs(error_theta) > np.deg2rad(90):
             a = 0.0
         else:
             a = k_v * distance * np.cos(error_theta)
             
-        return np.array([a, delta]).reshape(-1, 1)
+        return np.array([a, beta]).reshape(-1, 1)
     
     def stop(self, X):
         return np.array([0, 0]).reshape(-1, 1)
@@ -141,8 +139,7 @@ class KinematicBicycle2D:
     def rotate_to(self, X, theta_des, k_theta=2.0):
         error_theta = angle_normalize(theta_des - X[2, 0])
         beta = k_theta * error_theta
-        delta = self.beta_to_delta(beta)
-        return np.array([0.0, delta]).reshape(-1, 1)
+        return np.array([0.0, beta]).reshape(-1, 1)
 
     def agent_barrier(self, X, obs, robot_radius, beta=1.01):
         '''Continuous Time High Order CBF'''

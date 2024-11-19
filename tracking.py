@@ -75,6 +75,17 @@ class LocalTrackingController:
             elif X0.shape[0] != 5:
                 raise ValueError(
                     "Invalid initial state dimension for DoubleIntegrator2D")
+        elif self.robot_spec['model'] == 'KinematicBicycle2D':
+            # v_max is set to 1.0 inside the robot class
+            if 'a_max' not in self.robot_spec:
+                self.robot_spec['a_max'] = 0.5
+            if 'delta_max' not in self.robot_spec:
+                self.robot_spec['delta_max'] = np.deg2rad(30)
+            if 'v_max' not in self.robot_spec:
+                self.robot_spec['v_max'] = 1.0
+            if X0.shape[0] == 3:  # set initial velocity to 0.0
+                X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
+            
             
         self.u_att = None
 
@@ -372,7 +383,7 @@ class LocalTrackingController:
             if self.robot_spec['model'] == 'DoubleIntegrator2D':
                 self.u_att = self.robot.rotate_to(goal_angle)
                 u_ref = self.robot.stop()
-            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D']:
+            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D']:
                 u_ref = self.robot.rotate_to(goal_angle)
         elif self.goal is None:
             u_ref = self.robot.stop()
@@ -505,19 +516,25 @@ def single_agent_main(control_type):
     ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here
     env_handler = env.Env()
 
+    # robot_spec = {
+    #     'model': 'DynamicUnicycle2D',
+    #     'w_max': 0.5,
+    #     'a_max': 0.5,
+    #     'fov_angle': 70.0,
+    #     'cam_range': 3.0,
+    #     'radius': 0.25
+    # }
     robot_spec = {
-        'model': 'DynamicUnicycle2D',
-        'w_max': 0.5,
+        'model': 'KinematicBicycle2D',
         'a_max': 0.5,
         'fov_angle': 70.0,
         'cam_range': 3.0,
-        'radius': 0.25
     }
     tracking_controller = LocalTrackingController(x_init, robot_spec,
                                                   control_type=control_type,
                                                   dt=dt,
                                                   show_animation=True,
-                                                  save_animation=True,
+                                                  save_animation=False,
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
 
@@ -607,6 +624,6 @@ if __name__ == "__main__":
 
     single_agent_main('mpc_cbf')
     #multi_agent_main('mpc_cbf', save_animation=True)
-    #single_agent_main('cbf_qp')
+    # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
     #single_agent_main('optimal_decay_mpc_cbf')
