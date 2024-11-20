@@ -75,7 +75,23 @@ class LocalTrackingController:
             elif X0.shape[0] != 5:
                 raise ValueError(
                     "Invalid initial state dimension for DoubleIntegrator2D")
+        elif self.robot_spec['model'] == 'Quad2D':
+            if 'mass' not in self.robot_spec:
+                self.robot_spec['mass'] = 0.5
+            if 'inertia' not in self.robot_spec:
+                self.robot_spec['inertia'] = 0.01
+            if 'r' not in self.robot_spec:
+                self.robot_spec['r'] = 0.1
+            if 'v_max' not in self.robot_spec:
+                self.robot_spec['v_max'] = 1.0
+            if X0.shape[0] == 3:
+                X0 = np.array([X0[0], X0[1], 0.0, 0.0, 0.0, X0[2]]).reshape(-1, 1)
+            elif X0.shape[0] == 2:
+                X0 = np.array([X0[0], X0[1], 0.0, 0.0, 0.0, 0.0]).reshape(-1, 1)
+            elif X0.shape[0] != 6:
+                raise ValueError("Invalid initial state dimension for Quad2D")
             
+
         self.u_att = None
 
         if 'fov_angle' not in self.robot_spec:
@@ -372,7 +388,7 @@ class LocalTrackingController:
             if self.robot_spec['model'] == 'DoubleIntegrator2D':
                 self.u_att = self.robot.rotate_to(goal_angle)
                 u_ref = self.robot.stop()
-            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D']:
+            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'Quad2D']:
                 u_ref = self.robot.rotate_to(goal_angle)
         elif self.goal is None:
             u_ref = self.robot.stop()
@@ -406,6 +422,7 @@ class LocalTrackingController:
                 return -2
 
         # 6. Step the robot
+        # print("control", u)
         self.robot.step(u, self.u_att)
         if self.show_animation:
             self.robot.render_plot()
@@ -489,24 +506,29 @@ def single_agent_main(control_type):
     dt = 0.05
 
     waypoints = [
-        [2, 2, math.pi/2],
-        [2, 12, 0],
-        [12, 12, 0],
-        [12, 2, 0]
+        [2, 6, np.pi/2],
+        [12, 6, np.pi/2]
+        # [2, 2, math.pi/2],
+        # [2, 12, 0],
+        # [12, 12, 0],
+        # [12, 2, 0]
     ]
     waypoints = np.array(waypoints, dtype=np.float64)
-    x_init = np.append(waypoints[0], 1.0)
+    # x_init = np.append(waypoints[0], 1.0)
+    x_init = waypoints[0]
     
     known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
                             [10.0, 7.3, 0.4],
                             [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
-    
+    known_obs = []
     plot_handler = plotting.Plotting(known_obs=known_obs)
     ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here
     env_handler = env.Env()
 
     robot_spec = {
-        'model': 'DynamicUnicycle2D',
+        'model': 'Quad2D',
+        # 'model': 'DynamicUnicycle2D',
+        # 'model': 'DoubleIntegrator2D',
         'w_max': 0.5,
         'a_max': 0.5,
         'fov_angle': 70.0,
@@ -521,7 +543,7 @@ def single_agent_main(control_type):
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
 
-    tracking_controller.obs = known_obs
+    # tracking_controller.obs = known_obs
     #tracking_controller.set_unknown_obs(unknown_obs)
     tracking_controller.set_waypoints(waypoints)
     unexpected_beh = tracking_controller.run_all_steps(tf=100)
@@ -531,7 +553,7 @@ def multi_agent_main(control_type, save_animation=False):
 
     # temporal
     waypoints = [
-        [2, 2, math.pi/2],
+        [2, 2, 0],
         [2, 12, 0],
         [12, 12, 0],
         [12, 2, 0]
@@ -546,7 +568,9 @@ def multi_agent_main(control_type, save_animation=False):
     env_handler = env.Env()
 
     robot_spec = {
-        'model': 'DynamicUnicycle2D', #'DoubleIntegrator2D'
+        # 'model': 'DynamicUnicycle2D', #'DoubleIntegrator2D'
+        # 'model': 'DoubleIntegrator2D',
+        'model': 'Quad2D',
         'w_max': 0.5,
         'a_max': 0.5,
         'fov_angle': 45.0,
@@ -564,7 +588,8 @@ def multi_agent_main(control_type, save_animation=False):
                                            env=env_handler)
 
     robot_spec = {
-        'model': 'DynamicUnicycle2D', #'DoubleIntegrator2D'
+        # 'model': 'DynamicUnicycle2D', #'DoubleIntegrator2D'
+        'model': 'Quad2D',
         'w_max': 1.0,
         'a_max': 1.5,
         'v_max': 2.0,

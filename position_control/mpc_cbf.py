@@ -23,6 +23,9 @@ class MPCCBF:
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
             self.Q = np.diag([50, 50, 20, 20])  # State cost matrix
             self.R = np.array([0.5, 0.5])  # Input cost matrix
+        elif self.robot_spec['model'] == 'Quad2D':
+            self.Q = np.diag([50, 50, 20, 20, 20, 20])
+            self.R = np.array([0.5, 0.5])
 
         # DT CBF parameters should scale from 0 to 1
         self.cbf_param = {}
@@ -37,6 +40,10 @@ class MPCCBF:
             self.cbf_param['alpha1'] = 0.15
             self.cbf_param['alpha2'] = 0.15
             self.n_states = 4
+        elif self.robot_spec['model'] == 'Quad2D':
+            self.cbf_param['alpha1'] = 0.15
+            self.cbf_param['alpha2'] = 0.15
+            self.n_states = 6
         self.n_controls = 2
 
         self.goal = np.array([0, 0])
@@ -75,10 +82,21 @@ class MPCCBF:
                 var_type='_tvp', var_name='alpha1', shape=(1, 1))
             _alpha2 = model.set_variable(
                 var_type='_tvp', var_name='alpha2', shape=(1, 1))
+        elif self.robot_spec['model'] == 'Quad2D':
+            _alpha1 = model.set_variable(
+                var_type='_tvp', var_name='alpha1', shape=(1, 1))
+            _alpha2 = model.set_variable(
+                var_type='_tvp', var_name='alpha2', shape=(1, 1))
 
         # System dynamics
         f_x = self.robot.f_casadi(_x)
         g_x = self.robot.g_casadi(_x)
+
+        # print("g_x shape:", g_x.shape)
+        # print("_u shape:", _u.shape)
+        # print("f_x shape:", f_x.shape)
+        # print("_x shape:", _x.shape)
+        
         x_next = _x + (f_x + ca.mtimes(g_x, _u)) * self.dt
 
         # Set right hand side of ODE
@@ -129,6 +147,11 @@ class MPCCBF:
                 [-self.robot_spec['ax_max'], -self.robot_spec['ay_max']])
             mpc.bounds['upper', '_u', 'u'] = np.array(
                 [self.robot_spec['ax_max'], self.robot_spec['ay_max']])
+        elif self.robot_spec['model'] == 'Quad2D':
+            mpc.bounds['lower', '_u', 'u'] = np.array(
+                [-self.robot_spec['v_max'], -self.robot_spec['v_max']])
+            mpc.bounds['upper', '_u', 'u'] = np.array(
+                [self.robot_spec['v_max'], self.robot_spec['v_max']])
 
         mpc = self.set_tvp(mpc)
         mpc = self.set_cbf_constraint(mpc)
@@ -191,7 +214,7 @@ class MPCCBF:
             _alpha = self.model.tvp['alpha']
             h_k, d_h = self.robot.agent_barrier_dt(_x, _u, _obs)
             cbf_constraint = d_h + _alpha * h_k
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D']:
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'Quad2D']:
             _alpha1 = self.model.tvp['alpha1']
             _alpha2 = self.model.tvp['alpha2']
             h_k, d_h, dd_h = self.robot.agent_barrier_dt(_x, _u, _obs)
@@ -232,6 +255,7 @@ class MPCCBF:
 
     def solve_control_problem(self, robot_state, control_ref, nearest_obs):
         # Set initial state and reference
+        # print(robot_state)
         self.mpc.x0 = robot_state
         self.mpc.set_initial_guess()
         goal = control_ref['goal']
