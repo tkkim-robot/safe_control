@@ -72,7 +72,6 @@ class BaseRobot:
                 from robots.quad2D import Quad2D
             self.robot = Quad2D(dt, robot_spec)
             self.yaw = self.X[2, 0]
-            # self.set_orientation()
 
         else:
             raise ValueError("Invalid robot model")
@@ -138,8 +137,10 @@ class BaseRobot:
         return self.yaw
 
     def get_yaw_rate(self):
-        if self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'Quad2D']:
+        if self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D']:
             return self.U[1, 0]
+        elif self.robot_spec['model'] == 'Quad2D':
+            return self.X[5, 0]
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
             if self.U_att is not None:
                 return self.U_att[0, 0]
@@ -209,8 +210,8 @@ class BaseRobot:
         if self.robot_spec['model'] == 'DoubleIntegrator2D' and self.U_att is not None:
             self.U_att = U_att.reshape(-1, 1)
             self.yaw = self.robot.step_rotate(self.yaw, self.U_att)
-        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D']:
-            self.yaw = self.X[2, 0]
+        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'Quad2D']:
+            self.yaw = self.X[2, 0] 
         return self.X
 
     def render_plot(self):

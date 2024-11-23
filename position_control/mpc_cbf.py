@@ -24,7 +24,7 @@ class MPCCBF:
             self.Q = np.diag([50, 50, 20, 20])  # State cost matrix
             self.R = np.array([0.5, 0.5])  # Input cost matrix
         elif self.robot_spec['model'] == 'Quad2D':
-            self.Q = np.diag([50, 50, 20, 20, 20, 20])
+            self.Q = np.diag([25, 25, 50, 10, 10, 50])
             self.R = np.array([0.5, 0.5])
 
         # DT CBF parameters should scale from 0 to 1
@@ -77,12 +77,7 @@ class MPCCBF:
         if self.robot_spec['model'] == 'Unicycle2D':
             _alpha = model.set_variable(
                 var_type='_tvp', var_name='alpha', shape=(1, 1))
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D']:
-            _alpha1 = model.set_variable(
-                var_type='_tvp', var_name='alpha1', shape=(1, 1))
-            _alpha2 = model.set_variable(
-                var_type='_tvp', var_name='alpha2', shape=(1, 1))
-        elif self.robot_spec['model'] == 'Quad2D':
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'Quad2D']:
             _alpha1 = model.set_variable(
                 var_type='_tvp', var_name='alpha1', shape=(1, 1))
             _alpha2 = model.set_variable(
@@ -149,9 +144,9 @@ class MPCCBF:
                 [self.robot_spec['ax_max'], self.robot_spec['ay_max']])
         elif self.robot_spec['model'] == 'Quad2D':
             mpc.bounds['lower', '_u', 'u'] = np.array(
-                [-self.robot_spec['v_max'], -self.robot_spec['v_max']])
+                [3.0, 3.0]) # TODO
             mpc.bounds['upper', '_u', 'u'] = np.array(
-                [self.robot_spec['v_max'], self.robot_spec['v_max']])
+                [self.robot_spec['f_max'], self.robot_spec['f_max']]) # T
 
         mpc = self.set_tvp(mpc)
         mpc = self.set_cbf_constraint(mpc)
@@ -184,7 +179,7 @@ class MPCCBF:
 
             if self.robot_spec['model'] == 'Unicycle2D':
                 tvp_template['_tvp', :, 'alpha'] = self.cbf_param['alpha']
-            elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D']:
+            elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'Quad2D']:
                 tvp_template['_tvp', :, 'alpha1'] = self.cbf_param['alpha1']
                 tvp_template['_tvp', :, 'alpha2'] = self.cbf_param['alpha2']
 

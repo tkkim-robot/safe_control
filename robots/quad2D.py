@@ -5,12 +5,12 @@ import casadi as ca
 state and control input
 X: [x, z, theta, x_dot, z_dot, theta_dot]
 U: [u_right, u_left]
----
+--- # TODO: Check the eqautions again cos
 x_dot = v_x
 z_dot = v_z
 theta_dot = theta_dot
-v_x_dot = -1/m * sin(theta) * (u_R + u_L)
-v_z_dot = -g + 1/m * sin(theta) * (u_R + u_L)
+v_x_dot = -1/m * (u_R * sin(theta) + u_L * sin(theta))
+v_z_dot = -g + 1/m * (u_R * cos(theta) + u_L * cos(theta))
 theta_dot = r/I * (u_R - u_L)
 """
 
@@ -38,13 +38,14 @@ class Quad2D:
         self.robot_spec = robot_spec
 
         if 'mass' not in self.robot_spec:
-            self.robot_spec['mass'] = 0.5
+            self.robot_spec['mass'] = 1.0
         if 'inertia' not in self.robot_spec:
-            self.robot_spec['inertia'] = 0.01
-        if 'r' not in self.robot_spec:
-            self.robot_spec['r'] = 0.5
-        if 'v_max' not in self.robot_spec:
-            self.robot_spec['v_max'] = 1.0
+            self.robot_spec['inertia'] = 1.0
+        if 'radius' not in self.robot_spec:
+            self.robot_spec['radius'] = 0.25
+        # TODO: Check this
+        if 'f_max' not in self.robot_spec:
+            self.robot_spec['f_max'] = 10.0
 
     def f(self, X, casadi=False):
         m, g = self.robot_spec['mass'], 9.81
@@ -70,7 +71,7 @@ class Quad2D:
     
     def g(self, X, casadi=False):
         """Control-dependent dynamics"""
-        m, I, r = self.robot_spec['mass'], self.robot_spec['inertia'], self.robot_spec['r']
+        m, I, r = self.robot_spec['mass'], self.robot_spec['inertia'], self.robot_spec['radius']
         theta = X[2, 0]
         if casadi:
             return ca.vertcat(
@@ -94,41 +95,50 @@ class Quad2D:
         # print("X", X.shape)
         return X
 
+    # TODO: fix nominal input
     def nominal_input(self, X, G, d_min=0.05, k_omega=2.0, k_a=1.0, k_v=1.0):
-        # print("X", X)
-        '''
+        """
         Nominal input for CBF-QP, outputting u_right and u_left.
-        '''
-        G = np.copy(G.reshape(-1, 1))  # goal state
-        v_max = self.robot_spec['v_max']
-        m, I, r = self.robot_spec['mass'], self.robot_spec['inertia'], self.robot_spec['r']
+        
+        Parameters:
+            X: Current state [x, z, theta, x_dot, z_dot, theta_dot]
+            G: Goal state [x_goal, z_goal, theta_goal]
+            d_min: Minimum allowable distance to the goal
+            k_omega: Gain for angular velocity control
+            k_a: Gain for linear acceleration control
+            k_v: Gain for velocity damping
+            
+        Returns:
+            Nominal control inputs [u_right, u_left]
+        """
+        G = np.copy(G.reshape(-1, 1))  # Ensure goal state is a column vector
+        f_max = self.robot_spec['f_max']
+        m, I, r = self.robot_spec['mass'], self.robot_spec['inertia'], self.robot_spec['radius']
 
         # Calculate distance and direction to the goal
         distance = max(np.linalg.norm(X[0:2, 0] - G[0:2, 0]) - d_min, 0.0)
         theta_d = np.arctan2(G[1, 0] - X[1, 0], G[0, 0] - X[0, 0])
         error_theta = angle_normalize(theta_d - X[2, 0])
 
-        # Desired angular velocity
+        # Linear velocity control to reach the goal
+        v_desired = k_v * distance
+        a_x = k_a * (v_desired - X[3, 0])
+        a_z = k_a * (0.0 - X[4, 0])  # Ensure vertical velocity stabilizes at zero
+
+        # Angular velocity control to align orientation
         omega = k_omega * error_theta
 
-        # Determine linear velocity
-        if abs(error_theta) > np.deg2rad(90):
-            v = 0.0  # Stop moving forward if facing opposite to the goal
-        else:
-            v = min(k_v * distance, v_max) * np.cos(error_theta)
+        # Convert desired accelerations and angular velocity to force inputs
+        u_total = m * np.sqrt(a_x**2 + (a_z + 9.81)**2)
+        u_diff = I * omega / r
 
-        # Calculate forward acceleration to achieve desired velocity
-        accel = k_a * (v - X[3, 0])
-
-        # Calculate control inputs u_right and u_left based on desired accel and omega
-        u_right = (m * accel + I * omega / (2 * r))
-        u_left = (m * accel - I * omega / (2 * r))
-
-        u_right = 0
-        u_left = 0
+        # Ensure forces are within physical limits
+        u_right = min(max((u_total + u_diff) / 2, 0), f_max)
+        u_left = min(max((u_total - u_diff) / 2, 0), f_max)
 
         return np.array([u_right, u_left]).reshape(-1, 1)
     
+    # TODO: fix stop
     def stop(self, X, k_a=1.0, k_theta=1.0):
         """Generate input to decelerate the quadrotor in both linear and angular velocities."""
         # Desired velocities are zero for vx, vz, and theta_dot
@@ -142,11 +152,11 @@ class Quad2D:
         accel_theta = k_theta * (desired_velocity - X[5, 0])
 
         # Return control inputs as a 3x1 vector (x, z, theta)
-        return np.array([accel_x, accel_z, accel_theta]).reshape(-1, 1) 
+        return np.array([9.81/2+accel_z, 9.81/2+accel_z]).reshape(-1, 1) 
     
     def has_stopped(self, X, tol=0.05):
         """Check if quadrotor has stopped within tolerance."""
-        return np.linalg.norm(X[3:-1, 0]) < tol
+        return np.linalg.norm(X[3:5, 0]) < tol
     
     def rotate_to(self, X, theta_des, k_omega=2.0):
         """Generate control input to rotate the quadrotor to a target angle."""
@@ -191,22 +201,7 @@ class Quad2D:
         dd_h = h_k2 - 2 * h_k1 + h_k
         # hocbf_2nd_order = h_ddot + (gamma1 + gamma2) * h_dot + (gamma1 * gamma2) * h_k
 
-        h_k = np.zeros_like(h_k)
-        d_h = np.zeros_like(d_h)
-        dd_h = np.zeros_like(dd_h)
+        # h_k = np.zeros_like(h_k)
+        # d_h = np.zeros_like(d_h)
+        # dd_h = np.zeros_like(dd_h)
         return h_k, d_h, dd_h
-    
-    def stop(self, X, k_a=1.0, k_theta=1.0):
-        """Generate input to decelerate the quadrotor in both linear and angular velocities."""
-        # Desired velocities are zero for vx, vz, and theta_dot
-        desired_velocity = 0.0
-
-        # Deceleration for x and z velocities
-        accel_x = k_a * (desired_velocity - X[3, 0])
-        accel_z = k_a * (desired_velocity - X[4, 0])
-
-        # Deceleration for angular velocity theta_dot
-        accel_theta = k_theta * (desired_velocity - X[5, 0])
-
-        # Return control inputs as a 3x1 vector (x, z, theta)
-        return np.array([accel_x, accel_z, accel_theta]).reshape(-1, 1)
