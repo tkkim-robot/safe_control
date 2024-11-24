@@ -17,8 +17,8 @@ class CBFQP:
             self.cbf_param['alpha1'] = 1.5
             self.cbf_param['alpha2'] = 1.5
         elif self.robot_spec['model'] == 'KinematicBicycle2D':
-            self.cbf_param['alpha1'] = 1.5
-            self.cbf_param['alpha2'] = 1.5
+            self.cbf_param['alpha1'] = 1.0
+            self.cbf_param['alpha2'] = 1.0
 
         self.setup_control_problem()
 
@@ -44,7 +44,7 @@ class CBFQP:
         elif self.robot_spec['model'] == 'KinematicBicycle2D':
             constraints = [self.A1 @ self.u + self.b1 >= 0,
                            cp.abs(self.u[0]) <= self.robot_spec['a_max'],
-                           cp.abs(self.u[1]) <= self.robot_spec['delta_max']]
+                           cp.abs(self.u[1]) <= self.robot_spec['beta_max']]
         self.cbf_controller = cp.Problem(objective, constraints)
 
     def solve_control_problem(self, robot_state, control_ref, nearest_obs):
@@ -65,8 +65,11 @@ class CBFQP:
         self.u_ref.value = control_ref['u_ref']
 
         # 4. Solve this yields a new 'self.u'
-        self.cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
+        # self.cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
+        self.cbf_controller.solve(solver=cp.GUROBI)
 
+        print(f'h: {h} | value: {self.A1.value[0,:] @ self.u.value + self.b1.value[0,:]}')
+        
         # Check QP error in tracking.py
         self.status = self.cbf_controller.status
         # if self.cbf_controller.status != 'optimal':

@@ -213,7 +213,9 @@ class LocalTrackingController:
                 )
             )
 
-    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi, obs_num=5):
+    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=5):
+        # TODO: doesn't work with quad2D 
+        
         def angle_normalize(x):
             return (((x + np.pi) % (2 * np.pi)) - np.pi)
         '''
@@ -373,6 +375,7 @@ class LocalTrackingController:
         self.nearest_multi_obs = self.get_nearest_unpassed_obs(detected_obs, obs_num=self.num_constraints)
         if self.nearest_multi_obs is not None:
             self.nearest_obs = self.nearest_multi_obs[0].reshape(3,1)
+            print(self.nearest_obs)
         else:
             self.nearest_obs = None
 
@@ -529,6 +532,7 @@ def single_agent_main(control_type):
         'a_max': 0.5,
         'fov_angle': 70.0,
         'cam_range': 3.0,
+        'radius': 0.5
     }
     tracking_controller = LocalTrackingController(x_init, robot_spec,
                                                   control_type=control_type,
@@ -622,8 +626,8 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main('mpc_cbf')
+    # single_agent_main('mpc_cbf')
     #multi_agent_main('mpc_cbf', save_animation=True)
-    # single_agent_main('cbf_qp')
+    single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
     #single_agent_main('optimal_decay_mpc_cbf')

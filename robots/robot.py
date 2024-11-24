@@ -95,12 +95,12 @@ class BaseRobot:
         
         if self.robot_spec['model'] == 'KinematicBicycle2D':
             self.wheel_base = self.robot_spec['wheel_base']
+            self.body_width = self.robot_spec['body_width']
             self.front_axle_distance = self.robot_spec['front_axle_distance']
             self.rear_axle_distance = self.robot_spec['rear_axle_distance']
 
             # Define robot dimensions
             self.body_length = self.front_axle_distance + self.rear_axle_distance
-            self.body_width = 0.15  # Set width of the rectangle body
             
             # Add vehicle body as a rectangle
             self.vehicle_body = ax.add_patch(
@@ -198,9 +198,9 @@ class BaseRobot:
         return self.robot.g(X, casadi=True)
 
     def nominal_input(self, goal, d_min=0.05, k_omega = 2.0, k_a = 1.0, k_v = 1.0):
-        if self.robot_spec['model'] in ['Unicycle2D', 'KinematicBicycle2D']:
+        if self.robot_spec['model'] in ['Unicycle2D']:
             return self.robot.nominal_input(self.X, goal, d_min, k_omega, k_v)
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D']:
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'KinematicBicycle2D']:
             return self.robot.nominal_input(self.X, goal, d_min, k_omega, k_a, k_v)
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
             return self.robot.nominal_input(self.X, goal, d_min, k_v, k_a)
@@ -542,7 +542,7 @@ if __name__ == "__main__":
     ax.set_ylabel("Y")
     ax.set_aspect(1)
 
-    dt = 0.1
+    dt = 0.02
     tf = 20
     num_steps = int(tf/dt)
 

@@ -36,17 +36,23 @@ class KinematicBicycle2D:
         self.dt = dt
         self.robot_spec = robot_spec
         if 'wheel_base' not in self.robot_spec:
-            self.robot_spec['wheel_base'] = 0.25
+            self.robot_spec['wheel_base'] = 0.5
+        if 'body_width' not in self.robot_spec:
+            self.robot_spec['body_width'] = 0.3
         if 'radius' not in self.robot_spec:
-            self.robot_spec['radius'] = 0.25
+            self.robot_spec['radius'] = 0.5
         if 'front_axle_distance' not in self.robot_spec:
-            self.robot_spec['front_axle_distance'] = 0.1
+            self.robot_spec['front_axle_distance'] = 0.2
         if 'rear_axle_distance' not in self.robot_spec:
-            self.robot_spec['rear_axle_distance'] = 0.15
+            self.robot_spec['rear_axle_distance'] = 0.3
         if 'v_max' not in self.robot_spec:
             self.robot_spec['v_max'] = 1.0
+        if 'a_max' not in self.robot_spec:
+            self.robot_spec['a_max'] = 0.5
         if 'delta_max' not in self.robot_spec:
             self.robot_spec['delta_max'] = np.deg2rad(30)
+        if 'beta_max' not in self.robot_spec:
+            self.robot_spec['beta_max'] = self.beta(self.robot_spec['delta_max'])
 
     def beta(self, delta):
         # Computes the slip angle beta
@@ -110,24 +116,28 @@ class KinematicBicycle2D:
         X[2, 0] = angle_normalize(X[2, 0])
         return X
    
-    def nominal_input(self, X, G, d_min=0.05, k_theta=2.0, k_v=1.0):
-        # Stick with u(beta)
+    def nominal_input(self, X, G, d_min=0.05, k_theta=0.5, k_a = 1.5, k_v=0.5):
         '''
         nominal input for CBF-QP
         '''
         G = np.copy(G.reshape(-1, 1))  # goal state
+        v_max = self.robot_spec['v_max']
+        delta_max = self.robot_spec['delta_max']
 
         distance = max(np.linalg.norm(X[0:2, 0] - G[0:2, 0]) - d_min, 0.05)
         theta_d = np.arctan2(G[1, 0] - X[1, 0], G[0, 0] - X[0, 0])
         error_theta = angle_normalize(theta_d - X[2, 0])
 
-        beta = k_theta * error_theta  # Steering velocity in terms of slip angle
-        
+        # Steering angle and slip angle
+        delta = np.clip(k_theta * error_theta, -delta_max, delta_max)  # Steering angle
+        beta = self.beta(delta)  # Slip angle conversion
+                
         if abs(error_theta) > np.deg2rad(90):
-            a = 0.0
+            v = 0.0
         else:
-            a = k_v * distance * np.cos(error_theta)
+            v = min(k_v * distance * np.cos(error_theta), v_max)
             
+        a = k_a * (v - X[3, 0])
         return np.array([a, beta]).reshape(-1, 1)
     
     def stop(self, X):
