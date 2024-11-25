@@ -98,8 +98,8 @@ class KinematicBicycle2D:
         L_r = self.robot_spec['rear_axle_distance']
         if casadi:
             g = ca.SX.zeros(4, 2)
-            g[0, 0] = -v * ca.sin(theta) 
-            g[1, 0] = v * ca.cos(theta)  
+            g[0, 1] = -v * ca.sin(theta) 
+            g[1, 1] = v * ca.cos(theta)  
             g[2, 1] = v / L_r       
             g[3, 0] = 1                  
             return g
@@ -151,7 +151,7 @@ class KinematicBicycle2D:
         beta = k_theta * error_theta
         return np.array([0.0, beta]).reshape(-1, 1)
 
-    def agent_barrier(self, X, obs, robot_radius, beta=1.01):
+    def agent_barrier(self, X, obs, robot_radius, beta=1.25):
         '''Continuous Time High Order CBF'''
         obsX = obs[0:2]
         d_min = obs[2][0] + robot_radius  # obs radius + robot radius
@@ -165,13 +165,13 @@ class KinematicBicycle2D:
             [[0, 0]]), axis=1) + 2 * (X[0:2] - obsX[0:2]).T @ df_dx[0:2, :]
         return h, h_dot, dh_dot_dx
 
-    def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.01):
+    def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.25):
         '''Discrete Time High Order CBF'''
         # Dynamics equations for the next states
         x_k1 = self.step(x_k, u_k)
         x_k2 = self.step(x_k1, u_k)
 
-        def h(x, obs, robot_radius, beta=1.01):
+        def h(x, obs, robot_radius, beta=1.25):
             '''Computes CBF h(x) = ||x-x_obs||^2 - beta*d_min^2'''
             x_obs = obs[0]
             y_obs = obs[1]

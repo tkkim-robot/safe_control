@@ -24,8 +24,8 @@ class MPCCBF:
             self.Q = np.diag([50, 50, 20, 20])  # State cost matrix
             self.R = np.array([0.5, 0.5])  # Input cost matrix
         elif self.robot_spec['model'] == 'KinematicBicycle2D':
-            self.Q = np.diag([50, 50, 0.01, 1])  # State cost matrix
-            self.R = np.array([0.5, 0.5])  # Input cost matrix
+            self.Q = np.diag([50, 50, 1, 1])  # State cost matrix
+            self.R = np.array([0.5, 50.0])  # Input cost matrix
 
         # DT CBF parameters should scale from 0 to 1
         self.cbf_param = {}
@@ -41,8 +41,8 @@ class MPCCBF:
             self.cbf_param['alpha2'] = 0.15
             self.n_states = 4
         elif self.robot_spec['model'] == 'KinematicBicycle2D':
-            self.cbf_param['alpha1'] = 0.05
-            self.cbf_param['alpha2'] = 0.05
+            self.cbf_param['alpha1'] = 0.15
+            self.cbf_param['alpha2'] = 0.15
             self.n_states = 4
         self.n_controls = 2
 
