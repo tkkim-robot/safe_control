@@ -87,81 +87,68 @@ class Quad2D:
         X[2, 0] = angle_normalize(X[2, 0])
         return X
     
-    def nominal_input(self, X, G, d_min=0.5, Kp_pos=1.0, theta_max=np.pi/4):
+    def nominal_input(self, X, G, k_px=3.0, k_dx=0.5, k_pz=0.1, k_dz=0.5,
+                k_p_theta=0.05, k_d_theta=0.05):
+        """
+        Compute the nominal input (rotor forces) for the quad2d dynamics.
+        Operates without any programming loops.
+        """
+
         m, g = self.robot_spec['mass'], 9.81
         f_min, f_max = self.robot_spec['f_min'], self.robot_spec['f_max']
         r, I = self.robot_spec['radius'], self.robot_spec['inertia']
 
-        # Unpack state variables
-        x, z, theta, x_dot, z_dot, theta_dot = X.flatten()
-        x_goal, z_goal = G
-        x_error, z_error = x_goal - x - d_min, z_goal - z - d_min
-
-        # Vertical control (F_z)
-        desired_v_z = Kp_pos * z_error
-        v_z_error = desired_v_z - z_dot
-        F_z = (m * v_z_error) +  (m * g) / np.cos(theta)
-
-        # Horizontal control (F_theta)
-        desired_theta = np.arctan2(x_error, z_error) # - np.pi * 3 / 4 + 
-        desired_theta = angle_normalize(desired_theta)
-        theta_error = desired_theta - theta
-        # theta_error = np.clip(theta_error, -theta_max, theta_max)
-        F_theta = - I * theta_error * 0.1
-
-        print(theta_error * 180 / np.pi)
-
-        print("desired_theta: ", desired_theta * 180 / np.pi, "theta: ", theta * 180 / np.pi, "theta_error: ", theta_error * 180 / np.pi)
-
-
-        # Distribute thrust between left and right motors
-        u_right = np.clip(F_z / 2 + F_theta, f_min, f_max)
-        u_left = np.clip(F_z / 2 - F_theta, f_min, f_max)
-
-        return np.array([u_right, u_left]).reshape(-1, 1)
-    
-    def stop(self, X, Kp_stop=2.0, Kd_stop=0.5):
-        """
-        Compute control inputs to bring the quadrotor to a halt with gravity compensation.
-        
-        Args:
-            X (np.ndarray): Current state [x, z, theta, x_dot, z_dot, theta_dot].
-            Kp_stop (float): Proportional gain for stopping. Defaults to 2.0.
-            Kd_stop (float): Derivative gain for damping. Defaults to 0.5.
-        
-        Returns:
-            np.ndarray: Control inputs [u_right, u_left].
-        """
-        m, g = self.robot_spec['mass'], 9.81
-        f_min, f_max = self.robot_spec['f_min'], self.robot_spec['f_max']
-        r, I = self.robot_spec['radius'], self.robot_spec['inertia']
-
-        # Unpack state variables
         x, z, theta, x_dot, z_dot, theta_dot = X.flatten()
 
-        # Gravity compensation for maintaining altitude
-        F_total = m * g / np.cos(theta)
+        # Goal position
+        x_goal, z_goal = G.flatten()
 
-        # Linear velocity stopping force
-        F_x = -Kp_stop * x_dot  # Horizontal stop force
-        F_z = -Kp_stop * z_dot  # Vertical stop force
+        # Position and velocity errors
+        e_x = x_goal - x
+        e_z = z_goal - z
+        e_x_dot = -x_dot  # Assuming desired velocity is zero
+        e_z_dot = -z_dot
 
-        # Angular velocity stopping torque
-        tau = -Kp_stop * theta_dot - Kd_stop * theta  # Stop rotation and stabilize theta
+        # Desired accelerations (Outer Loop)
+        x_ddot_d = k_px * e_x + k_dx * e_x_dot
+        z_ddot_d = k_pz * e_z + k_dz * e_z_dot
 
-        # Adjust total thrust to incorporate stopping in x and z directions
-        F_total_adjusted = F_total
+        # Desired total acceleration vector
+        a_d_x = x_ddot_d
+        a_d_z = z_ddot_d + g  # Compensate for gravity
 
-        # Distribute forces for left and right rotors
-        u_right = (F_total_adjusted / 2) + (tau / (2 * r))
-        u_left = (F_total_adjusted / 2) - (tau / (2 * r))
+        # Desired thrust magnitude
+        a_d_norm = np.sqrt(a_d_x**2 + a_d_z**2)
+        T = m * a_d_norm
 
-        # Clip thrusts to within physical limits
-        u_right = np.clip(u_right, f_min, f_max)
-        u_left = np.clip(u_left, f_min, f_max)
+        # Desired orientation
+        theta_d = - np.arctan2(a_d_x, a_d_z) # sign convention
 
-        return np.array([u_right, u_left]).reshape(-1, 1)
+        print("theta_d: ", theta_d)
+
+        # Orientation error (Inner Loop)
+        e_theta = theta_d - theta
+        e_theta = np.arctan2(np.sin(e_theta), np.cos(e_theta))  # Normalize angle to [-π, π]
+        e_theta_dot = -theta_dot  # Assuming desired angular velocity is zero
+
+        # Desired torque
+        tau = k_p_theta * e_theta + k_d_theta * e_theta_dot
+        # clip tau
+        print("tau: ", tau)
+        tau = np.clip(tau, -1, 1)
+
+        # Compute rotor forces
+        F_r = (T + tau / r) / 2.0
+        F_l = (T - tau / r) / 2.0
+
+        # Enforce constraints
+        F_r = np.clip(F_r, f_min, f_max)
+        F_l = np.clip(F_l, f_min, f_max)
+
+        return np.array([F_r, F_l]).reshape(-1, 1)
     
+    def stop(self, X):
+        raise NotImplementedError("Stop function not implemented for Quad2D")
         
     def has_stopped(self, X, tol=0.05):
         """Check if quadrotor has stopped within tolerance."""

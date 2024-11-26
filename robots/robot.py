@@ -458,6 +458,10 @@ class BaseRobot:
         return fov_left, fov_right
 
     def is_in_fov(self, point, is_in_cam_range=False):
+        if self.robot_spec['model'] == 'Quad2D':
+            # These dynmaics do not have a stop() method
+            return True
+
         robot_pos = self.get_position()
         robot_yaw = self.get_orientation()
 
