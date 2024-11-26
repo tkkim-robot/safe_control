@@ -144,9 +144,9 @@ class MPCCBF:
                 [self.robot_spec['ax_max'], self.robot_spec['ay_max']])
         elif self.robot_spec['model'] == 'Quad2D':
             mpc.bounds['lower', '_u', 'u'] = np.array(
-                [3.0, 3.0]) # TODO
+                [self.robot_spec['f_min'], self.robot_spec['f_min']])
             mpc.bounds['upper', '_u', 'u'] = np.array(
-                [self.robot_spec['f_max'], self.robot_spec['f_max']]) # T
+                [self.robot_spec['f_max'], self.robot_spec['f_max']])
 
         mpc = self.set_tvp(mpc)
         mpc = self.set_cbf_constraint(mpc)

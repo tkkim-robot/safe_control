@@ -1,19 +1,6 @@
 import numpy as np
 import casadi as ca
 
-"""
-state and control input
-X: [x, z, theta, x_dot, z_dot, theta_dot]
-U: [u_right, u_left]
---- # TODO: Check the eqautions again cos
-x_dot = v_x
-z_dot = v_z
-theta_dot = theta_dot
-v_x_dot = -1/m * (u_R * sin(theta) + u_L * sin(theta))
-v_z_dot = -g + 1/m * (u_R * cos(theta) + u_L * cos(theta))
-theta_dot = r/I * (u_R - u_L)
-"""
-
 
 def angle_normalize(x):
     if isinstance(x, (np.ndarray, float, int)):
@@ -31,6 +18,15 @@ class Quad2D:
         '''
             X: [x, z, theta, x_dot, z_dot, theta_dot]
             U: [u_right, u_left]
+            G: [x_goal, z_goal]
+            
+            x_dot = v_x
+            z_dot = v_z
+            theta_dot = theta_dot
+            v_x_dot = -1/m * sin(theta) * (u_right + u_left)
+            v_z_dot = -g + 1/m * cos(theta) * (u_right + u_left)
+            theta_dot = r/I * (u_right - u_left)
+
             cbf: h(x) = ||x-x_obs||^2 - beta*d_min^2
             relative degree: 2
         '''
@@ -43,7 +39,9 @@ class Quad2D:
             self.robot_spec['inertia'] = 1.0
         if 'radius' not in self.robot_spec:
             self.robot_spec['radius'] = 0.25
-        # TODO: Check this
+
+        if 'f_min' not in self.robot_spec:
+            self.robot_spec['f_min'] = 3.0
         if 'f_max' not in self.robot_spec:
             self.robot_spec['f_max'] = 10.0
 
@@ -85,75 +83,86 @@ class Quad2D:
             ]).T
         
     def step(self, X, U):
-        # print("X", X.shape)
-        # print("U", U.shape)
-        # print("f(X)", self.f(X).shape)
-        # print("g(X)", self.g(X).shape)
-        # print("X + f(X) + g(X) @ U", (self.f(X) + self.g(X) @ U).shape)
         X = X + (self.f(X) + self.g(X) @ U) * self.dt
         X[2, 0] = angle_normalize(X[2, 0])
-        # print("X", X.shape)
         return X
+    
+    def nominal_input(self, X, G, d_min=0.5, Kp_pos=1.0, theta_max=np.pi/4):
+        m, g = self.robot_spec['mass'], 9.81
+        f_min, f_max = self.robot_spec['f_min'], self.robot_spec['f_max']
+        r, I = self.robot_spec['radius'], self.robot_spec['inertia']
 
-    # TODO: fix nominal input
-    def nominal_input(self, X, G, d_min=0.05, k_omega=2.0, k_a=1.0, k_v=1.0):
-        """
-        Nominal input for CBF-QP, outputting u_right and u_left.
-        
-        Parameters:
-            X: Current state [x, z, theta, x_dot, z_dot, theta_dot]
-            G: Goal state [x_goal, z_goal, theta_goal]
-            d_min: Minimum allowable distance to the goal
-            k_omega: Gain for angular velocity control
-            k_a: Gain for linear acceleration control
-            k_v: Gain for velocity damping
-            
-        Returns:
-            Nominal control inputs [u_right, u_left]
-        """
-        G = np.copy(G.reshape(-1, 1))  # Ensure goal state is a column vector
-        f_max = self.robot_spec['f_max']
-        m, I, r = self.robot_spec['mass'], self.robot_spec['inertia'], self.robot_spec['radius']
+        # Unpack state variables
+        x, z, theta, x_dot, z_dot, theta_dot = X.flatten()
+        x_goal, z_goal = G
+        x_error, z_error = x_goal - x - d_min, z_goal - z - d_min
 
-        # Calculate distance and direction to the goal
-        distance = max(np.linalg.norm(X[0:2, 0] - G[0:2, 0]) - d_min, 0.0)
-        theta_d = np.arctan2(G[1, 0] - X[1, 0], G[0, 0] - X[0, 0])
-        error_theta = angle_normalize(theta_d - X[2, 0])
+        # Vertical control (F_z)
+        desired_v_z = Kp_pos * z_error
+        v_z_error = desired_v_z - z_dot
+        F_z = (m * v_z_error) +  (m * g) / np.cos(theta)
 
-        # Linear velocity control to reach the goal
-        v_desired = k_v * distance
-        a_x = k_a * (v_desired - X[3, 0])
-        a_z = k_a * (0.0 - X[4, 0])  # Ensure vertical velocity stabilizes at zero
+        # Horizontal control (F_theta)
+        desired_theta = np.arctan2(x_error, z_error) # - np.pi * 3 / 4 + 
+        desired_theta = angle_normalize(desired_theta)
+        theta_error = desired_theta - theta
+        # theta_error = np.clip(theta_error, -theta_max, theta_max)
+        F_theta = - I * theta_error * 0.1
 
-        # Angular velocity control to align orientation
-        omega = k_omega * error_theta
+        print(theta_error * 180 / np.pi)
 
-        # Convert desired accelerations and angular velocity to force inputs
-        u_total = m * np.sqrt(a_x**2 + (a_z + 9.81)**2)
-        u_diff = I * omega / r
+        print("desired_theta: ", desired_theta * 180 / np.pi, "theta: ", theta * 180 / np.pi, "theta_error: ", theta_error * 180 / np.pi)
 
-        # Ensure forces are within physical limits
-        u_right = min(max((u_total + u_diff) / 2, 0), f_max)
-        u_left = min(max((u_total - u_diff) / 2, 0), f_max)
+
+        # Distribute thrust between left and right motors
+        u_right = np.clip(F_z / 2 + F_theta, f_min, f_max)
+        u_left = np.clip(F_z / 2 - F_theta, f_min, f_max)
 
         return np.array([u_right, u_left]).reshape(-1, 1)
     
-    # TODO: fix stop
-    def stop(self, X, k_a=1.0, k_theta=1.0):
-        """Generate input to decelerate the quadrotor in both linear and angular velocities."""
-        # Desired velocities are zero for vx, vz, and theta_dot
-        desired_velocity = 0.0
+    def stop(self, X, Kp_stop=2.0, Kd_stop=0.5):
+        """
+        Compute control inputs to bring the quadrotor to a halt with gravity compensation.
+        
+        Args:
+            X (np.ndarray): Current state [x, z, theta, x_dot, z_dot, theta_dot].
+            Kp_stop (float): Proportional gain for stopping. Defaults to 2.0.
+            Kd_stop (float): Derivative gain for damping. Defaults to 0.5.
+        
+        Returns:
+            np.ndarray: Control inputs [u_right, u_left].
+        """
+        m, g = self.robot_spec['mass'], 9.81
+        f_min, f_max = self.robot_spec['f_min'], self.robot_spec['f_max']
+        r, I = self.robot_spec['radius'], self.robot_spec['inertia']
 
-        # Deceleration for x and z velocities
-        accel_x = k_a * (desired_velocity - X[3, 0])
-        accel_z = k_a * (desired_velocity - X[4, 0])
+        # Unpack state variables
+        x, z, theta, x_dot, z_dot, theta_dot = X.flatten()
 
-        # Deceleration for angular velocity theta_dot
-        accel_theta = k_theta * (desired_velocity - X[5, 0])
+        # Gravity compensation for maintaining altitude
+        F_total = m * g / np.cos(theta)
 
-        # Return control inputs as a 3x1 vector (x, z, theta)
-        return np.array([9.81/2+accel_z, 9.81/2+accel_z]).reshape(-1, 1) 
+        # Linear velocity stopping force
+        F_x = -Kp_stop * x_dot  # Horizontal stop force
+        F_z = -Kp_stop * z_dot  # Vertical stop force
+
+        # Angular velocity stopping torque
+        tau = -Kp_stop * theta_dot - Kd_stop * theta  # Stop rotation and stabilize theta
+
+        # Adjust total thrust to incorporate stopping in x and z directions
+        F_total_adjusted = F_total
+
+        # Distribute forces for left and right rotors
+        u_right = (F_total_adjusted / 2) + (tau / (2 * r))
+        u_left = (F_total_adjusted / 2) - (tau / (2 * r))
+
+        # Clip thrusts to within physical limits
+        u_right = np.clip(u_right, f_min, f_max)
+        u_left = np.clip(u_left, f_min, f_max)
+
+        return np.array([u_right, u_left]).reshape(-1, 1)
     
+        
     def has_stopped(self, X, tol=0.05):
         """Check if quadrotor has stopped within tolerance."""
         return np.linalg.norm(X[3:5, 0]) < tol

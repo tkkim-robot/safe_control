@@ -73,4 +73,8 @@ class CBFQP:
         # if self.cbf_controller.status != 'optimal':
         #     raise QPError("CBF-QP optimization failed")
 
+        # print(f"h: {h}, h_dot: {h_dot}, u: {self.u.value}")
+        # print(f"A1: {self.A1.value}, b1: {self.b1.value}")
+
+
         return self.u.value

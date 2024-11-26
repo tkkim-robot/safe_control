@@ -77,15 +77,17 @@ class LocalTrackingController:
                     "Invalid initial state dimension for DoubleIntegrator2D")
         elif self.robot_spec['model'] == 'Quad2D':
             if 'mass' not in self.robot_spec:
-                self.robot_spec['mass'] = 0.5
+                self.robot_spec['mass'] = 1.0
             if 'inertia' not in self.robot_spec:
                 self.robot_spec['inertia'] = 0.01
             if 'r' not in self.robot_spec:
-                self.robot_spec['r'] = 0.1
-            if 'v_max' not in self.robot_spec:
-                self.robot_spec['v_max'] = 1.0
+                self.robot_spec['r'] = 0.25
+            if 'f_min' not in self.robot_spec:
+                self.robot_spec['f_min'] = 1.0
+            if 'f_max' not in self.robot_spec:
+                self.robot_spec['f_max'] = 10.0
             if X0.shape[0] == 3:
-                X0 = np.array([X0[0], X0[1], 0.0, 0.0, 0.0, X0[2]]).reshape(-1, 1)
+                X0 = np.array([X0[0], X0[1], X0[2], 0.0, 0.0, 0.0]).reshape(-1, 1)
             elif X0.shape[0] == 2:
                 X0 = np.array([X0[0], X0[1], 0.0, 0.0, 0.0, 0.0]).reshape(-1, 1)
             elif X0.shape[0] != 6:
@@ -218,7 +220,7 @@ class LocalTrackingController:
                 )
             )
 
-    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi, obs_num=5):
+    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=5):
         def angle_normalize(x):
             return (((x + np.pi) % (2 * np.pi)) - np.pi)
         '''
@@ -241,8 +243,12 @@ class LocalTrackingController:
         
         unpassed_obs = []
         robot_pos = self.robot.get_position()
-        robot_yaw = self.robot.get_orientation()
-        
+        if self.robot_spec['model'] == 'Quad2D':
+            robot_yaw = self.robot.get_orientation() + np.pi/2
+        else:
+            robot_yaw = self.robot.get_orientation()
+        # robot_yaw = self.robot.get_orientation()
+
         # Iterate through each detected obstacle
         for obs in all_obs:
             obs_pos = np.array([obs[0], obs[1]])
@@ -323,6 +329,8 @@ class LocalTrackingController:
             current_angle = self.robot.get_orientation()
             goal_angle = np.arctan2(self.waypoints[0][1] - self.robot.X[1, 0],
                                     self.waypoints[0][0] - self.robot.X[0, 0])
+            if self.robot_spec['model'] == 'Quad2D': # Quad2D skip 'rotate' state since there is no yaw angle
+                self.state_machine = 'track'
             if abs(current_angle - goal_angle) > self.rotation_threshold:
                 return self.waypoints[0][:2]
             else:
@@ -371,6 +379,9 @@ class LocalTrackingController:
                 self.goal = self.update_goal()
         else:
             self.goal = self.update_goal()
+
+        print(self.state_machine)
+        print(self.goal)
 
         # 1. Update the detected obstacles
         detected_obs = self.robot.detect_unknown_obs(self.unknown_obs)
@@ -422,8 +433,9 @@ class LocalTrackingController:
                 return -2
 
         # 6. Step the robot
-        # print("control", u)
+        print("control", u)
         self.robot.step(u, self.u_att)
+    
         if self.show_animation:
             self.robot.render_plot()
 
@@ -506,10 +518,12 @@ def single_agent_main(control_type):
     dt = 0.05
 
     waypoints = [
-        [2, 6, np.pi/2],
-        [12, 6, np.pi/2]
+        [2, 6, 0],
+        # [2, 10, 0],
+        # [10, 6, 0],
+        [10, 8, 0],
         # [2, 2, math.pi/2],
-        # [2, 12, 0],
+        [2, 12, 0],
         # [12, 12, 0],
         # [12, 2, 0]
     ]
@@ -517,9 +531,7 @@ def single_agent_main(control_type):
     # x_init = np.append(waypoints[0], 1.0)
     x_init = waypoints[0]
     
-    known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
-                            [10.0, 7.3, 0.4],
-                            [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
+    # known_obs = np.array([[5.0, 9.0, 0.8], [11.0, 5.0, 0.8], [3.0, 10.0, 0.8], [6.0, 3.0, 0.8], [9.0, 8.0, 0.8], [7.0, 9.0, 0.8], [8.8, 9.5, 0.8]])
     known_obs = []
     plot_handler = plotting.Plotting(known_obs=known_obs)
     ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here
@@ -529,8 +541,10 @@ def single_agent_main(control_type):
         'model': 'Quad2D',
         # 'model': 'DynamicUnicycle2D',
         # 'model': 'DoubleIntegrator2D',
-        'w_max': 0.5,
-        'a_max': 0.5,
+        'f_min': 3.0,
+        'f_max': 10.0, # TODO: not v_max, f_max?
+        # 'w_max': 0.5,
+        # 'a_max': 0.5,
         'fov_angle': 70.0,
         'cam_range': 3.0,
         'radius': 0.25
@@ -543,7 +557,7 @@ def single_agent_main(control_type):
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
 
-    # tracking_controller.obs = known_obs
+    tracking_controller.obs = known_obs
     #tracking_controller.set_unknown_obs(unknown_obs)
     tracking_controller.set_waypoints(waypoints)
     unexpected_beh = tracking_controller.run_all_steps(tf=100)
@@ -571,8 +585,9 @@ def multi_agent_main(control_type, save_animation=False):
         # 'model': 'DynamicUnicycle2D', #'DoubleIntegrator2D'
         # 'model': 'DoubleIntegrator2D',
         'model': 'Quad2D',
-        'w_max': 0.5,
-        'a_max': 0.5,
+        'f_max': 6.0,
+        'f_min': 1.0,
+        # 'a_max': 0.5,
         'fov_angle': 45.0,
         'cam_range': 3.0,
         'radius': 0.25
@@ -590,9 +605,8 @@ def multi_agent_main(control_type, save_animation=False):
     robot_spec = {
         # 'model': 'DynamicUnicycle2D', #'DoubleIntegrator2D'
         'model': 'Quad2D',
-        'w_max': 1.0,
-        'a_max': 1.5,
-        'v_max': 2.0,
+        'f_max': 6.0,
+        'f_min': 1.0,
         'fov_angle': 90.0,
         'cam_range': 5.0,
         'radius': 0.25
@@ -630,8 +644,8 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main('mpc_cbf')
+    # single_agent_main('mpc_cbf')
     #multi_agent_main('mpc_cbf', save_animation=True)
-    #single_agent_main('cbf_qp')
+    single_agent_main('cbf_qp') 
     # single_agent_main('optimal_decay_cbf_qp')
     #single_agent_main('optimal_decay_mpc_cbf')
