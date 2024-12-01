@@ -232,6 +232,7 @@ class LocalTrackingController:
             )
 
     def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=5):
+        # TODO: np.pi*2 for Quad2D, np.pi for others
         def angle_normalize(x):
             return (((x + np.pi) % (2 * np.pi)) - np.pi)
         '''
@@ -526,42 +527,67 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
+    model = 'Quad2D' # Quad2D, DynamicUnicycle2D, KinematicBicycle2D
 
     waypoints = [
-        [2, 6, 0],
-        # [2, 10, 0],
-        # [10, 6, 0],
-        [10, 8, 0],
-        # [2, 2, math.pi/2],
-        # [2, 12, 0],
-        # [12, 12, 0],
-        # [12, 2, 0]
+        [2, 2, 0],  # for Quad2D
+        # [2, 2, math.pi/2], # for others
+        [2, 12, 0],
+        [12, 12, 0],
+        [12, 2, 0]
     ]
     waypoints = np.array(waypoints, dtype=np.float64)
-    # x_init = np.append(waypoints[0], 1.0)
-    x_init = waypoints[0]
+
+    if model in ['Quad2D']:
+        x_init = waypoints[0]
+    else:
+        x_init = np.append(waypoints[0], 1.0) 
     
-    # known_obs = np.array([[5.0, 9.0, 0.8], [11.0, 5.0, 0.8], [3.0, 10.0, 0.8], [6.0, 3.0, 0.8], [9.0, 8.0, 0.8], [7.0, 9.0, 0.8], [8.8, 9.5, 0.8]])
-    known_obs = []
+    known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
+                            [10.0, 7.3, 0.4],
+                            [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
+    
     plot_handler = plotting.Plotting(known_obs=known_obs)
     ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here
     env_handler = env.Env()
 
-    # robot_spec = {
-    #     'model': 'DynamicUnicycle2D',
-    #     'w_max': 0.5,
-    #     'a_max': 0.5,
-    #     'fov_angle': 70.0,
-    #     'cam_range': 3.0,
-    #     'radius': 0.25
-    # }
-    robot_spec = {
-        'model': 'KinematicBicycle2D',
-        'a_max': 0.5,
-        'fov_angle': 70.0,
-        'cam_range': 3.0,
-        'radius': 0.5
-    }
+
+    if model == 'Quad2D':
+        robot_spec = {
+            'model': 'Quad2D',
+            'f_min': 3.0,
+            'f_max': 10.0,
+            'fov_angle': 70.0,
+            'cam_range': 3.0,
+            'radius': 0.25
+        }
+    elif model == 'DoubleIntegrator2D':
+        robot_spec = {
+            'model': 'DoubleIntegrator2D',
+            'v_max': 1.0,
+            'a_max': 1.0,
+            'fov_angle': 70.0,
+            'cam_range': 3.0,
+            'radius': 0.25
+        }
+    elif model == 'DynamicUnicycle2D':
+        robot_spec = {
+            'model': 'DynamicUnicycle2D',
+            'w_max': 0.5,
+            'a_max': 0.5,
+            'fov_angle': 70.0,
+            'cam_range': 3.0,
+            'radius': 0.25
+        }
+    elif model == 'KinematicBicycle2D':
+        robot_spec = {
+            'model': 'KinematicBicycle2D',
+            'a_max': 0.5,
+            'fov_angle': 70.0,
+            'cam_range': 3.0,
+            'radius': 0.5
+        }
+
     tracking_controller = LocalTrackingController(x_init, robot_spec,
                                                   control_type=control_type,
                                                   dt=dt,
@@ -571,7 +597,7 @@ def single_agent_main(control_type):
                                                   env=env_handler)
 
     tracking_controller.obs = known_obs
-    #tracking_controller.set_unknown_obs(unknown_obs)
+    # tracking_controller.set_unknown_obs(unknown_obs)
     tracking_controller.set_waypoints(waypoints)
     unexpected_beh = tracking_controller.run_all_steps(tf=100)
 
@@ -595,12 +621,9 @@ def multi_agent_main(control_type, save_animation=False):
     env_handler = env.Env()
 
     robot_spec = {
-        # 'model': 'DynamicUnicycle2D', #'DoubleIntegrator2D'
-        # 'model': 'DoubleIntegrator2D',
-        'model': 'Quad2D',
-        'f_max': 6.0,
-        'f_min': 1.0,
-        # 'a_max': 0.5,
+        'model': 'DynamicUnicycle2D', #'DoubleIntegrator2D'
+        'w_max': 0.5,
+        'a_max': 0.5,
         'fov_angle': 45.0,
         'cam_range': 3.0,
         'radius': 0.25
@@ -616,10 +639,10 @@ def multi_agent_main(control_type, save_animation=False):
                                            env=env_handler)
 
     robot_spec = {
-        # 'model': 'DynamicUnicycle2D', #'DoubleIntegrator2D'
-        'model': 'Quad2D',
-        'f_max': 6.0,
-        'f_min': 1.0,
+        'model': 'DynamicUnicycle2D', #'DoubleIntegrator2D'
+        'w_max': 1.0,
+        'a_max': 1.5,
+        'v_max': 2.0,
         'fov_angle': 90.0,
         'cam_range': 5.0,
         'radius': 0.25
@@ -657,8 +680,8 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    # single_agent_main('mpc_cbf')
-    #multi_agent_main('mpc_cbf', save_animation=True)
+    single_agent_main('mpc_cbf')
+    # multi_agent_main('mpc_cbf', save_animation=True)
     # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
-    #single_agent_main('optimal_decay_mpc_cbf')
+    # single_agent_main('optimal_decay_mpc_cbf')
