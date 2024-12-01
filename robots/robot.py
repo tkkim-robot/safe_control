@@ -73,6 +73,14 @@ class BaseRobot:
                 from robots.kinematic_bicycle2D import KinematicBicycle2D
             self.robot = KinematicBicycle2D(dt, robot_spec)
             self.yaw = self.X[2, 0]
+        elif self.robot_spec['model'] == 'Quad2D':
+            try:
+                from quad2D import Quad2D
+            except ImportError:
+                from robots.quad2D import Quad2D
+            self.robot = Quad2D(dt, robot_spec)
+            self.yaw = self.X[2, 0]
+
         else:
             raise ValueError("Invalid robot model")
 
@@ -170,6 +178,8 @@ class BaseRobot:
     def get_yaw_rate(self):
         if self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D']:
             return self.U[1, 0]
+        elif self.robot_spec['model'] == 'Quad2D':
+            return self.X[5, 0]
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
             if self.U_att is not None:
                 return self.U_att[0, 0]
@@ -204,6 +214,8 @@ class BaseRobot:
             return self.robot.nominal_input(self.X, goal, d_min, k_omega, k_a, k_v)
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
             return self.robot.nominal_input(self.X, goal, d_min, k_v, k_a)
+        elif self.robot_spec['model'] == 'Quad2D':
+            return self.robot.nominal_input(self.X, goal, d_min)
 
     def nominal_attitude_input(self, theta_des):
         if self.robot_spec['model'] == 'DoubleIntegrator2D':
@@ -237,8 +249,8 @@ class BaseRobot:
         if self.robot_spec['model'] == 'DoubleIntegrator2D' and self.U_att is not None:
             self.U_att = U_att.reshape(-1, 1)
             self.yaw = self.robot.step_rotate(self.yaw, self.U_att)
-        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D']:
-            self.yaw = self.X[2, 0]
+        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'Quad2D']:
+            self.yaw = self.X[2, 0] 
         return self.X
 
     def render_plot(self):
@@ -374,6 +386,10 @@ class BaseRobot:
             vx = self.X[2, 0]
             vy = self.X[3, 0]
             v = np.linalg.norm([vx, vy])
+        elif self.robot_spec['model'] == 'Quad2D':
+            vx = self.X[3, 0]
+            vz = self.X[4, 0]
+            v = np.linalg.norm([vx, vz])
         yaw_rate = self.get_yaw_rate()
 
         if yaw_rate != 0.0:
@@ -513,6 +529,10 @@ class BaseRobot:
         return fov_left, fov_right
 
     def is_in_fov(self, point, is_in_cam_range=False):
+        if self.robot_spec['model'] == 'Quad2D':
+            # These dynmaics do not have a stop() method
+            return True
+
         robot_pos = self.get_position()
         robot_yaw = self.get_orientation()
 
