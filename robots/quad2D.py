@@ -124,8 +124,6 @@ class Quad2D:
         # Desired orientation
         theta_d = - np.arctan2(a_d_x, a_d_z) # sign convention
 
-        print("theta_d: ", theta_d)
-
         # Orientation error (Inner Loop)
         e_theta = theta_d - theta
         e_theta = np.arctan2(np.sin(e_theta), np.cos(e_theta))  # Normalize angle to [-π, π]
@@ -134,7 +132,6 @@ class Quad2D:
         # Desired torque
         tau = k_p_theta * e_theta + k_d_theta * e_theta_dot
         # clip tau
-        print("tau: ", tau)
         tau = np.clip(tau, -1, 1)
 
         # Compute rotor forces

@@ -380,9 +380,6 @@ class LocalTrackingController:
         else:
             self.goal = self.update_goal()
 
-        print(self.state_machine)
-        print(self.goal)
-
         # 1. Update the detected obstacles
         detected_obs = self.robot.detect_unknown_obs(self.unknown_obs)
         # self.nearest_obs = self.get_nearest_obs(detected_obs)
@@ -402,6 +399,9 @@ class LocalTrackingController:
             elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'Quad2D']:
                 u_ref = self.robot.rotate_to(goal_angle)
         elif self.goal is None:
+            if self.robot_spec['model'] == 'Quad2D':
+                # These dynmaics do not have a stop() method
+                return -1
             u_ref = self.robot.stop()
         else:
             if self.control_type == 'optimal_decay_cbf_qp':
@@ -433,7 +433,6 @@ class LocalTrackingController:
                 return -2
 
         # 6. Step the robot
-        print("control", u)
         self.robot.step(u, self.u_att)
     
         if self.show_animation:
@@ -523,7 +522,7 @@ def single_agent_main(control_type):
         # [10, 6, 0],
         [10, 8, 0],
         # [2, 2, math.pi/2],
-        [2, 12, 0],
+        # [2, 12, 0],
         # [12, 12, 0],
         # [12, 2, 0]
     ]
