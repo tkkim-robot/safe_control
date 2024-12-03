@@ -86,7 +86,25 @@ class LocalTrackingController:
             if X0.shape[0] == 3:  # set initial velocity to 0.0
                 X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
             
+        elif self.robot_spec['model'] == 'Quad2D':
+            if 'mass' not in self.robot_spec:
+                self.robot_spec['mass'] = 1.0
+            if 'inertia' not in self.robot_spec:
+                self.robot_spec['inertia'] = 0.01
+            if 'r' not in self.robot_spec:
+                self.robot_spec['r'] = 0.25
+            if 'f_min' not in self.robot_spec:
+                self.robot_spec['f_min'] = 1.0
+            if 'f_max' not in self.robot_spec:
+                self.robot_spec['f_max'] = 10.0
+            if X0.shape[0] == 3:
+                X0 = np.array([X0[0], X0[1], X0[2], 0.0, 0.0, 0.0]).reshape(-1, 1)
+            elif X0.shape[0] == 2:
+                X0 = np.array([X0[0], X0[1], 0.0, 0.0, 0.0, 0.0]).reshape(-1, 1)
+            elif X0.shape[0] != 6:
+                raise ValueError("Invalid initial state dimension for Quad2D")
             
+
         self.u_att = None
 
         if 'fov_angle' not in self.robot_spec:
@@ -213,9 +231,8 @@ class LocalTrackingController:
                 )
             )
 
-    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*1.5, obs_num=5):
-        # TODO: doesn't work with quad2D 
-        
+    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=5):
+        # TODO: np.pi*2 for Quad2D, np.pi for others
         def angle_normalize(x):
             return (((x + np.pi) % (2 * np.pi)) - np.pi)
         '''
@@ -239,7 +256,7 @@ class LocalTrackingController:
         unpassed_obs = []
         robot_pos = self.robot.get_position()
         robot_yaw = self.robot.get_orientation()
-        
+
         # Iterate through each detected obstacle
         for obs in all_obs:
             obs_pos = np.array([obs[0], obs[1]])
@@ -320,6 +337,8 @@ class LocalTrackingController:
             current_angle = self.robot.get_orientation()
             goal_angle = np.arctan2(self.waypoints[0][1] - self.robot.X[1, 0],
                                     self.waypoints[0][0] - self.robot.X[0, 0])
+            if self.robot_spec['model'] == 'Quad2D': # Quad2D skip 'rotate' state since there is no yaw angle
+                self.state_machine = 'track'
             if abs(current_angle - goal_angle) > self.rotation_threshold:
                 return self.waypoints[0][:2]
             else:
@@ -385,9 +404,12 @@ class LocalTrackingController:
             if self.robot_spec['model'] == 'DoubleIntegrator2D':
                 self.u_att = self.robot.rotate_to(goal_angle)
                 u_ref = self.robot.stop()
-            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D']:
+            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'Quad2D']:
                 u_ref = self.robot.rotate_to(goal_angle)
         elif self.goal is None:
+            if self.robot_spec['model'] == 'Quad2D':
+                # These dynmaics do not have a stop() method
+                return -1
             u_ref = self.robot.stop()
         else:
             if self.control_type == 'optimal_decay_cbf_qp':
@@ -420,6 +442,7 @@ class LocalTrackingController:
 
         # 6. Step the robot
         self.robot.step(u, self.u_att)
+    
         if self.show_animation:
             self.robot.render_plot()
 
@@ -500,39 +523,66 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
+    model = 'Quad2D' # Quad2D, DynamicUnicycle2D, KinematicBicycle2D
 
     waypoints = [
-        [2, 2, math.pi/2],
+        [2, 2, 0],  # for Quad2D
+        # [2, 2, math.pi/2], # for others
         [2, 12, 0],
         [12, 12, 0],
         [12, 2, 0]
     ]
     waypoints = np.array(waypoints, dtype=np.float64)
-    x_init = np.append(waypoints[0], 1.0)
+
+    if model in ['Quad2D']:
+        x_init = waypoints[0]
+    else:
+        x_init = np.append(waypoints[0], 1.0) 
     
     known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
                             [10.0, 7.3, 0.4],
                             [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
-    
     plot_handler = plotting.Plotting(known_obs=known_obs)
     ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here
     env_handler = env.Env()
 
-    # robot_spec = {
-    #     'model': 'DynamicUnicycle2D',
-    #     'w_max': 0.5,
-    #     'a_max': 0.5,
-    #     'fov_angle': 70.0,
-    #     'cam_range': 3.0,
-    #     'radius': 0.25
-    # }
-    robot_spec = {
-        'model': 'KinematicBicycle2D',
-        'a_max': 0.5,
-        'fov_angle': 70.0,
-        'cam_range': 3.0,
-        'radius': 0.5
-    }
+
+    if model == 'Quad2D':
+        robot_spec = {
+            'model': 'Quad2D',
+            'f_min': 3.0,
+            'f_max': 10.0,
+            'fov_angle': 70.0,
+            'cam_range': 3.0,
+            'radius': 0.25
+        }
+    elif model == 'DoubleIntegrator2D':
+        robot_spec = {
+            'model': 'DoubleIntegrator2D',
+            'v_max': 1.0,
+            'a_max': 1.0,
+            'fov_angle': 70.0,
+            'cam_range': 3.0,
+            'radius': 0.25
+        }
+    elif model == 'DynamicUnicycle2D':
+        robot_spec = {
+            'model': 'DynamicUnicycle2D',
+            'w_max': 0.5,
+            'a_max': 0.5,
+            'fov_angle': 70.0,
+            'cam_range': 3.0,
+            'radius': 0.25
+        }
+    elif model == 'KinematicBicycle2D':
+        robot_spec = {
+            'model': 'KinematicBicycle2D',
+            'a_max': 0.5,
+            'fov_angle': 70.0,
+            'cam_range': 3.0,
+            'radius': 0.5
+        }
+
     tracking_controller = LocalTrackingController(x_init, robot_spec,
                                                   control_type=control_type,
                                                   dt=dt,
@@ -542,7 +592,7 @@ def single_agent_main(control_type):
                                                   env=env_handler)
 
     tracking_controller.obs = known_obs
-    #tracking_controller.set_unknown_obs(unknown_obs)
+    # tracking_controller.set_unknown_obs(unknown_obs)
     tracking_controller.set_waypoints(waypoints)
     unexpected_beh = tracking_controller.run_all_steps(tf=100)
 
@@ -551,7 +601,7 @@ def multi_agent_main(control_type, save_animation=False):
 
     # temporal
     waypoints = [
-        [2, 2, math.pi/2],
+        [2, 2, 0],
         [2, 12, 0],
         [12, 12, 0],
         [12, 2, 0]
@@ -626,7 +676,7 @@ if __name__ == "__main__":
     import math
 
     single_agent_main('mpc_cbf')
-    #multi_agent_main('mpc_cbf', save_animation=True)
+    # multi_agent_main('mpc_cbf', save_animation=True)
     # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
-    #single_agent_main('optimal_decay_mpc_cbf')
+    # single_agent_main('optimal_decay_mpc_cbf')
