@@ -523,7 +523,7 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    model = 'Quad2D' # Quad2D, DynamicUnicycle2D, KinematicBicycle2D
+    model = 'Quad2D' # Quad2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D
 
     waypoints = [
         [2, 2, 0],  # for Quad2D
@@ -534,7 +534,7 @@ def single_agent_main(control_type):
     ]
     waypoints = np.array(waypoints, dtype=np.float64)
 
-    if model in ['Quad2D']:
+    if model in ['Quad2D', 'DoubleIntegrator2D']:
         x_init = waypoints[0]
     else:
         x_init = np.append(waypoints[0], 1.0) 
