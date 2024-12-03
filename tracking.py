@@ -255,11 +255,7 @@ class LocalTrackingController:
         
         unpassed_obs = []
         robot_pos = self.robot.get_position()
-        if self.robot_spec['model'] == 'Quad2D':
-            robot_yaw = self.robot.get_orientation() + np.pi/2
-        else:
-            robot_yaw = self.robot.get_orientation()
-        # robot_yaw = self.robot.get_orientation()
+        robot_yaw = self.robot.get_orientation()
 
         # Iterate through each detected obstacle
         for obs in all_obs:
@@ -546,7 +542,6 @@ def single_agent_main(control_type):
     known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
                             [10.0, 7.3, 0.4],
                             [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
-    
     plot_handler = plotting.Plotting(known_obs=known_obs)
     ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here
     env_handler = env.Env()

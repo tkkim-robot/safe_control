@@ -120,7 +120,8 @@ class DynamicUnicycle2D:
         h_dot = 2 * (X[0:2] - obsX[0:2]).T @ (self.f(X)[0:2])
 
         df_dx = self.df_dx(X)
-        dh_dot_dx = np.append((2 * self.f(X)[0:2]).T, np.array([[0, 0]]), axis=1) + 2 * (X[0:2] - obsX[0:2]).T @ df_dx[0:2, :]
+        dh_dot_dx = np.append((2 * self.f(X)[0:2]).T, np.array(
+            [[0, 0]]), axis=1) + 2 * (X[0:2] - obsX[0:2]).T @ df_dx[0:2, :]
         return h, h_dot, dh_dot_dx
 
     def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.01):

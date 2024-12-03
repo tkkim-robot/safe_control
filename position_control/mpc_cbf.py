@@ -93,11 +93,6 @@ class MPCCBF:
         # System dynamics
         f_x = self.robot.f_casadi(_x)
         g_x = self.robot.g_casadi(_x)
-
-        # print("g_x shape:", g_x.shape)
-        # print("_u shape:", _u.shape)
-        # print("f_x shape:", f_x.shape)
-        # print("_x shape:", _x.shape)
         
         x_next = _x + (f_x + ca.mtimes(g_x, _u)) * self.dt
 
@@ -264,7 +259,6 @@ class MPCCBF:
 
     def solve_control_problem(self, robot_state, control_ref, nearest_obs):
         # Set initial state and reference
-        # print(robot_state)
         self.mpc.x0 = robot_state
         self.mpc.set_initial_guess()
         goal = control_ref['goal']

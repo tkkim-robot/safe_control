@@ -48,11 +48,14 @@ class CBFQP:
             constraints = [self.A1 @ self.u + self.b1 >= 0,
                            cp.abs(self.u[0]) <= self.robot_spec['a_max'],
                            cp.abs(self.u[1]) <= self.robot_spec['beta_max']]
-        # TODO: add f_min?
         elif self.robot_spec['model'] == 'Quad2D':
             constraints = [self.A1 @ self.u + self.b1 >= 0,
-                           cp.abs(self.u[0]) <= self.robot_spec['f_max'],
-                           cp.abs(self.u[1]) <= self.robot_spec['f_max']]
+                        cp.abs(self.u[0]) <= self.robot_spec['f_max'],
+                        cp.abs(self.u[1]) <= self.robot_spec['f_max'],
+                        self.robot_spec['f_min'] <= self.u[0] + self.robot_spec['f_max'],
+                        -self.u[0] + self.robot_spec['f_min'] <= self.robot_spec['f_max'],
+                        self.robot_spec['f_min'] <= self.u[1] + self.robot_spec['f_max'],
+                        -self.u[1] + self.robot_spec['f_min'] <= self.robot_spec['f_max']]
         self.cbf_controller = cp.Problem(objective, constraints)
 
     def solve_control_problem(self, robot_state, control_ref, nearest_obs):
@@ -81,9 +84,5 @@ class CBFQP:
         self.status = self.cbf_controller.status
         # if self.cbf_controller.status != 'optimal':
         #     raise QPError("CBF-QP optimization failed")
-
-        # print(f"h: {h}, h_dot: {h_dot}, u: {self.u.value}")
-        # print(f"A1: {self.A1.value}, b1: {self.b1.value}")
-
 
         return self.u.value
