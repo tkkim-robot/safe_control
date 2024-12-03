@@ -50,12 +50,10 @@ class CBFQP:
                            cp.abs(self.u[1]) <= self.robot_spec['beta_max']]
         elif self.robot_spec['model'] == 'Quad2D':
             constraints = [self.A1 @ self.u + self.b1 >= 0,
-                        cp.abs(self.u[0]) <= self.robot_spec['f_max'],
-                        cp.abs(self.u[1]) <= self.robot_spec['f_max'],
-                        self.robot_spec['f_min'] <= self.u[0] + self.robot_spec['f_max'],
-                        -self.u[0] + self.robot_spec['f_min'] <= self.robot_spec['f_max'],
-                        self.robot_spec['f_min'] <= self.u[1] + self.robot_spec['f_max'],
-                        -self.u[1] + self.robot_spec['f_min'] <= self.robot_spec['f_max']]
+                           self.robot_spec["f_min"] <= self.u[0],
+                           self.u[0] <= self.robot_spec["f_max"],
+                           self.robot_spec["f_min"] <= self.u[1],
+                           self.u[1] <= self.robot_spec["f_max"]]
         self.cbf_controller = cp.Problem(objective, constraints)
 
     def solve_control_problem(self, robot_state, control_ref, nearest_obs):
