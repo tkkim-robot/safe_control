@@ -107,24 +107,19 @@ class BaseRobot:
         # Plot handles
         self.vis_orient_len = 0.5
         if self.robot_spec['model'] == 'KinematicBicycle2D':
-            self.wheel_base = self.robot_spec['wheel_base']
-            self.body_width = self.robot_spec['body_width']
-            self.front_axle_distance = self.robot_spec['front_axle_distance']
-            self.rear_axle_distance = self.robot_spec['rear_axle_distance']
-
             # Define robot dimensions
-            self.body_length = self.front_axle_distance + self.rear_axle_distance
+            self.robot_spec['body_length'] = self.robot_spec['front_ax_dist'] + self.robot_spec['rear_ax_dist']
             
             # Add vehicle body as a rectangle
             self.vehicle_body = ax.add_patch(
-                plt.Rectangle((-self.rear_axle_distance, -self.body_width / 2),
-                          self.body_length, self.body_width,
+                plt.Rectangle((-self.robot_spec['rear_ax_dist'], -self.robot_spec['body_width'] / 2),
+                          self.robot_spec['body_length'], self.robot_spec['body_width'],
                           linewidth=1, edgecolor='blue', facecolor='blue', alpha=0.5)
             )
 
             # Add front and rear wheels as small rectangles
-            wheel_width = self.body_width / 3
-            wheel_length = self.body_width / 1.5
+            wheel_width = self.robot_spec['body_width'] / 3
+            wheel_length = self.robot_spec['body_width'] / 1.5
             self.front_wheel = ax.add_patch(
                 plt.Rectangle((-wheel_length / 2, -wheel_width / 2),
                           wheel_length, wheel_width,
@@ -260,36 +255,13 @@ class BaseRobot:
 
     def render_plot(self):
         if self.robot_spec['model'] == 'KinematicBicycle2D':
-            def beta_to_delta(beta):
-                # Map slip angle beta to steering angle delta
-                L_r = self.robot_spec['rear_axle_distance']
-                L = self.robot_spec['wheel_base']
-                return np.arctan((L / L_r) * np.tan(beta))
-            x, y, theta, v = self.X.flatten()
-            beta = self.U[1, 0]  # Steering angle control input
-            delta = beta_to_delta(beta)
-
-            # Update vehicle body
-            transform_body = Affine2D().rotate(theta).translate(x, y) + plt.gca().transData
-            self.vehicle_body.set_transform(transform_body)
-
-            # Calculate axle positions
-            rear_axle_x = x - self.rear_axle_distance * np.cos(theta)
-            rear_axle_y = y - self.rear_axle_distance * np.sin(theta)
-            front_axle_x = x + self.front_axle_distance * np.cos(theta)
-            front_axle_y = y + self.front_axle_distance * np.sin(theta)
-
-            # Update rear wheel (aligned with vehicle orientation)
-            transform_rear = (Affine2D()
-                              .rotate(theta)
-                              .translate(rear_axle_x, rear_axle_y) + plt.gca().transData)
-            self.rear_wheel.set_transform(transform_rear)
-
-            # Update front wheel (rotated by steering angle)
-            transform_front = (Affine2D()
-                               .rotate(theta + delta)
-                               .translate(front_axle_x, front_axle_y) + plt.gca().transData)
-            self.front_wheel.set_transform(transform_front)
+            '''
+            Kinematic Bicycle renders the full rigid body
+            '''
+            trans_body, trans_rear, trans_front = self.robot.render_rigid_body(self.X, self.U)
+            self.vehicle_body.set_transform(trans_body)
+            self.rear_wheel.set_transform(trans_rear)
+            self.front_wheel.set_transform(trans_front)
         else:
             # self.body.set_offsets([self.X[0, 0], self.X[1, 0]])
             self.body.center = self.X[0, 0], self.X[1, 0]

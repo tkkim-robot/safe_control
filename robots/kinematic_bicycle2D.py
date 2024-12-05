@@ -1,6 +1,9 @@
 import numpy as np
 import casadi as ca
 
+import matplotlib.pyplot as plt
+from matplotlib.transforms import Affine2D
+
 """
 Simplified kinematic bicycle model for CBF-QP and MPC-CBF (casadi)
 https://arxiv.org/abs/2403.07043
@@ -42,10 +45,10 @@ class KinematicBicycle2D:
             self.robot_spec['body_width'] = 0.3
         if 'radius' not in self.robot_spec:
             self.robot_spec['radius'] = 0.5
-        if 'front_axle_distance' not in self.robot_spec:
-            self.robot_spec['front_axle_distance'] = 0.2
-        if 'rear_axle_distance' not in self.robot_spec:
-            self.robot_spec['rear_axle_distance'] = 0.3
+        if 'front_ax_dist' not in self.robot_spec:
+            self.robot_spec['front_ax_dist'] = 0.2
+        if 'rear_ax_distance' not in self.robot_spec:
+            self.robot_spec['rear_ax_dist'] = 0.3
         if 'v_max' not in self.robot_spec:
             self.robot_spec['v_max'] = 1.0
         if 'a_max' not in self.robot_spec:
@@ -57,13 +60,13 @@ class KinematicBicycle2D:
 
     def beta(self, delta):
         # Computes the slip angle beta
-        L_r = self.robot_spec['rear_axle_distance']
+        L_r = self.robot_spec['rear_ax_dist']
         L = self.robot_spec['wheel_base']
         return np.arctan((L_r / L) * np.tan(delta))
             
     def beta_to_delta(self, beta):
         # Map slip angle beta to steering angle delta
-        L_r = self.robot_spec['rear_axle_distance']
+        L_r = self.robot_spec['rear_ax_dist']
         L = self.robot_spec['wheel_base']
         return np.arctan((L / L_r) * np.tan(beta))
             
@@ -96,7 +99,7 @@ class KinematicBicycle2D:
     def g(self, X, casadi=False):
         theta = X[2, 0]
         v = X[3, 0]
-        L_r = self.robot_spec['rear_axle_distance']
+        L_r = self.robot_spec['rear_ax_dist']
         if casadi:
             g = ca.SX.zeros(4, 2)
             g[0, 1] = -v * ca.sin(theta) 
@@ -191,3 +194,33 @@ class KinematicBicycle2D:
         # hocbf_2nd_order = h_ddot + (gamma1 + gamma2) * h_dot + (gamma1 * gamma2) * h_k
 
         return h_k, d_h, dd_h
+    
+    def render_rigid_body(self, X, U):
+        '''
+        Return the materials to render the rigid body
+        '''
+        x, y, theta, v = X.flatten()
+        beta = U[1, 0]  # Steering angle control input
+        delta = self.beta_to_delta(beta)
+
+        # Update vehicle body
+        transform_body = Affine2D().rotate(theta).translate(x, y) + plt.gca().transData
+
+
+        # Calculate axle positions
+        rear_axle_x = x - self.robot_spec['rear_ax_dist'] * np.cos(theta)
+        rear_axle_y = y - self.robot_spec['rear_ax_dist'] * np.sin(theta)
+        front_axle_x = x + self.robot_spec['front_ax_dist'] * np.cos(theta)
+        front_axle_y = y + self.robot_spec['front_ax_dist'] * np.sin(theta)
+
+        # Update rear wheel (aligned with vehicle orientation)
+        transform_rear = (Affine2D()
+                            .rotate(theta)
+                            .translate(rear_axle_x, rear_axle_y) + plt.gca().transData)
+
+        # Update front wheel (rotated by steering angle)
+        transform_front = (Affine2D()
+                            .rotate(theta + delta)
+                            .translate(front_axle_x, front_axle_y) + plt.gca().transData)
+    
+        return transform_body, transform_rear, transform_front

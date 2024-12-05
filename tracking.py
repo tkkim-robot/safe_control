@@ -479,7 +479,7 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    model = 'DynamicUnicycle2D' # Quad2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D
+    model = 'KinematicBicycle2D' # Quad2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D
 
     waypoints = [
         [2, 2, math.pi/2],
