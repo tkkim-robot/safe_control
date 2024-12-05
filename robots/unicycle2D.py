@@ -35,6 +35,11 @@ class Unicycle2D:
         self.k1 = 0.5 #=#1.0
         self.k2 = 1.8 #0.5
 
+        if 'v_max' not in self.robot_spec:
+            self.robot_spec['v_max'] = 1.0
+        if 'w_max' not in self.robot_spec:
+            self.robot_spec['w_max'] = 0.5
+
     def f(self, X, casadi=False):
         if casadi:
             return ca.vertcat([

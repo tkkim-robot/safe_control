@@ -44,30 +44,10 @@ class LocalTrackingController:
         self.current_goal_index = 0  # Index of the current goal in the path
         self.reached_threshold = 0.2
 
-        if self.robot_spec['model'] == 'Unicycle2D':
-            if 'v_max' not in self.robot_spec:
-                self.robot_spec['v_max'] = 1.0
-            if 'w_max' not in self.robot_spec:
-                self.robot_spec['w_max'] = 0.5
-        elif self.robot_spec['model'] == 'DynamicUnicycle2D':
-            # v_max is set to 1.0 inside the robot class
-            if 'a_max' not in self.robot_spec:
-                self.robot_spec['a_max'] = 0.5
-            if 'w_max' not in self.robot_spec:
-                self.robot_spec['w_max'] = 0.5
-            if 'v_max' not in self.robot_spec:
-                self.robot_spec['v_max'] = 1.0
+        if self.robot_spec['model'] == 'DynamicUnicycle2D':
             if X0.shape[0] == 3:  # set initial velocity to 0.0
                 X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
-            if 'a_max' not in self.robot_spec:
-                self.robot_spec['a_max'] = 1.0
-            if 'v_max' not in self.robot_spec:
-                self.robot_spec['v_max'] = 1.0
-            if 'ax_max' not in self.robot_spec:
-                self.robot_spec['ax_max'] = self.robot_spec['a_max']
-            if 'ay_max' not in self.robot_spec:
-                self.robot_spec['ay_max'] = self.robot_spec['a_max']
             if X0.shape[0] == 3:
                 X0 = np.array([X0[0], X0[1], 0.0, 0.0, X0[2]]).reshape(-1, 1)
             elif X0.shape[0] == 2:
@@ -76,43 +56,16 @@ class LocalTrackingController:
                 raise ValueError(
                     "Invalid initial state dimension for DoubleIntegrator2D")
         elif self.robot_spec['model'] == 'KinematicBicycle2D':
-            # v_max is set to 1.0 inside the robot class
-            if 'a_max' not in self.robot_spec:
-                self.robot_spec['a_max'] = 0.5
-            if 'delta_max' not in self.robot_spec:
-                self.robot_spec['delta_max'] = np.deg2rad(30)
-            if 'v_max' not in self.robot_spec:
-                self.robot_spec['v_max'] = 1.0
             if X0.shape[0] == 3:  # set initial velocity to 0.0
                 X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
-            
         elif self.robot_spec['model'] == 'Quad2D':
-            if 'mass' not in self.robot_spec:
-                self.robot_spec['mass'] = 1.0
-            if 'inertia' not in self.robot_spec:
-                self.robot_spec['inertia'] = 0.01
-            if 'r' not in self.robot_spec:
-                self.robot_spec['r'] = 0.25
-            if 'f_min' not in self.robot_spec:
-                self.robot_spec['f_min'] = 1.0
-            if 'f_max' not in self.robot_spec:
-                self.robot_spec['f_max'] = 10.0
-            if X0.shape[0] == 3:
-                X0 = np.array([X0[0], X0[1], X0[2], 0.0, 0.0, 0.0]).reshape(-1, 1)
-            elif X0.shape[0] == 2:
+            if X0.shape[0] in [2, 3]: # only initialize the x,z position if don't provide the full state
                 X0 = np.array([X0[0], X0[1], 0.0, 0.0, 0.0, 0.0]).reshape(-1, 1)
             elif X0.shape[0] != 6:
                 raise ValueError("Invalid initial state dimension for Quad2D")
             
 
         self.u_att = None
-
-        if 'fov_angle' not in self.robot_spec:
-            self.robot_spec['fov_angle'] = 70.0
-        if 'cam_range' not in self.robot_spec:
-            self.robot_spec['cam_range'] = 3.0
-        if 'radius' not in self.robot_spec:
-            self.robot_spec['radius'] = 0.25
 
         self.show_animation = show_animation
         self.save_animation = save_animation
@@ -381,6 +334,7 @@ class LocalTrackingController:
             - 1: visibility violation
         '''
         # update state machine
+        print("State Machine: ", self.state_machine)
         if self.state_machine == 'stop':
             if self.robot.has_stopped():
                 self.state_machine = 'rotate'
@@ -407,9 +361,6 @@ class LocalTrackingController:
             elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'Quad2D']:
                 u_ref = self.robot.rotate_to(goal_angle)
         elif self.goal is None:
-            if self.robot_spec['model'] == 'Quad2D':
-                # These dynmaics do not have a stop() method
-                return -1
             u_ref = self.robot.stop()
         else:
             if self.control_type == 'optimal_decay_cbf_qp':
@@ -447,13 +398,16 @@ class LocalTrackingController:
             self.robot.render_plot()
 
         # 7. Update sensing information
-        self.robot.update_sensing_footprints()
-        self.robot.update_safety_area()
+        if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
+            self.robot.update_sensing_footprints()
+            self.robot.update_safety_area()
 
-        beyond_flag = self.robot.is_beyond_sensing_footprints()
-        if beyond_flag and self.show_animation:
-            pass
-            # print("Visibility Violation")
+            beyond_flag = self.robot.is_beyond_sensing_footprints()
+            if beyond_flag and self.show_animation:
+                pass
+                # print("Visibility Violation")
+        else:
+            beyond_flag = 0 # not checking sensing footprint
 
         if self.goal is None and self.state_machine != 'stop':
             return -1  # all waypoints reached
@@ -526,8 +480,7 @@ def single_agent_main(control_type):
     model = 'Quad2D' # Quad2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D
 
     waypoints = [
-        [2, 2, 0],  # for Quad2D
-        # [2, 2, math.pi/2], # for others
+        [2, 2, math.pi/2],
         [2, 12, 0],
         [12, 12, 0],
         [12, 2, 0]
@@ -552,8 +505,7 @@ def single_agent_main(control_type):
             'model': 'Quad2D',
             'f_min': 3.0,
             'f_max': 10.0,
-            'fov_angle': 70.0,
-            'cam_range': 3.0,
+            'sensor': 'rgbd',
             'radius': 0.25
         }
     elif model == 'DoubleIntegrator2D':
@@ -561,8 +513,6 @@ def single_agent_main(control_type):
             'model': 'DoubleIntegrator2D',
             'v_max': 1.0,
             'a_max': 1.0,
-            'fov_angle': 70.0,
-            'cam_range': 3.0,
             'radius': 0.25
         }
     elif model == 'DynamicUnicycle2D':
@@ -570,16 +520,14 @@ def single_agent_main(control_type):
             'model': 'DynamicUnicycle2D',
             'w_max': 0.5,
             'a_max': 0.5,
-            'fov_angle': 70.0,
-            'cam_range': 3.0,
+            'sensor': 'rgbd',
             'radius': 0.25
         }
     elif model == 'KinematicBicycle2D':
         robot_spec = {
             'model': 'KinematicBicycle2D',
             'a_max': 0.5,
-            'fov_angle': 70.0,
-            'cam_range': 3.0,
+            'sensor': 'rgbd',
             'radius': 0.5
         }
 
@@ -619,6 +567,7 @@ def multi_agent_main(control_type, save_animation=False):
         'model': 'DynamicUnicycle2D', #'DoubleIntegrator2D'
         'w_max': 0.5,
         'a_max': 0.5,
+        'sensor': 'rgbd',
         'fov_angle': 45.0,
         'cam_range': 3.0,
         'radius': 0.25
@@ -638,6 +587,7 @@ def multi_agent_main(control_type, save_animation=False):
         'w_max': 1.0,
         'a_max': 1.5,
         'v_max': 2.0,
+        'sensor': 'rgbd',
         'fov_angle': 90.0,
         'cam_range': 5.0,
         'radius': 0.25

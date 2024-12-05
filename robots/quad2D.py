@@ -36,12 +36,9 @@ class Quad2D:
         if 'mass' not in self.robot_spec:
             self.robot_spec['mass'] = 1.0
         if 'inertia' not in self.robot_spec:
-            self.robot_spec['inertia'] = 1.0
-        if 'radius' not in self.robot_spec:
-            self.robot_spec['radius'] = 0.25
-
+            self.robot_spec['inertia'] = 0.01
         if 'f_min' not in self.robot_spec:
-            self.robot_spec['f_min'] = 3.0
+            self.robot_spec['f_min'] = 1.0
         if 'f_max' not in self.robot_spec:
             self.robot_spec['f_max'] = 10.0
 
@@ -145,7 +142,15 @@ class Quad2D:
         return np.array([F_r, F_l]).reshape(-1, 1)
     
     def stop(self, X):
-        raise NotImplementedError("Stop function not implemented for Quad2D")
+        """
+        Compute the nominal input for stopping behavior,
+        leveraging the nomianl input function
+        """
+        x, z, theta, x_dot, z_dot, theta_dot = X.flatten()
+
+        G = np.array([x, z]).reshape(-1, 1) # provide current position as goal
+        stop_control = self.nominal_input(X, G)
+        return stop_control
         
     def has_stopped(self, X, tol=0.05):
         """Check if quadrotor has stopped within tolerance."""
