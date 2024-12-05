@@ -36,12 +36,9 @@ class Quad2D:
         if 'mass' not in self.robot_spec:
             self.robot_spec['mass'] = 1.0
         if 'inertia' not in self.robot_spec:
-            self.robot_spec['inertia'] = 1.0
-        if 'radius' not in self.robot_spec:
-            self.robot_spec['radius'] = 0.25
-
+            self.robot_spec['inertia'] = 0.01
         if 'f_min' not in self.robot_spec:
-            self.robot_spec['f_min'] = 3.0
+            self.robot_spec['f_min'] = 1.0
         if 'f_max' not in self.robot_spec:
             self.robot_spec['f_max'] = 10.0
 

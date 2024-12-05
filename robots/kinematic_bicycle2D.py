@@ -35,6 +35,7 @@ class KinematicBicycle2D:
         '''
         self.dt = dt
         self.robot_spec = robot_spec
+
         if 'wheel_base' not in self.robot_spec:
             self.robot_spec['wheel_base'] = 0.5
         if 'body_width' not in self.robot_spec:

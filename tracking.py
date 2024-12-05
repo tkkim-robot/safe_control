@@ -44,30 +44,10 @@ class LocalTrackingController:
         self.current_goal_index = 0  # Index of the current goal in the path
         self.reached_threshold = 0.2
 
-        if self.robot_spec['model'] == 'Unicycle2D':
-            if 'v_max' not in self.robot_spec:
-                self.robot_spec['v_max'] = 1.0
-            if 'w_max' not in self.robot_spec:
-                self.robot_spec['w_max'] = 0.5
-        elif self.robot_spec['model'] == 'DynamicUnicycle2D':
-            # v_max is set to 1.0 inside the robot class
-            if 'a_max' not in self.robot_spec:
-                self.robot_spec['a_max'] = 0.5
-            if 'w_max' not in self.robot_spec:
-                self.robot_spec['w_max'] = 0.5
-            if 'v_max' not in self.robot_spec:
-                self.robot_spec['v_max'] = 1.0
+        if self.robot_spec['model'] == 'DynamicUnicycle2D':
             if X0.shape[0] == 3:  # set initial velocity to 0.0
                 X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
-            if 'a_max' not in self.robot_spec:
-                self.robot_spec['a_max'] = 1.0
-            if 'v_max' not in self.robot_spec:
-                self.robot_spec['v_max'] = 1.0
-            if 'ax_max' not in self.robot_spec:
-                self.robot_spec['ax_max'] = self.robot_spec['a_max']
-            if 'ay_max' not in self.robot_spec:
-                self.robot_spec['ay_max'] = self.robot_spec['a_max']
             if X0.shape[0] == 3:
                 X0 = np.array([X0[0], X0[1], 0.0, 0.0, X0[2]]).reshape(-1, 1)
             elif X0.shape[0] == 2:
@@ -76,26 +56,9 @@ class LocalTrackingController:
                 raise ValueError(
                     "Invalid initial state dimension for DoubleIntegrator2D")
         elif self.robot_spec['model'] == 'KinematicBicycle2D':
-            # v_max is set to 1.0 inside the robot class
-            if 'a_max' not in self.robot_spec:
-                self.robot_spec['a_max'] = 0.5
-            if 'delta_max' not in self.robot_spec:
-                self.robot_spec['delta_max'] = np.deg2rad(30)
-            if 'v_max' not in self.robot_spec:
-                self.robot_spec['v_max'] = 1.0
             if X0.shape[0] == 3:  # set initial velocity to 0.0
                 X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
         elif self.robot_spec['model'] == 'Quad2D':
-            if 'mass' not in self.robot_spec:
-                self.robot_spec['mass'] = 1.0
-            if 'inertia' not in self.robot_spec:
-                self.robot_spec['inertia'] = 0.01
-            if 'r' not in self.robot_spec:
-                self.robot_spec['r'] = 0.25
-            if 'f_min' not in self.robot_spec:
-                self.robot_spec['f_min'] = 1.0
-            if 'f_max' not in self.robot_spec:
-                self.robot_spec['f_max'] = 10.0
             if X0.shape[0] in [2, 3]: # only initialize the x,z position if don't provide the full state
                 X0 = np.array([X0[0], X0[1], 0.0, 0.0, 0.0, 0.0]).reshape(-1, 1)
             elif X0.shape[0] != 6:
@@ -103,14 +66,6 @@ class LocalTrackingController:
             
 
         self.u_att = None
-        if 'radius' not in self.robot_spec:
-            self.robot_spec['radius'] = 0.25
-        
-        if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
-            if 'fov_angle' not in self.robot_spec:
-                self.robot_spec['fov_angle'] = 70.0
-            if 'cam_range' not in self.robot_spec:
-                self.robot_spec['cam_range'] = 3.0
 
         self.show_animation = show_animation
         self.save_animation = save_animation
@@ -524,7 +479,7 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    model = 'Quad2D' # Quad2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D
+    model = 'DynamicUnicycle2D' # Quad2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D
 
     waypoints = [
         [2, 2, math.pi/2],
@@ -552,6 +507,7 @@ def single_agent_main(control_type):
             'model': 'Quad2D',
             'f_min': 3.0,
             'f_max': 10.0,
+            'sensor': 'rgbd',
             'radius': 0.25
         }
     elif model == 'DoubleIntegrator2D':
@@ -559,7 +515,6 @@ def single_agent_main(control_type):
             'model': 'DoubleIntegrator2D',
             'v_max': 1.0,
             'a_max': 1.0,
-            'sensor': 'rgbd',
             'radius': 0.25
         }
     elif model == 'DynamicUnicycle2D':

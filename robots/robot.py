@@ -43,6 +43,23 @@ class BaseRobot:
         colors = plt.get_cmap('Pastel1').colors  # color palette
         color = colors[self.robot_spec['robot_id'] % len(colors) + 1]
 
+        if 'radius' not in self.robot_spec:
+            self.robot_spec['radius'] = 0.25
+        self.robot_radius = self.robot_spec['radius']  # including padding
+
+        # FOV parameters
+        if 'fov_angle' not in self.robot_spec:
+            self.robot_spec['fov_angle'] = 70.0
+        self.fov_angle = np.deg2rad(float(self.robot_spec['fov_angle']))  # [rad]
+        if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
+            if 'cam_range' not in self.robot_spec:
+                self.robot_spec['cam_range'] = 3.0
+            self.cam_range = self.robot_spec['cam_range']  # [m]
+
+        # Visibility parameters
+        self.max_decel = 3.0  # 0.5 # [m/s^2]
+        self.max_ang_decel = 3.0  # 0.25  # [rad/s^2]
+
         if self.robot_spec['model'] == 'Unicycle2D':
             try:
                 from unicycle2D import Unicycle2D
@@ -84,24 +101,11 @@ class BaseRobot:
         else:
             raise ValueError("Invalid robot model")
 
-        # FOV parameters
-        if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
-            self.fov_angle = np.deg2rad(
-                float(self.robot_spec['fov_angle']))  # [rad]
-            self.cam_range = self.robot_spec['cam_range']  # [m]
-
-        if 'radius' not in self.robot_spec:
-            self.robot_spec['radius'] = 0.25
-        self.robot_radius = self.robot_spec['radius']  # including padding
-        self.max_decel = 3.0  # 0.5 # [m/s^2]
-        self.max_ang_decel = 3.0  # 0.25  # [rad/s^2]
-
         self.U = np.array([0, 0]).reshape(-1, 1)
         self.U_att = np.array([0]).reshape(-1, 1)
-
+        
         # Plot handles
         self.vis_orient_len = 0.5
-        
         if self.robot_spec['model'] == 'KinematicBicycle2D':
             self.wheel_base = self.robot_spec['wheel_base']
             self.body_width = self.robot_spec['body_width']
