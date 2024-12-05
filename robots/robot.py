@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.transforms import Affine2D
 
 from shapely.geometry import Polygon, Point, LineString
 from shapely import is_valid_reason
