@@ -85,7 +85,6 @@ class LocalTrackingController:
                 self.robot_spec['v_max'] = 1.0
             if X0.shape[0] == 3:  # set initial velocity to 0.0
                 X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
-            
         elif self.robot_spec['model'] == 'Quad2D':
             if 'mass' not in self.robot_spec:
                 self.robot_spec['mass'] = 1.0
@@ -97,9 +96,7 @@ class LocalTrackingController:
                 self.robot_spec['f_min'] = 1.0
             if 'f_max' not in self.robot_spec:
                 self.robot_spec['f_max'] = 10.0
-            if X0.shape[0] == 3:
-                X0 = np.array([X0[0], X0[1], X0[2], 0.0, 0.0, 0.0]).reshape(-1, 1)
-            elif X0.shape[0] == 2:
+            if X0.shape[0] in [2, 3]: # only initialize the x,z position if don't provide the full state
                 X0 = np.array([X0[0], X0[1], 0.0, 0.0, 0.0, 0.0]).reshape(-1, 1)
             elif X0.shape[0] != 6:
                 raise ValueError("Invalid initial state dimension for Quad2D")
@@ -530,8 +527,7 @@ def single_agent_main(control_type):
     model = 'Quad2D' # Quad2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D
 
     waypoints = [
-        [2, 2, 0],  # for Quad2D
-        # [2, 2, math.pi/2], # for others
+        [2, 2, math.pi/2],
         [2, 12, 0],
         [12, 12, 0],
         [12, 2, 0]
