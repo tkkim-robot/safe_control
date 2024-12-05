@@ -106,13 +106,14 @@ class LocalTrackingController:
             
 
         self.u_att = None
-
-        if 'fov_angle' not in self.robot_spec:
-            self.robot_spec['fov_angle'] = 70.0
-        if 'cam_range' not in self.robot_spec:
-            self.robot_spec['cam_range'] = 3.0
         if 'radius' not in self.robot_spec:
             self.robot_spec['radius'] = 0.25
+        
+        if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
+            if 'fov_angle' not in self.robot_spec:
+                self.robot_spec['fov_angle'] = 70.0
+            if 'cam_range' not in self.robot_spec:
+                self.robot_spec['cam_range'] = 3.0
 
         self.show_animation = show_animation
         self.save_animation = save_animation
@@ -447,13 +448,16 @@ class LocalTrackingController:
             self.robot.render_plot()
 
         # 7. Update sensing information
-        self.robot.update_sensing_footprints()
-        self.robot.update_safety_area()
+        if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
+            self.robot.update_sensing_footprints()
+            self.robot.update_safety_area()
 
-        beyond_flag = self.robot.is_beyond_sensing_footprints()
-        if beyond_flag and self.show_animation:
-            pass
-            # print("Visibility Violation")
+            beyond_flag = self.robot.is_beyond_sensing_footprints()
+            if beyond_flag and self.show_animation:
+                pass
+                # print("Visibility Violation")
+        else:
+            beyond_flag = 0 # not checking sensing footprint
 
         if self.goal is None and self.state_machine != 'stop':
             return -1  # all waypoints reached
@@ -552,8 +556,6 @@ def single_agent_main(control_type):
             'model': 'Quad2D',
             'f_min': 3.0,
             'f_max': 10.0,
-            'fov_angle': 70.0,
-            'cam_range': 3.0,
             'radius': 0.25
         }
     elif model == 'DoubleIntegrator2D':
@@ -561,8 +563,7 @@ def single_agent_main(control_type):
             'model': 'DoubleIntegrator2D',
             'v_max': 1.0,
             'a_max': 1.0,
-            'fov_angle': 70.0,
-            'cam_range': 3.0,
+            'sensor': 'rgbd',
             'radius': 0.25
         }
     elif model == 'DynamicUnicycle2D':
@@ -570,16 +571,14 @@ def single_agent_main(control_type):
             'model': 'DynamicUnicycle2D',
             'w_max': 0.5,
             'a_max': 0.5,
-            'fov_angle': 70.0,
-            'cam_range': 3.0,
+            'sensor': 'rgbd',
             'radius': 0.25
         }
     elif model == 'KinematicBicycle2D':
         robot_spec = {
             'model': 'KinematicBicycle2D',
             'a_max': 0.5,
-            'fov_angle': 70.0,
-            'cam_range': 3.0,
+            'sensor': 'rgbd',
             'radius': 0.5
         }
 
@@ -619,6 +618,7 @@ def multi_agent_main(control_type, save_animation=False):
         'model': 'DynamicUnicycle2D', #'DoubleIntegrator2D'
         'w_max': 0.5,
         'a_max': 0.5,
+        'sensor': 'rgbd',
         'fov_angle': 45.0,
         'cam_range': 3.0,
         'radius': 0.25
@@ -638,6 +638,7 @@ def multi_agent_main(control_type, save_animation=False):
         'w_max': 1.0,
         'a_max': 1.5,
         'v_max': 2.0,
+        'sensor': 'rgbd',
         'fov_angle': 90.0,
         'cam_range': 5.0,
         'radius': 0.25

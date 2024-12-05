@@ -85,9 +85,10 @@ class BaseRobot:
             raise ValueError("Invalid robot model")
 
         # FOV parameters
-        self.fov_angle = np.deg2rad(
-            float(self.robot_spec['fov_angle']))  # [rad]
-        self.cam_range = self.robot_spec['cam_range']  # [m]
+        if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
+            self.fov_angle = np.deg2rad(
+                float(self.robot_spec['fov_angle']))  # [rad]
+            self.cam_range = self.robot_spec['cam_range']  # [m]
 
         if 'radius' not in self.robot_spec:
             self.robot_spec['radius'] = 0.25
@@ -99,7 +100,7 @@ class BaseRobot:
         self.U_att = np.array([0]).reshape(-1, 1)
 
         # Plot handles
-        self.vis_orient_len = 0.3
+        self.vis_orient_len = 0.5
         
         if self.robot_spec['model'] == 'KinematicBicycle2D':
             self.wheel_base = self.robot_spec['wheel_base']
@@ -143,7 +144,7 @@ class BaseRobot:
             [], [], s=40, facecolors='r', edgecolors='r')
         # Robot's orientation axis represented as a line
         self.axis,  = ax.plot([self.X[0, 0], self.X[0, 0]+self.vis_orient_len*np.cos(self.yaw)], [
-                              self.X[1, 0], self.X[1, 0]+self.vis_orient_len*np.sin(self.yaw)], color='r')
+                      self.X[1, 0], self.X[1, 0]+self.vis_orient_len*np.sin(self.yaw)], color='r', linewidth=2)
         # Initialize FOV line handle with placeholder data
         self.fov, = ax.plot([], [], 'k--')  # Unpack the tuple returned by plot
         # Initialize FOV fill handle with placeholder data
@@ -289,48 +290,49 @@ class BaseRobot:
             # self.body.set_offsets([self.X[0, 0], self.X[1, 0]])
             self.body.center = self.X[0, 0], self.X[1, 0]
 
-        if len(self.unsafe_points) > 0:
-            self.unsafe_points_handle.set_offsets(np.array(self.unsafe_points))
 
         self.axis.set_ydata([self.X[1, 0], self.X[1, 0] +
                             self.vis_orient_len*np.sin(self.yaw)])
         self.axis.set_xdata([self.X[0, 0], self.X[0, 0] +
                             self.vis_orient_len*np.cos(self.yaw)])
 
-        # Calculate FOV points
-        fov_left, fov_right = self.calculate_fov_points()
+        if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
+            if len(self.unsafe_points) > 0:
+                self.unsafe_points_handle.set_offsets(np.array(self.unsafe_points))
+            # Calculate FOV points
+            fov_left, fov_right = self.calculate_fov_points()
 
-        # Define the points of the FOV triangle (including robot's robot_position)
-        fov_x_points = [self.X[0, 0], fov_left[0],
-                        fov_right[0], self.X[0, 0]]  # Close the loop
-        fov_y_points = [self.X[1, 0], fov_left[1], fov_right[1], self.X[1, 0]]
+            # Define the points of the FOV triangle (including robot's robot_position)
+            fov_x_points = [self.X[0, 0], fov_left[0],
+                            fov_right[0], self.X[0, 0]]  # Close the loop
+            fov_y_points = [self.X[1, 0], fov_left[1], fov_right[1], self.X[1, 0]]
 
-        # Update FOV line handle
-        self.fov.set_data(fov_x_points, fov_y_points)  # Update with new data
+            # Update FOV line handle
+            self.fov.set_data(fov_x_points, fov_y_points)  # Update with new data
 
-        # Update FOV fill handle
-        # Update the vertices of the polygon
-        self.fov_fill.set_xy(np.array([fov_x_points, fov_y_points]).T)
-
-        if not self.sensing_footprints.is_empty:
-            xs, ys = self.process_sensing_footprints_visualization()
+            # Update FOV fill handle
             # Update the vertices of the polygon
-            self.sensing_footprints_fill.set_xy(np.array([xs, ys]).T)
-        if not self.safety_area.is_empty:
-            if self.safety_area.geom_type == 'Polygon':
-                safety_x, safety_y = self.safety_area.exterior.xy
-            elif self.safety_area.geom_type == 'MultiPolygon':
-                safety_x = [
-                    x for poly in self.safety_area.geoms for x in poly.exterior.xy[0]]
-                safety_y = [
-                    y for poly in self.safety_area.geoms for y in poly.exterior.xy[1]]
-            self.safety_area_fill.set_xy(np.array([safety_x, safety_y]).T)
-        if self.detected_obs is not None:
-            self.detected_obs_patch.center = self.detected_obs[0], self.detected_obs[1]
-            self.detected_obs_patch.set_radius(self.detected_obs[2])
-        if len(self.detected_points) > 0:
-            self.detected_points_scatter.set_offsets(
-                np.array(self.detected_points))
+            self.fov_fill.set_xy(np.array([fov_x_points, fov_y_points]).T)
+
+            if not self.sensing_footprints.is_empty:
+                xs, ys = self.process_sensing_footprints_visualization()
+                # Update the vertices of the polygon
+                self.sensing_footprints_fill.set_xy(np.array([xs, ys]).T)
+            if not self.safety_area.is_empty:
+                if self.safety_area.geom_type == 'Polygon':
+                    safety_x, safety_y = self.safety_area.exterior.xy
+                elif self.safety_area.geom_type == 'MultiPolygon':
+                    safety_x = [
+                        x for poly in self.safety_area.geoms for x in poly.exterior.xy[0]]
+                    safety_y = [
+                        y for poly in self.safety_area.geoms for y in poly.exterior.xy[1]]
+                self.safety_area_fill.set_xy(np.array([safety_x, safety_y]).T)
+            if self.detected_obs is not None:
+                self.detected_obs_patch.center = self.detected_obs[0], self.detected_obs[1]
+                self.detected_obs_patch.set_radius(self.detected_obs[2])
+            if len(self.detected_points) > 0:
+                self.detected_points_scatter.set_offsets(
+                    np.array(self.detected_points))
 
     def process_sensing_footprints_visualization(self):
         '''
