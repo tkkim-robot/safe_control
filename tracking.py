@@ -334,6 +334,7 @@ class LocalTrackingController:
             - 1: visibility violation
         '''
         # update state machine
+        print("State Machine: ", self.state_machine)
         if self.state_machine == 'stop':
             if self.robot.has_stopped():
                 self.state_machine = 'rotate'
@@ -360,9 +361,6 @@ class LocalTrackingController:
             elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'Quad2D']:
                 u_ref = self.robot.rotate_to(goal_angle)
         elif self.goal is None:
-            if self.robot_spec['model'] == 'Quad2D':
-                # These dynmaics do not have a stop() method
-                return -1
             u_ref = self.robot.stop()
         else:
             if self.control_type == 'optimal_decay_cbf_qp':
@@ -479,7 +477,7 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    model = 'KinematicBicycle2D' # Quad2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D
+    model = 'Quad2D' # Quad2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D
 
     waypoints = [
         [2, 2, math.pi/2],
