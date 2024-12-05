@@ -65,6 +65,15 @@ class BaseRobot:
             # X0: [x, y, vx, vy, theta]
             self.set_orientation(self.X[4, 0])
             self.X = self.X[0:4]  # Remove the yaw angle from the state
+        elif self.robot_spec['model'] == 'SingleIntegrator2D':
+            try:
+                from single_integrator2D import SingleIntegrator2D
+            except ImportError:
+                from robots.single_integrator2D import SingleIntegrator2D
+            self.robot = SingleIntegrator2D(dt, robot_spec)
+            # X0: [x, y, vx, vy, theta]
+            self.set_orientation(self.X[4, 0])
+            self.X = self.X[0:4]  # Remove the yaw angle from the state    
         else:
             raise ValueError("Invalid robot model")
 
@@ -164,6 +173,8 @@ class BaseRobot:
         elif self.robot_spec['model'] == 'DynamicUnicycle2D':
             return self.robot.nominal_input(self.X, goal, d_min, k_omega, k_a, k_v)
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
+            return self.robot.nominal_input(self.X, goal, d_min, k_v, k_a)
+        elif self.robot_spec['model'] == 'SingleIntegrator2D':
             return self.robot.nominal_input(self.X, goal, d_min, k_v, k_a)
 
     def nominal_attitude_input(self, theta_des):
@@ -512,7 +523,7 @@ if __name__ == "__main__":
 
     for i in range(num_steps):
         u_ref.value = robot.nominal_input(goal)
-        if robot_spec['model'] == 'Unicycle2D':
+        if robot_spec['model'] in ['Unicycle2D', 'SingleIntegrator2D']:
             alpha = 1.0  # 10.0
             h, dh_dx = robot.agent_barrier(obs)
             A1.value[0, :] = dh_dx @ robot.g()
