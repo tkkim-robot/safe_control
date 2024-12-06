@@ -7,7 +7,9 @@ import subprocess
 
 """
 Created on June 20th, 2024
+Edited on Dec 6th, 2024
 @author: Taekyung Kim
+@editor: Hun Kuk Park
 
 @description: 
 This code implements a local tracking controller for 2D robot navigation using Control Barrier Functions (CBF) and Quadratic Programming (QP).
@@ -31,7 +33,7 @@ class InfeasibleError(Exception):
 
 
 class LocalTrackingController:
-    def __init__(self, X0, robot_spec, control_type='cbf_qp', dt=0.05,
+    def __init__(self, X0, robot_spec, control_type='mpc_cbf', dt=0.05,
                  show_animation=False, save_animation=False, raise_error=True, ax=None, fig=None, env=None):
 
         self.robot_spec = robot_spec
@@ -75,6 +77,13 @@ class LocalTrackingController:
             elif X0.shape[0] != 5:
                 raise ValueError(
                     "Invalid initial state dimension for DoubleIntegrator2D")
+        elif self.robot_spec['model'] == 'SingleIntegrator2D':
+            if 'v_max' not in self.robot_spec:
+                self.robot_spec['v_max'] = 1.0
+            if X0.shape[2] > 2:
+                raise ValueError(
+                    "Invalid intial state dimension for SIngleIntegrator2D"
+                )
             
         self.u_att = None
 
@@ -144,9 +153,12 @@ class LocalTrackingController:
             [], [], s=10, facecolors='g', edgecolors='g', alpha=0.5)
 
     def setup_robot(self, X0):
-        from robots.robot import BaseRobot
-        self.robot = BaseRobot(
-            X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
+        # from robots.robot import BaseRobot
+        from robots.double_integrator2D import DoubleIntegrator2D
+        self.robot = DoubleIntegrator2D(
+    #        X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
+            self.dt, self.robot_spec)
+        self.robot.x = X0.reshape(-1, 1)
 
     def set_waypoints(self, waypoints):
         if type(waypoints) == list:
@@ -506,7 +518,7 @@ def single_agent_main(control_type):
     env_handler = env.Env()
 
     robot_spec = {
-        'model': 'DynamicUnicycle2D',
+        'model': 'DoubleIntegrator2D',
         'w_max': 0.5,
         'a_max': 0.5,
         'fov_angle': 70.0,
