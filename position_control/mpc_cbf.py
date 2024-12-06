@@ -23,6 +23,9 @@ class MPCCBF:
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
             self.Q = np.diag([50, 50, 20, 20])  # State cost matrix
             self.R = np.array([0.5, 0.5])  # Input cost matrix
+        elif self.robot_spec['model'] == 'SingleIntegrator2D':
+            self.Q = np.diag([50, 50])
+            self.R = np.array([0.5, 0.5])
 
         # DT CBF parameters should scale from 0 to 1
         self.cbf_param = {}
@@ -37,6 +40,8 @@ class MPCCBF:
             self.cbf_param['alpha1'] = 0.15
             self.cbf_param['alpha2'] = 0.15
             self.n_states = 4
+        elif self.robot_spec['model'] == 'SingleIntegrator2D':
+            self.cbf_param['alpha'] = 0.05
         self.n_controls = 2
 
         self.goal = np.array([0, 0])
@@ -67,7 +72,7 @@ class MPCCBF:
         _obs = model.set_variable(
             var_type='_tvp', var_name='obs', shape=(5, 3))
 
-        if self.robot_spec['model'] == 'Unicycle2D':
+        if self.robot_spec['model'] in ['Unicycle2D', 'SingleIntegrator2D']:
             _alpha = model.set_variable(
                 var_type='_tvp', var_name='alpha', shape=(1, 1))
         elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D']:
@@ -129,6 +134,11 @@ class MPCCBF:
                 [-self.robot_spec['ax_max'], -self.robot_spec['ay_max']])
             mpc.bounds['upper', '_u', 'u'] = np.array(
                 [self.robot_spec['ax_max'], self.robot_spec['ay_max']])
+        elif self.robot_spec['model'] == 'SingleIntegrator2D':
+            mpc.bounds['lower', '_u', '_u'] = np.array(
+                [-self.robot_spec['v_max'], -self.robot_spec['v_max']])
+            mpc.bounds['upper', '_u', '_u'] = np.array(
+                [self.robot_spec['v_max'], self.robot_spec['v_max']])
 
         mpc = self.set_tvp(mpc)
         mpc = self.set_cbf_constraint(mpc)
@@ -159,7 +169,7 @@ class MPCCBF:
                     # Use the detected obstacles directly
                     tvp_template['_tvp', :, 'obs'] = self.obs[:5, :]  # Limit to 5 obstacles
 
-            if self.robot_spec['model'] == 'Unicycle2D':
+            if self.robot_spec['model'] in ['Unicycle2D', 'SingleIntegrator2D']:
                 tvp_template['_tvp', :, 'alpha'] = self.cbf_param['alpha']
             elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D']:
                 tvp_template['_tvp', :, 'alpha1'] = self.cbf_param['alpha1']
@@ -187,7 +197,7 @@ class MPCCBF:
         '''compute cbf constraint value
         We reuse this function to print the CBF constraint'''
 
-        if self.robot_spec['model'] == 'Unicycle2D':
+        if self.robot_spec['model'] in ['Unicycle2D', 'SingleIntegrator']:
             _alpha = self.model.tvp['alpha']
             h_k, d_h = self.robot.agent_barrier_dt(_x, _u, _obs)
             cbf_constraint = d_h + _alpha * h_k
