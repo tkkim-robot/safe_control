@@ -29,7 +29,7 @@ class DoubleIntegrator2D:
             theta: yaw angle
             U: [ax, ay]
             U_attitude: [yaw_rate]
-            cbf: h(x) = ||x-x_obs||^2 - beta*d_min^2
+            cbf: h(x,y) = ||x-x_obs||^2 + ||y-y_obs||^2- beta*d_min^2
             relative degree: 2
         '''
         self.dt = dt # instance 변수에 저장
@@ -53,7 +53,7 @@ class DoubleIntegrator2D:
                              0,
                              0]).reshape(-1, 1)
 
-    def df_dx(self, X):
+    def df_dx(self, X): # 무슨 용도일까?
         return np.array([
             [0, 0, 1, 0],
             [0, 0, 0, 1],
