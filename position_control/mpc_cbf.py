@@ -42,6 +42,7 @@ class MPCCBF:
             self.n_states = 4
         elif self.robot_spec['model'] == 'SingleIntegrator2D':
             self.cbf_param['alpha'] = 0.05
+            self.n_states = 2
         self.n_controls = 2
 
         self.goal = np.array([0, 0])

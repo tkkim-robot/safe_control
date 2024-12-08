@@ -33,7 +33,7 @@ class InfeasibleError(Exception):
 
 
 class LocalTrackingController:
-    def __init__(self, X0, robot_spec, control_type='mpc_cbf', dt=0.05,
+    def __init__(self, X0, robot_spec, control_type='cbf_qp', dt=0.05,
                  show_animation=False, save_animation=False, raise_error=True, ax=None, fig=None, env=None):
 
         self.robot_spec = robot_spec
@@ -80,7 +80,7 @@ class LocalTrackingController:
         elif self.robot_spec['model'] == 'SingleIntegrator2D':
             if 'v_max' not in self.robot_spec:
                 self.robot_spec['v_max'] = 1.0
-            if X0.shape[2] > 2:
+            if X0.shape[0] > 2:
                 raise ValueError(
                     "Invalid intial state dimension for SIngleIntegrator2D"
                 )
@@ -152,13 +152,24 @@ class LocalTrackingController:
         self.waypoints_scatter = self.ax.scatter(
             [], [], s=10, facecolors='g', edgecolors='g', alpha=0.5)
 
-    def setup_robot(self, X0):
-        # from robots.robot import BaseRobot
-        from robots.double_integrator2D import DoubleIntegrator2D
-        self.robot = DoubleIntegrator2D(
-    #        X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
-            self.dt, self.robot_spec)
-        self.robot.x = X0.reshape(-1, 1)
+    # def setup_robot(self, X0): # setup_robot for DoubleIntegrator2D
+    #     # from robots.robot import BaseRobot
+    #     from robots.double_integrator2D import DoubleIntegrator2D
+    #     self.robot = DoubleIntegrator2D(
+    # #        X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
+    #         self.dt, self.robot_spec)
+    #     self.robot.x = X0.reshape(-1, 1)
+
+    def setup_robot(self, X0): # setup_robot for SingleIntegrator2D
+    #    # from robots.robot import BaseRobot
+    #     from robots.single_integrator2D import SingleIntegrator2D
+    #     self.robot = SingleIntegrator2D(
+    # #        X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
+    #         self.dt, self.robot_spec)
+    #     self.robot.x = X0.reshape(-1, 1)
+        from robots.robot import BaseRobot
+        self.base_robot = BaseRobot(X0, self.robot_spec, self.dt, self.ax)
+        self.robot = self.base_robot
 
     def set_waypoints(self, waypoints):
         if type(waypoints) == list:
@@ -384,7 +395,7 @@ class LocalTrackingController:
             if self.robot_spec['model'] == 'DoubleIntegrator2D':
                 self.u_att = self.robot.rotate_to(goal_angle)
                 u_ref = self.robot.stop()
-            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D']:
+            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'SingleIntegrator2D']:
                 u_ref = self.robot.rotate_to(goal_angle)
         elif self.goal is None:
             u_ref = self.robot.stop()
@@ -500,27 +511,40 @@ class LocalTrackingController:
 def single_agent_main(control_type):
     dt = 0.05
 
+    # waypoints = [
+    #     [2, 2, math.pi/2],
+    #     [2, 12, 0],
+    #     [12, 12, 0],
+    #     [12, 2, 0]
+    # ]
     waypoints = [
-        [2, 2, math.pi/2],
-        [2, 12, 0],
-        [12, 12, 0],
-        [12, 2, 0]
+        [2, 2],
+        [2, 12],
+        [12, 12],
+        [12, 2]
     ]
     waypoints = np.array(waypoints, dtype=np.float64)
-    x_init = np.append(waypoints[0], 1.0)
+
+    # 초기 상태 x_init을 첫 번째 waypoint 위치로 설정 (2x1 벡터 형태)
+    x_init = waypoints[0].reshape(-1, 1)
     
     known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
                             [10.0, 7.3, 0.4],
                             [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
     
+    # from utils import plotting
+    # from utils import env
+    # import math
+
     plot_handler = plotting.Plotting(known_obs=known_obs)
     ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here
     env_handler = env.Env()
 
     robot_spec = {
-        'model': 'DoubleIntegrator2D',
-        'w_max': 0.5,
-        'a_max': 0.5,
+        'model': 'SingleIntegrator2D', #'DoubleIntegrator2D',
+        # 'w_max': 0.5,
+        # 'a_max': 0.0,
+        'v_max': 1.0,
         'fov_angle': 70.0,
         'cam_range': 3.0,
         'radius': 0.25
@@ -617,7 +641,7 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main('mpc_cbf')
+    single_agent_main('cbf_qp')
     #multi_agent_main('mpc_cbf', save_animation=True)
     #single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')

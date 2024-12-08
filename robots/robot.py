@@ -7,7 +7,9 @@ from utils.geometry import custom_merge
 
 """
 Created on June 21st, 2024
+Edited on Dec 6th, 2024
 @author: Taekyung Kim
+@editor: Hun Kuk Park
 
 @description: 
 This code implements a BaseRobot class for 2D robot simulation with unicycle dynamics.
@@ -71,9 +73,11 @@ class BaseRobot:
             except ImportError:
                 from robots.single_integrator2D import SingleIntegrator2D
             self.robot = SingleIntegrator2D(dt, robot_spec)
-            # X0: [x, y, vx, vy, theta]
-            self.set_orientation(self.X[4, 0])
-            self.X = self.X[0:4]  # Remove the yaw angle from the state    
+            # X0: [x, y]
+            # self.set_orientation(self.X[2, 0])
+            self.X = self.X[0:2]
+            # self.yaw = None
+            self.yaw = 0.0
         else:
             raise ValueError("Invalid robot model")
 
@@ -135,6 +139,9 @@ class BaseRobot:
         return self.X[0:2].reshape(-1)
 
     def get_orientation(self):
+        # SingleIntegrator2D는 orientation이 없으므로 None 변환
+        if self.robot_spec['model'] == 'SingleIntegraotr2D':
+            return None
         return self.yaw
 
     def get_yaw_rate(self):
@@ -175,7 +182,7 @@ class BaseRobot:
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
             return self.robot.nominal_input(self.X, goal, d_min, k_v, k_a)
         elif self.robot_spec['model'] == 'SingleIntegrator2D':
-            return self.robot.nominal_input(self.X, goal, d_min, k_v, k_a)
+            return self.robot.nominal_input(self.X, goal, d_min, k_v)
 
     def nominal_attitude_input(self, theta_des):
         if self.robot_spec['model'] == 'DoubleIntegrator2D':
@@ -185,9 +192,13 @@ class BaseRobot:
                 "nominal_attitude_input is not implemented for this model")
 
     def stop(self):
+        if self.robot_spec['mode'] == 'SingleIntegrator2D':
+            return np.zeros((2,1))
         return self.robot.stop(self.X)
 
     def has_stopped(self):
+        if self.robot_spec['model'] == 'SingleIntegrator2D':
+            return np.linalg.norm(self.U) < 1e-3
         return self.robot.has_stopped(self.X)
 
     def rotate_to(self, theta):
@@ -220,9 +231,12 @@ class BaseRobot:
         if len(self.unsafe_points) > 0:
             self.unsafe_points_handle.set_offsets(np.array(self.unsafe_points))
 
-        self.axis.set_ydata([self.X[1, 0], self.X[1, 0] +
+        # orentation line 업데이트: SingleIntegrator2D는 skip
+        if self.robot_spec['model'] not in ['SingleIntegrator2D'] and self.yaw is not None:
+
+            self.axis.set_ydata([self.X[1, 0], self.X[1, 0] +
                             self.vis_orient_len*np.sin(self.yaw)])
-        self.axis.set_xdata([self.X[0, 0], self.X[0, 0] +
+            self.axis.set_xdata([self.X[0, 0], self.X[0, 0] +
                             self.vis_orient_len*np.cos(self.yaw)])
 
         # Calculate FOV points
@@ -308,13 +322,21 @@ class BaseRobot:
     def update_safety_area(self):
         if self.robot_spec['model'] == 'Unicycle2D':
             v = self.U[0, 0]  # Linear velocity
+            yaw_rate = self.get_yaw_rate()
         elif self.robot_spec['model'] == 'DynamicUnicycle2D':
             v = self.X[3, 0]
+            yaw_rate = self.get_yaw_rate()
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
             vx = self.X[2, 0]
             vy = self.X[3, 0]
             v = np.linalg.norm([vx, vy])
-        yaw_rate = self.get_yaw_rate()
+            yaw_rate = self.get_yaw_rate()
+        elif self.robot_spec['model'] == 'SingleIntegrator2D':
+            # 속도 명령 U=[vx, vy]로 부터 v 추출
+            v = np.linalg.norm(self.U)
+            # yaw 개념 없음
+            yaw_rate = 0.0
+        # yaw_rate = self.get_yaw_rate()
 
         if yaw_rate != 0.0:
             # Stopping times
@@ -367,6 +389,8 @@ class BaseRobot:
         points = np.array(detected_points)
         robot_pos = self.get_position()
         robot_yaw = self.get_orientation()
+        if robot_yaw is None:
+            robot_yaw = 0.0
         vectors_to_points = points - robot_pos
         robot_heading_vector = np.array([np.cos(robot_yaw), np.sin(robot_yaw)])
         angles = np.arctan2(vectors_to_points[:, 1], vectors_to_points[:, 0]) - np.arctan2(
@@ -487,19 +511,20 @@ if __name__ == "__main__":
     num_steps = int(tf/dt)
 
     # model = 'DoubleIntegrator2D' #TODO: double integrator with yaw angle is not supported for this example
-    model = 'DynamicUnicycle2D'
+    # model = 'DynamicUnicycle2D'
     # model = 'Unicycle2D'
+    model = 'SingleIntegrator2D'
 
     robot_spec = {
         'model': model,
-        'w_max': 0.5,
-        'a_max': 0.5,
+        'v_max': 0.5,
+        # 'a_max': 0.5,
         'fov_angle': 70.0,
         'cam_range': 3.0
     }
 
     robot = BaseRobot(
-        np.array([-1, -1, np.pi/4, 0.0]).reshape(-1, 1), robot_spec, dt, ax)
+        np.array([-1, -1]).reshape(-1, 1), robot_spec, dt, ax)
 
     obs = np.array([0.5, 0.3, 0.5]).reshape(-1, 1)
     goal = np.array([2, 0.5])
@@ -519,7 +544,7 @@ if __name__ == "__main__":
     const = [A1 @ u + b1 >= 0]
     const += [cp.abs(u[0, 0]) <= 0.5]
     const += [cp.abs(u[1, 0]) <= 0.5]
-    cbf_controller = cp.Problem(objective, const)
+    cbf_controller = cp.Problem(objective, const) 
 
     for i in range(num_steps):
         u_ref.value = robot.nominal_input(goal)
