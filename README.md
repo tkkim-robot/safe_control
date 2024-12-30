@@ -138,6 +138,8 @@ Supported robot dynamics can be found in the [`robots/`](https://github.com/tkki
 - `dynamic_unicycle2D`: A unicycle model that uses velocity as state and acceleration as input.
 - `double_integrator2D`
 - `double_integrator2D with camera angle`: under development
+- `kinematic_bicycle2D`
+- `quad2d`: x - forward, z - vertical
 
 ### Positional Control Algorithms
 
