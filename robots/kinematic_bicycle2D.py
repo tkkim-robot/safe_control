@@ -206,7 +206,6 @@ class KinematicBicycle2D:
         # Update vehicle body
         transform_body = Affine2D().rotate(theta).translate(x, y) + plt.gca().transData
 
-
         # Calculate axle positions
         rear_axle_x = x - self.robot_spec['rear_ax_dist'] * np.cos(theta)
         rear_axle_y = y - self.robot_spec['rear_ax_dist'] * np.sin(theta)

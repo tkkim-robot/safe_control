@@ -1,6 +1,9 @@
 import numpy as np
 import casadi as ca
 
+import matplotlib.pyplot as plt
+from matplotlib.transforms import Affine2D
+
 
 def angle_normalize(x):
     if isinstance(x, (np.ndarray, float, int)):
@@ -203,3 +206,13 @@ class Quad2D:
         # d_h = np.zeros_like(d_h)
         # dd_h = np.zeros_like(dd_h)
         return h_k, d_h, dd_h
+
+    def render_rigid_body(self, X):
+        x, z, theta, _, _, _ = X.flatten()
+        # Adjust rectangle's center to align its bottom edge with the robot's circle center
+        rect_center_z = z + self.robot_spec['radius'] / 6
+        
+        # Create a transformation that handles rotation and translation
+        transform_rect = Affine2D().rotate(theta).translate(x, rect_center_z) + plt.gca().transData
+        
+        return transform_rect
