@@ -14,16 +14,24 @@ class OptimalDecayCBFQP:
     def __init__(self, robot, robot_spec):
         self.robot = robot
         self.robot_spec = robot_spec
-        if self.robot_spec['model'] != 'DynamicUnicycle2D': # TODO: not compatible with other robot models yet
+        if self.robot_spec['model'] == 'DynamicUnicycle2D': # TODO: not compatible with other robot models yet
+            self.cbf_param = {}
+            self.cbf_param['alpha1'] = 0.5
+            self.cbf_param['alpha2'] = 0.5
+            self.cbf_param['omega1'] = 1.0  # Initial omega
+            self.cbf_param['p_sb1'] = 10**4  # Penalty parameter for soft decay
+            self.cbf_param['omega2'] = 1.0  # Initial omega
+            self.cbf_param['p_sb2'] = 10**4  # Penalty parameter for soft decay
+        elif self.robot_spec['model'] == 'KinematicBicycle2D':
+            self.cbf_param = {}
+            self.cbf_param['alpha1'] = 0.5
+            self.cbf_param['alpha2'] = 0.5
+            self.cbf_param['omega1'] = 1.0  # Initial omega
+            self.cbf_param['p_sb1'] = 10**4  # Penalty parameter for soft decay
+            self.cbf_param['omega2'] = 1.0  # Initial omega
+            self.cbf_param['p_sb2'] = 10**4  # Penalty parameter for soft decay
+        else:
             raise NotCompatibleError("Infeasible or Collision")
-        self.cbf_param = {}
-        
-        self.cbf_param['alpha1'] = 0.5
-        self.cbf_param['alpha2'] = 0.5
-        self.cbf_param['omega1'] = 1.0  # Initial omega
-        self.cbf_param['p_sb1'] = 10**4  # Penalty parameter for soft decay
-        self.cbf_param['omega2'] = 1.0  # Initial omega
-        self.cbf_param['p_sb2'] = 10**4  # Penalty parameter for soft decay
 
         self.setup_control_problem()
 
@@ -41,13 +49,22 @@ class OptimalDecayCBFQP:
                                 + self.cbf_param['p_sb1'] * cp.square(self.omega1 - self.cbf_param['omega1'])
                                 + self.cbf_param['p_sb2'] * cp.square(self.omega2 - self.cbf_param['omega2']))
 
-        constraints = [
-            self.A1 @ self.u + self.b1 + 
-            (self.cbf_param['alpha1'] + self.cbf_param['alpha2'])* self.omega1 @ self.h_dot +
-            self.cbf_param['alpha1'] * self.cbf_param['alpha2'] * self.h @ self.omega2 >= 0,
-            cp.abs(self.u[0]) <= self.robot_spec['a_max'],
-            cp.abs(self.u[1]) <= self.robot_spec['w_max'],
-        ]
+        if self.robot_spec['model'] == 'DynamicUnicycle2D':
+            constraints = [
+                self.A1 @ self.u + self.b1 + 
+                (self.cbf_param['alpha1'] + self.cbf_param['alpha2'])* self.omega1 @ self.h_dot +
+                self.cbf_param['alpha1'] * self.cbf_param['alpha2'] * self.h @ self.omega2 >= 0,
+                cp.abs(self.u[0]) <= self.robot_spec['a_max'],
+                cp.abs(self.u[1]) <= self.robot_spec['w_max'],
+            ]
+        elif self.robot_spec['model'] == 'KinematicBicycle2D':
+            constraints = [
+                self.A1 @ self.u + self.b1 + 
+                (self.cbf_param['alpha1'] + self.cbf_param['alpha2'])* self.omega1 @ self.h_dot +
+                self.cbf_param['alpha1'] * self.cbf_param['alpha2'] * self.h @ self.omega2 >= 0,
+                cp.abs(self.u[0]) <= self.robot_spec['a_max'],
+                cp.abs(self.u[1]) <= self.robot_spec['beta_max'],
+            ]
 
         self.cbf_controller = cp.Problem(objective, constraints)
 

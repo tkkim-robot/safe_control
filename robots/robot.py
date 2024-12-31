@@ -108,27 +108,35 @@ class BaseRobot:
         if self.robot_spec['model'] == 'KinematicBicycle2D':
             # Define robot dimensions
             self.robot_spec['body_length'] = self.robot_spec['front_ax_dist'] + self.robot_spec['rear_ax_dist']
-            
             # Add vehicle body as a rectangle
             self.vehicle_body = ax.add_patch(
                 plt.Rectangle((-self.robot_spec['rear_ax_dist'], -self.robot_spec['body_width'] / 2),
                           self.robot_spec['body_length'], self.robot_spec['body_width'],
-                          linewidth=1, edgecolor='blue', facecolor='blue', alpha=0.5)
+                          linewidth=1, edgecolor='black', facecolor=color, alpha=0.5)
             )
-
             # Add front and rear wheels as small rectangles
             wheel_width = self.robot_spec['body_width'] / 3
             wheel_length = self.robot_spec['body_width'] / 1.5
             self.front_wheel = ax.add_patch(
                 plt.Rectangle((-wheel_length / 2, -wheel_width / 2),
                           wheel_length, wheel_width,
-                          edgecolor='black', facecolor='gray', alpha=0.7)
+                          edgecolor='black', facecolor=color, alpha=0.7)
             )
             self.rear_wheel = ax.add_patch(
                 plt.Rectangle((-wheel_length / 2, -wheel_width / 2),
                           wheel_length, wheel_width,
-                          edgecolor='black', facecolor='gray', alpha=0.7)
+                          edgecolor='black', facecolor=color, alpha=0.7)
             )
+        elif self.robot_spec['model'] == 'Quad2D':
+            # Circle for the robot's position
+            self.body_circle = ax.add_patch(plt.Circle(
+                (0, 0), self.robot_radius/4, edgecolor='black', facecolor=color, fill=True))
+            # Rectangle for the robot's orientation
+            rect_width = 2 * self.robot_radius
+            rect_height = self.robot_radius/6
+            self.orientation_rectangle = ax.add_patch(plt.Rectangle(
+                (-rect_width / 2, -rect_height / 2), rect_width, rect_height,
+                linewidth=1, edgecolor='black', facecolor=color, alpha=0.5))
         else:
             # Robot's body represented as a scatter plot
             # self.body = ax.scatter(
@@ -261,6 +269,10 @@ class BaseRobot:
             self.vehicle_body.set_transform(trans_body)
             self.rear_wheel.set_transform(trans_rear)
             self.front_wheel.set_transform(trans_front)
+        elif self.robot_spec['model'] == 'Quad2D':
+            self.body_circle.center = self.X[0, 0], self.X[1, 0]
+            trans_rect = self.robot.render_rigid_body(self.X)
+            self.orientation_rectangle.set_transform(trans_rect)
         else:
             # self.body.set_offsets([self.X[0, 0], self.X[1, 0]])
             self.body.center = self.X[0, 0], self.X[1, 0]

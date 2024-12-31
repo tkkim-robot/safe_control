@@ -185,12 +185,17 @@ class LocalTrackingController:
             )
 
     def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=5):
-        # TODO: np.pi*2 for Quad2D, np.pi for others
         def angle_normalize(x):
             return (((x + np.pi) % (2 * np.pi)) - np.pi)
         '''
-        Get the nearest 5 obstacles that haven't been passed by (i.e., they're still in front of the robot).
+        Get the nearest 5 obstacles that haven't been passed by (i.e., they're still in front of the robot or the robot should still consider the obstacle).
         '''
+        
+        if self.robot_spec['model'] == 'Quad2D':
+            angle_unpassed=np.pi*2
+        elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D']:
+            angle_unpassed=np.pi*1.2
+        
         if len(detected_obs) != 0:
             if len(self.obs) == 0:
                 all_obs = np.array(detected_obs)
@@ -334,7 +339,6 @@ class LocalTrackingController:
             - 1: visibility violation
         '''
         # update state machine
-        print("State Machine: ", self.state_machine)
         if self.state_machine == 'stop':
             if self.robot.has_stopped():
                 self.state_machine = 'rotate'
