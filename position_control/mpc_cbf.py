@@ -25,7 +25,7 @@ class MPCCBF:
             self.R = np.array([0.5, 0.5])  # Input cost matrix
         elif self.robot_spec['model'] == 'SingleIntegrator2D':
             self.Q = np.diag([50, 50])
-            self.R = np.array([0.5, 0.5])
+            self.R = np.array([5, 5])
 
         # DT CBF parameters should scale from 0 to 1
         self.cbf_param = {}
@@ -136,9 +136,9 @@ class MPCCBF:
             mpc.bounds['upper', '_u', 'u'] = np.array(
                 [self.robot_spec['ax_max'], self.robot_spec['ay_max']])
         elif self.robot_spec['model'] == 'SingleIntegrator2D':
-            mpc.bounds['lower', '_u', '_u'] = np.array(
+            mpc.bounds['lower', '_u', 'u'] = np.array(
                 [-self.robot_spec['v_max'], -self.robot_spec['v_max']])
-            mpc.bounds['upper', '_u', '_u'] = np.array(
+            mpc.bounds['upper', '_u', 'u'] = np.array(
                 [self.robot_spec['v_max'], self.robot_spec['v_max']])
 
         mpc = self.set_tvp(mpc)
@@ -198,7 +198,7 @@ class MPCCBF:
         '''compute cbf constraint value
         We reuse this function to print the CBF constraint'''
 
-        if self.robot_spec['model'] in ['Unicycle2D', 'SingleIntegrator']:
+        if self.robot_spec['model'] in ['Unicycle2D', 'SingleIntegrator2D']:
             _alpha = self.model.tvp['alpha']
             h_k, d_h = self.robot.agent_barrier_dt(_x, _u, _obs)
             cbf_constraint = d_h + _alpha * h_k
@@ -264,4 +264,10 @@ class MPCCBF:
         #         x_next, u, nearest_obs)  # here use actual value, not symbolic
         # self.status = 'optimal' if self.mpc.optimal else 'infeasible'
         # print(self.mpc.opt_x_num['_x', :, 0, 0])
+
+        h_k, d_h = self.robot.agent_barrier_dt(robot_state, u, nearest_obs)
+        print("h_k: ", h_k)
+        print("d_h: ", d_h)
+
+
         return u

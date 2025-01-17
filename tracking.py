@@ -9,7 +9,6 @@ import subprocess
 Created on June 20th, 2024
 Edited on Dec 6th, 2024
 @author: Taekyung Kim
-@editor: Hun Kuk Park
 
 @description: 
 This code implements a local tracking controller for 2D robot navigation using Control Barrier Functions (CBF) and Quadratic Programming (QP).
@@ -80,10 +79,15 @@ class LocalTrackingController:
         elif self.robot_spec['model'] == 'SingleIntegrator2D':
             if 'v_max' not in self.robot_spec:
                 self.robot_spec['v_max'] = 1.0
-            if X0.shape[0] > 2:
+        #    if X0.shape[0] > 2:
+        #        X0 = X0[0:2]
+            if X0.shape[0] == 2:
+                X0 = np.array([X0[0], X0[1], 0.0]).reshape(-1, 1)
+            elif X0.shape[0] != 3:
                 raise ValueError(
-                    "Invalid intial state dimension for SIngleIntegrator2D"
-                )
+                    "Invalid initial state dimension for DoubleIntegrator2D")
+
+    
             
         self.u_att = None
 
@@ -152,6 +156,7 @@ class LocalTrackingController:
         self.waypoints_scatter = self.ax.scatter(
             [], [], s=10, facecolors='g', edgecolors='g', alpha=0.5)
 
+
     # def setup_robot(self, X0): # setup_robot for DoubleIntegrator2D
     #     # from robots.robot import BaseRobot
     #     from robots.double_integrator2D import DoubleIntegrator2D
@@ -159,7 +164,8 @@ class LocalTrackingController:
     # #        X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
     #         self.dt, self.robot_spec)
     #     self.robot.x = X0.reshape(-1, 1)
-
+    
+    ## need to edit for original one
     def setup_robot(self, X0): # setup_robot for SingleIntegrator2D
     #    # from robots.robot import BaseRobot
     #     from robots.single_integrator2D import SingleIntegrator2D
@@ -225,7 +231,7 @@ class LocalTrackingController:
                 )
             )
 
-    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi, obs_num=5):
+    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=2*np.pi, obs_num=5):
         def angle_normalize(x):
             return (((x + np.pi) % (2 * np.pi)) - np.pi)
         '''
@@ -387,15 +393,16 @@ class LocalTrackingController:
             self.nearest_obs = self.nearest_multi_obs[0].reshape(3,1)
         else:
             self.nearest_obs = None
+        print(self.nearest_multi_obs)
 
         # 2. Compuite nominal control input, pre-defined in the robot class
         if self.state_machine == 'rotate':
             goal_angle = np.arctan2(self.goal[1] - self.robot.X[1, 0],
                                     self.goal[0] - self.robot.X[0, 0])
-            if self.robot_spec['model'] == 'DoubleIntegrator2D':
+            if self.robot_spec['model'] in ['DoubleIntegrator2D', 'SingleIntegrator2D']:
                 self.u_att = self.robot.rotate_to(goal_angle)
                 u_ref = self.robot.stop()
-            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'SingleIntegrator2D']:
+            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D']:
                 u_ref = self.robot.rotate_to(goal_angle)
         elif self.goal is None:
             u_ref = self.robot.stop()
@@ -510,13 +517,7 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-
-    # waypoints = [
-    #     [2, 2, math.pi/2],
-    #     [2, 12, 0],
-    #     [12, 12, 0],
-    #     [12, 2, 0]
-    # ]
+    ## should return to original one
     waypoints = [
         [2, 2],
         [2, 12],
@@ -526,15 +527,12 @@ def single_agent_main(control_type):
     waypoints = np.array(waypoints, dtype=np.float64)
 
     # 초기 상태 x_init을 첫 번째 waypoint 위치로 설정 (2x1 벡터 형태)
-    x_init = waypoints[0].reshape(-1, 1)
+    x_init = np.append(waypoints[0], 1.0)
     
     known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
                             [10.0, 7.3, 0.4],
                             [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
-    
-    # from utils import plotting
-    # from utils import env
-    # import math
+
 
     plot_handler = plotting.Plotting(known_obs=known_obs)
     ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here
@@ -553,7 +551,7 @@ def single_agent_main(control_type):
                                                   control_type=control_type,
                                                   dt=dt,
                                                   show_animation=True,
-                                                  save_animation=True,
+                                                  save_animation=False,
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
 
@@ -641,8 +639,8 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main('cbf_qp')
-    #multi_agent_main('mpc_cbf', save_animation=True)
     #single_agent_main('cbf_qp')
+    #multi_agent_main('mpc_cbf', save_animation=True)
+    single_agent_main('mpc_cbf')
     # single_agent_main('optimal_decay_cbf_qp')
     #single_agent_main('optimal_decay_mpc_cbf')
