@@ -3,9 +3,7 @@ import casadi as ca
 
 """
 Created on July 15th, 2024
-Edited on Dec 5th, 2024
 @author: Taekyung Kim
-@editor: Hun Kuk Park
 
 @description: 
 Single Integrator model for CBF-QP and MPC-CBF (casadi) with separated position and attitude states

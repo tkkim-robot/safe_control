@@ -7,7 +7,6 @@ import subprocess
 
 """
 Created on June 20th, 2024
-Edited on Dec 6th, 2024
 @author: Taekyung Kim
 
 @description: 
@@ -45,30 +44,10 @@ class LocalTrackingController:
         self.current_goal_index = 0  # Index of the current goal in the path
         self.reached_threshold = 0.2
 
-        if self.robot_spec['model'] == 'Unicycle2D':
-            if 'v_max' not in self.robot_spec:
-                self.robot_spec['v_max'] = 1.0
-            if 'w_max' not in self.robot_spec:
-                self.robot_spec['w_max'] = 0.5
-        elif self.robot_spec['model'] == 'DynamicUnicycle2D':
-            # v_max is set to 1.0 inside the robot class
-            if 'a_max' not in self.robot_spec:
-                self.robot_spec['a_max'] = 0.5
-            if 'w_max' not in self.robot_spec:
-                self.robot_spec['w_max'] = 0.5
-            if 'v_max' not in self.robot_spec:
-                self.robot_spec['v_max'] = 1.0
+        if self.robot_spec['model'] == 'DynamicUnicycle2D':
             if X0.shape[0] == 3:  # set initial velocity to 0.0
                 X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
-            if 'a_max' not in self.robot_spec:
-                self.robot_spec['a_max'] = 1.0
-            if 'v_max' not in self.robot_spec:
-                self.robot_spec['v_max'] = 1.0
-            if 'ax_max' not in self.robot_spec:
-                self.robot_spec['ax_max'] = self.robot_spec['a_max']
-            if 'ay_max' not in self.robot_spec:
-                self.robot_spec['ay_max'] = self.robot_spec['a_max']
             if X0.shape[0] == 3:
                 X0 = np.array([X0[0], X0[1], 0.0, 0.0, X0[2]]).reshape(-1, 1)
             elif X0.shape[0] == 2:
@@ -76,27 +55,25 @@ class LocalTrackingController:
             elif X0.shape[0] != 5:
                 raise ValueError(
                     "Invalid initial state dimension for DoubleIntegrator2D")
+        elif self.robot_spec['model'] == 'KinematicBicycle2D':
+            if X0.shape[0] == 3:  # set initial velocity to 0.0
+                X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
+        elif self.robot_spec['model'] == 'Quad2D':
+            if X0.shape[0] in [2, 3]: # only initialize the x,z position if don't provide the full state
+                X0 = np.array([X0[0], X0[1], 0.0, 0.0, 0.0, 0.0]).reshape(-1, 1)
+            elif X0.shape[0] != 6:
+                raise ValueError("Invalid initial state dimension for Quad2D")
         elif self.robot_spec['model'] == 'SingleIntegrator2D':
             if 'v_max' not in self.robot_spec:
                 self.robot_spec['v_max'] = 1.0
-        #    if X0.shape[0] > 2:
-        #        X0 = X0[0:2]
             if X0.shape[0] == 2:
                 X0 = np.array([X0[0], X0[1], 0.0]).reshape(-1, 1)
             elif X0.shape[0] != 3:
                 raise ValueError(
-                    "Invalid initial state dimension for DoubleIntegrator2D")
-
+                    "Invalid initial state dimension for SingleIntegrator2D")
     
             
         self.u_att = None
-
-        if 'fov_angle' not in self.robot_spec:
-            self.robot_spec['fov_angle'] = 70.0
-        if 'cam_range' not in self.robot_spec:
-            self.robot_spec['cam_range'] = 3.0
-        if 'radius' not in self.robot_spec:
-            self.robot_spec['radius'] = 0.25
 
         self.show_animation = show_animation
         self.save_animation = save_animation
@@ -156,26 +133,10 @@ class LocalTrackingController:
         self.waypoints_scatter = self.ax.scatter(
             [], [], s=10, facecolors='g', edgecolors='g', alpha=0.5)
 
-
-    # def setup_robot(self, X0): # setup_robot for DoubleIntegrator2D
-    #     # from robots.robot import BaseRobot
-    #     from robots.double_integrator2D import DoubleIntegrator2D
-    #     self.robot = DoubleIntegrator2D(
-    # #        X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
-    #         self.dt, self.robot_spec)
-    #     self.robot.x = X0.reshape(-1, 1)
-    
-    ## need to edit for original one
-    def setup_robot(self, X0): # setup_robot for SingleIntegrator2D
-    #    # from robots.robot import BaseRobot
-    #     from robots.single_integrator2D import SingleIntegrator2D
-    #     self.robot = SingleIntegrator2D(
-    # #        X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
-    #         self.dt, self.robot_spec)
-    #     self.robot.x = X0.reshape(-1, 1)
+    def setup_robot(self, X0):
         from robots.robot import BaseRobot
-        self.base_robot = BaseRobot(X0, self.robot_spec, self.dt, self.ax)
-        self.robot = self.base_robot
+        self.robot = BaseRobot(
+            X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
 
     def set_waypoints(self, waypoints):
         if type(waypoints) == list:
@@ -393,7 +354,6 @@ class LocalTrackingController:
             self.nearest_obs = self.nearest_multi_obs[0].reshape(3,1)
         else:
             self.nearest_obs = None
-        print(self.nearest_multi_obs)
 
         # 2. Compuite nominal control input, pre-defined in the robot class
         if self.state_machine == 'rotate':
@@ -402,7 +362,7 @@ class LocalTrackingController:
             if self.robot_spec['model'] in ['DoubleIntegrator2D', 'SingleIntegrator2D']:
                 self.u_att = self.robot.rotate_to(goal_angle)
                 u_ref = self.robot.stop()
-            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D']:
+            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'Quad2D']:
                 u_ref = self.robot.rotate_to(goal_angle)
         elif self.goal is None:
             u_ref = self.robot.stop()
@@ -437,17 +397,21 @@ class LocalTrackingController:
 
         # 6. Step the robot
         self.robot.step(u, self.u_att)
+
         if self.show_animation:
             self.robot.render_plot()
 
         # 7. Update sensing information
-        self.robot.update_sensing_footprints()
-        self.robot.update_safety_area()
+        if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
+            self.robot.update_sensing_footprints()
+            self.robot.update_safety_area()
 
-        beyond_flag = self.robot.is_beyond_sensing_footprints()
-        if beyond_flag and self.show_animation:
-            pass
-            # print("Visibility Violation")
+            beyond_flag = self.robot.is_beyond_sensing_footprints()
+            if beyond_flag and self.show_animation:
+                pass
+                # print("Visibility Violation")
+        else:
+            beyond_flag = 0 # not checking sensing footprint
 
         if self.goal is None and self.state_machine != 'stop':
             return -1  # all waypoints reached
@@ -517,36 +481,68 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    ## should return to original one
+    model = 'SingleIntegrator2D' # Quad2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D, SingleIntegrator2D
+
     waypoints = [
-        [2, 2],
-        [2, 12],
-        [12, 12],
-        [12, 2]
+        [2, 2, math.pi/2],
+        [2, 12, 0],
+        [12, 12, 0],
+        [12, 2, 0]
     ]
     waypoints = np.array(waypoints, dtype=np.float64)
 
-    # 초기 상태 x_init을 첫 번째 waypoint 위치로 설정 (2x1 벡터 형태)
-    x_init = np.append(waypoints[0], 1.0)
+    if model in ['Quad2D', 'DoubleIntegrator2D', 'SingleIntegrator2D']:
+        x_init = waypoints[0]
+    else:
+        x_init = np.append(waypoints[0], 1.0) 
     
     known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
                             [10.0, 7.3, 0.4],
                             [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
-
-
     plot_handler = plotting.Plotting(known_obs=known_obs)
     ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here
     env_handler = env.Env()
 
-    robot_spec = {
-        'model': 'SingleIntegrator2D', #'DoubleIntegrator2D',
-        # 'w_max': 0.5,
-        # 'a_max': 0.0,
-        'v_max': 1.0,
-        'fov_angle': 70.0,
-        'cam_range': 3.0,
-        'radius': 0.25
-    }
+
+    if model == 'Quad2D':
+        robot_spec = {
+            'model': 'Quad2D',
+            'f_min': 3.0,
+            'f_max': 10.0,
+            'sensor': 'rgbd',
+            'radius': 0.25
+        }
+    elif model == 'DoubleIntegrator2D':
+        robot_spec = {
+            'model': 'DoubleIntegrator2D',
+            'v_max': 1.0,
+            'a_max': 1.0,
+            'radius': 0.25
+        }
+    elif model == 'DynamicUnicycle2D':
+        robot_spec = {
+            'model': 'DynamicUnicycle2D',
+            'w_max': 0.5,
+            'a_max': 0.5,
+            'sensor': 'rgbd',
+            'radius': 0.25
+        }
+    elif model == 'KinematicBicycle2D':
+        robot_spec = {
+            'model': 'KinematicBicycle2D',
+            'a_max': 0.5,
+            'sensor': 'rgbd',
+            'radius': 0.5
+        }
+    elif model == 'SingleIntegrator2D':
+        robot_spec = {
+            'model': 'SingleIntegrator2D',
+            'v_max': 1.0,
+            'fov_angle': 70.0,
+            'cam_range': 3.0,
+            'radius': 0.25
+        }
+
     tracking_controller = LocalTrackingController(x_init, robot_spec,
                                                   control_type=control_type,
                                                   dt=dt,
@@ -565,7 +561,7 @@ def multi_agent_main(control_type, save_animation=False):
 
     # temporal
     waypoints = [
-        [2, 2, math.pi/2],
+        [2, 2, 0],
         [2, 12, 0],
         [12, 12, 0],
         [12, 2, 0]
@@ -583,6 +579,7 @@ def multi_agent_main(control_type, save_animation=False):
         'model': 'DynamicUnicycle2D', #'DoubleIntegrator2D'
         'w_max': 0.5,
         'a_max': 0.5,
+        'sensor': 'rgbd',
         'fov_angle': 45.0,
         'cam_range': 3.0,
         'radius': 0.25
@@ -602,6 +599,7 @@ def multi_agent_main(control_type, save_animation=False):
         'w_max': 1.0,
         'a_max': 1.5,
         'v_max': 2.0,
+        'sensor': 'rgbd',
         'fov_angle': 90.0,
         'cam_range': 5.0,
         'radius': 0.25
@@ -639,8 +637,8 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    #single_agent_main('cbf_qp')
-    #multi_agent_main('mpc_cbf', save_animation=True)
     single_agent_main('mpc_cbf')
+    # multi_agent_main('mpc_cbf', save_animation=True)
+    # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
-    #single_agent_main('optimal_decay_mpc_cbf')
+    # single_agent_main('optimal_decay_mpc_cbf')
