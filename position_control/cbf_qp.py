@@ -16,9 +16,14 @@ class CBFQP:
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
             self.cbf_param['alpha1'] = 1.5
             self.cbf_param['alpha2'] = 1.5
+        elif self.robot_spec['model'] == 'KinematicBicycle2D':
+            self.cbf_param['alpha1'] = 1.5
+            self.cbf_param['alpha2'] = 1.5
+        elif self.robot_spec['model'] == 'Quad2D':
+            self.cbf_param['alpha1'] = 1.5
+            self.cbf_param['alpha2'] = 1.5
         elif self.robot_spec['model'] == "SingleIntegrator2D":
             self.cbf_param['alpha'] = 1.0
-
 
         self.setup_control_problem()
 
@@ -41,10 +46,20 @@ class CBFQP:
             constraints = [self.A1 @ self.u + self.b1 >= 0,
                            cp.abs(self.u[0]) <= self.robot_spec['a_max'],
                            cp.abs(self.u[1]) <= self.robot_spec['a_max']]
+        elif self.robot_spec['model'] == 'KinematicBicycle2D':
+            constraints = [self.A1 @ self.u + self.b1 >= 0,
+                           cp.abs(self.u[0]) <= self.robot_spec['a_max'],
+                           cp.abs(self.u[1]) <= self.robot_spec['beta_max']]
+        elif self.robot_spec['model'] == 'Quad2D':
+            constraints = [self.A1 @ self.u + self.b1 >= 0,
+                           self.robot_spec["f_min"] <= self.u[0],
+                           self.u[0] <= self.robot_spec["f_max"],
+                           self.robot_spec["f_min"] <= self.u[1],
+                           self.u[1] <= self.robot_spec["f_max"]]
         elif self.robot_spec['model'] == 'SingleIntegrator2D':
             constraints = [self.A1 @ self.u + self.b1 >= 0,
                            cp.abs(self.u[0]) <=  self.robot_spec['v_max'],
-                           cp.abs(self.u[1]) <=  self.robot_spec['v_max']] #
+                           cp.abs(self.u[1]) <=  self.robot_spec['v_max']]
         self.cbf_controller = cp.Problem(objective, constraints)
 
     def solve_control_problem(self, robot_state, control_ref, nearest_obs):
@@ -57,7 +72,7 @@ class CBFQP:
             h, dh_dx = self.robot.agent_barrier(nearest_obs)
             self.A1.value[0,:] = dh_dx @ self.robot.g()
             self.b1.value[0,:] = dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D']:
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D']:
             h, h_dot, dh_dot_dx = self.robot.agent_barrier(nearest_obs)
             self.A1.value[0,:] = dh_dot_dx @ self.robot.g()
             self.b1.value[0,:] = dh_dot_dx @ self.robot.f() + (self.cbf_param['alpha1']+self.cbf_param['alpha2']) * h_dot + self.cbf_param['alpha1']*self.cbf_param['alpha2']*h
@@ -66,6 +81,8 @@ class CBFQP:
 
         # 4. Solve this yields a new 'self.u'
         self.cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
+
+        # print(f'h: {h} | value: {self.A1.value[0,:] @ self.u.value + self.b1.value[0,:]}')
 
         # Check QP error in tracking.py
         self.status = self.cbf_controller.status

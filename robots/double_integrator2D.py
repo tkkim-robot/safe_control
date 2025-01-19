@@ -29,15 +29,20 @@ class DoubleIntegrator2D:
             theta: yaw angle
             U: [ax, ay]
             U_attitude: [yaw_rate]
-            cbf: h(x,y) = ||x-x_obs||^2 + ||y-y_obs||^2- beta*d_min^2
+            cbf: h(x) = ||x-x_obs||^2 - beta*d_min^2
             relative degree: 2
         '''
         self.dt = dt
         self.robot_spec = robot_spec
-        if 'v_max' not in self.robot_spec:
-            self.robot_spec['v_max'] = 1.0
+
         if 'a_max' not in self.robot_spec:
             self.robot_spec['a_max'] = 1.0
+        if 'v_max' not in self.robot_spec:
+            self.robot_spec['v_max'] = 1.0
+        if 'ax_max' not in self.robot_spec:
+            self.robot_spec['ax_max'] = self.robot_spec['a_max']
+        if 'ay_max' not in self.robot_spec:
+            self.robot_spec['ay_max'] = self.robot_spec['a_max']
 
     def f(self, X, casadi=False):
         if casadi:

@@ -2,11 +2,7 @@ import numpy as np
 import casadi as ca
 
 """
-Created on July 15th, 2024
-@author: Taekyung Kim
-
-@description: 
-Single Integrator model for CBF-QP and MPC-CBF (casadi) with separated position and attitude states
+Single Integrator model for CBF-QP and MPC-CBF (casadi)
 """
 
 
@@ -143,5 +139,5 @@ class SingleIntegrator2D:
 
         d_h = h_k1 - h_k
         # cbf = h_dot + gamma1 * h_k
-        
+
         return h_k, d_h
