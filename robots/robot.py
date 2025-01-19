@@ -59,23 +59,6 @@ class BaseRobot:
         self.max_decel = 3.0  # 0.5 # [m/s^2]
         self.max_ang_decel = 3.0  # 0.25  # [rad/s^2]
 
-        if 'radius' not in self.robot_spec:
-            self.robot_spec['radius'] = 0.25
-        self.robot_radius = self.robot_spec['radius']  # including padding
-
-        # FOV parameters
-        if 'fov_angle' not in self.robot_spec:
-            self.robot_spec['fov_angle'] = 70.0
-        self.fov_angle = np.deg2rad(float(self.robot_spec['fov_angle']))  # [rad]
-        if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
-            if 'cam_range' not in self.robot_spec:
-                self.robot_spec['cam_range'] = 3.0
-            self.cam_range = self.robot_spec['cam_range']  # [m]
-
-        # Visibility parameters
-        self.max_decel = 3.0  # 0.5 # [m/s^2]
-        self.max_ang_decel = 3.0  # 0.25  # [rad/s^2]
-
         if self.robot_spec['model'] == 'Unicycle2D':
             try:
                 from unicycle2D import Unicycle2D
@@ -105,6 +88,13 @@ class BaseRobot:
             except ImportError:
                 from robots.kinematic_bicycle2D import KinematicBicycle2D
             self.robot = KinematicBicycle2D(dt, robot_spec)
+            self.yaw = self.X[2, 0]
+        elif self.robot_spec['model'] == 'Quad2D':
+            try:
+                from quad2D import Quad2D
+            except ImportError:
+                from robots.quad2D import Quad2D
+            self.robot = Quad2D(dt, robot_spec)
             self.yaw = self.X[2, 0]
         elif self.robot_spec['model'] == 'SingleIntegrator2D':
             try:
@@ -203,7 +193,6 @@ class BaseRobot:
 
     def get_yaw_rate(self):
         if self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D']:
-        if self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D']:
             return self.U[1, 0]
         elif self.robot_spec['model'] == 'Quad2D':
             return self.X[5, 0]
@@ -298,21 +287,6 @@ class BaseRobot:
         else:
             # self.body.set_offsets([self.X[0, 0], self.X[1, 0]])
             self.body.center = self.X[0, 0], self.X[1, 0]
-        if self.robot_spec['model'] == 'KinematicBicycle2D':
-            '''
-            Kinematic Bicycle renders the full rigid body
-            '''
-            trans_body, trans_rear, trans_front = self.robot.render_rigid_body(self.X, self.U)
-            self.vehicle_body.set_transform(trans_body)
-            self.rear_wheel.set_transform(trans_rear)
-            self.front_wheel.set_transform(trans_front)
-        elif self.robot_spec['model'] == 'Quad2D':
-            self.body_circle.center = self.X[0, 0], self.X[1, 0]
-            trans_rect = self.robot.render_rigid_body(self.X)
-            self.orientation_rectangle.set_transform(trans_rect)
-        else:
-            # self.body.set_offsets([self.X[0, 0], self.X[1, 0]])
-            self.body.center = self.X[0, 0], self.X[1, 0]
 
 
         self.axis.set_ydata([self.X[1, 0], self.X[1, 0] +
@@ -323,16 +297,9 @@ class BaseRobot:
         if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
             if len(self.unsafe_points) > 0:
                 self.unsafe_points_handle.set_offsets(np.array(self.unsafe_points))
-            if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
-            if len(self.unsafe_points) > 0:
-                self.unsafe_points_handle.set_offsets(np.array(self.unsafe_points))
             # Calculate FOV points
-                fov_left, fov_right = self.calculate_fov_points()
+            fov_left, fov_right = self.calculate_fov_points()
 
-            # Define the points of the FOV triangle (including robot's robot_position)
-            fov_x_points = [self.X[0, 0], fov_left[0],
-                            fov_right[0], self.X[0, 0]]  # Close the loop
-            fov_y_points = [self.X[1, 0], fov_left[1], fov_right[1], self.X[1, 0]]
             # Define the points of the FOV triangle (including robot's robot_position)
             fov_x_points = [self.X[0, 0], fov_left[0],
                             fov_right[0], self.X[0, 0]]  # Close the loop
@@ -340,12 +307,7 @@ class BaseRobot:
 
             # Update FOV line handle
             self.fov.set_data(fov_x_points, fov_y_points)  # Update with new data
-            # Update FOV line handle
-            self.fov.set_data(fov_x_points, fov_y_points)  # Update with new data
 
-            # Update FOV fill handle
-            # Update the vertices of the polygon
-            self.fov_fill.set_xy(np.array([fov_x_points, fov_y_points]).T)
             # Update FOV fill handle
             # Update the vertices of the polygon
             self.fov_fill.set_xy(np.array([fov_x_points, fov_y_points]).T)
