@@ -494,7 +494,7 @@ def single_agent_main(control_type):
     if model in ['Quad2D', 'DoubleIntegrator2D', 'SingleIntegrator2D']:
         x_init = waypoints[0]
     else:
-        x_init = np.append(waypoints[0], 1.0) 
+        x_init = np.append(waypoints[0], 1.0)
     
     known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
                             [10.0, 7.3, 0.4],

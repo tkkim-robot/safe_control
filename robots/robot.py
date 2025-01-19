@@ -566,7 +566,7 @@ if __name__ == "__main__":
     robot_spec = {
         'model': model,
         'v_max': 0.5,
-        # 'a_max': 0.5,
+        'a_max': 0.5,
         'fov_angle': 70.0,
         'cam_range': 3.0
     }
