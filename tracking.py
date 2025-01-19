@@ -192,12 +192,18 @@ class LocalTrackingController:
                 )
             )
 
-    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=2*np.pi, obs_num=5):
+    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=5):
         def angle_normalize(x):
             return (((x + np.pi) % (2 * np.pi)) - np.pi)
         '''
-        Get the nearest 5 obstacles that haven't been passed by (i.e., they're still in front of the robot).
+        Get the nearest 5 obstacles that haven't been passed by (i.e., they're still in front of the robot or the robot should still consider the obstacle).
         '''
+        
+        if self.robot_spec['model'] == 'Quad2D':
+            angle_unpassed=np.pi*2
+        elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D']:
+            angle_unpassed=np.pi*1.2
+        
         if len(detected_obs) != 0:
             if len(self.obs) == 0:
                 all_obs = np.array(detected_obs)
@@ -216,7 +222,7 @@ class LocalTrackingController:
         unpassed_obs = []
         robot_pos = self.robot.get_position()
         robot_yaw = self.robot.get_orientation()
-        
+
         # Iterate through each detected obstacle
         for obs in all_obs:
             obs_pos = np.array([obs[0], obs[1]])
@@ -297,6 +303,8 @@ class LocalTrackingController:
             current_angle = self.robot.get_orientation()
             goal_angle = np.arctan2(self.waypoints[0][1] - self.robot.X[1, 0],
                                     self.waypoints[0][0] - self.robot.X[0, 0])
+            if self.robot_spec['model'] == 'Quad2D': # Quad2D skip 'rotate' state since there is no yaw angle
+                self.state_machine = 'track'
             if abs(current_angle - goal_angle) > self.rotation_threshold:
                 return self.waypoints[0][:2]
             else:
@@ -397,7 +405,7 @@ class LocalTrackingController:
 
         # 6. Step the robot
         self.robot.step(u, self.u_att)
-
+    
         if self.show_animation:
             self.robot.render_plot()
 
@@ -552,7 +560,7 @@ def single_agent_main(control_type):
                                                   env=env_handler)
 
     tracking_controller.obs = known_obs
-    #tracking_controller.set_unknown_obs(unknown_obs)
+    # tracking_controller.set_unknown_obs(unknown_obs)
     tracking_controller.set_waypoints(waypoints)
     unexpected_beh = tracking_controller.run_all_steps(tf=100)
 

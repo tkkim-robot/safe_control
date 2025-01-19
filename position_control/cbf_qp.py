@@ -83,7 +83,7 @@ class CBFQP:
         self.cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
 
         # print(f'h: {h} | value: {self.A1.value[0,:] @ self.u.value + self.b1.value[0,:]}')
-
+        
         # Check QP error in tracking.py
         self.status = self.cbf_controller.status
         # if self.cbf_controller.status != 'optimal':

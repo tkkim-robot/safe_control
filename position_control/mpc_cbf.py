@@ -99,7 +99,7 @@ class MPCCBF:
         # System dynamics
         f_x = self.robot.f_casadi(_x)
         g_x = self.robot.g_casadi(_x)
-
+        
         x_next = _x + (f_x + ca.mtimes(g_x, _u)) * self.dt
 
         # Set right hand side of ODE
