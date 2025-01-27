@@ -134,12 +134,15 @@ First determine the specification of each robot (with different `id`), then run 
 
 Supported robot dynamics can be found in the [`robots/`](https://github.com/tkkim-robot/safe_control/tree/main/robots) directory:
 
-- `unicycle2D`
-- `dynamic_unicycle2D`: A unicycle model that uses velocity as state and acceleration as input.
+- `single_integrator2D`
 - `double_integrator2D`
 - `double_integrator2D with camera angle`: under development
+- `unicycle2D`
+- `dynamic_unicycle2D`: A unicycle model that uses velocity as state and acceleration as input.
 - `kinematic_bicycle2D`
 - `quad2d`: x - forward, z - vertical
+- `quad3d`: under development
+- `vtol2d`: under development
 
 ### Positional Control Algorithms
 
