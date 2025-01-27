@@ -59,7 +59,16 @@ class BaseRobot:
         self.max_decel = 3.0  # 0.5 # [m/s^2]
         self.max_ang_decel = 3.0  # 0.25  # [rad/s^2]
 
-        if self.robot_spec['model'] == 'Unicycle2D':
+        if self.robot_spec['model'] == 'SingleIntegrator2D':
+            try:
+                from single_integrator2D import SingleIntegrator2D
+            except ImportError:
+                from robots.single_integrator2D import SingleIntegrator2D
+            self.robot = SingleIntegrator2D(dt, robot_spec)
+            # X0: [x, y]
+            self.set_orientation(self.X[2, 0])
+            self.X = self.X[0:2]
+        elif self.robot_spec['model'] == 'Unicycle2D':
             try:
                 from unicycle2D import Unicycle2D
             except ImportError:
@@ -187,7 +196,7 @@ class BaseRobot:
             return self.U[1, 0]
         elif self.robot_spec['model'] == 'Quad2D':
             return self.X[5, 0]
-        elif self.robot_spec['model'] == 'DoubleIntegrator2D':
+        elif self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
             if self.U_att is not None:
                 return self.U_att[0, 0]
             else:
@@ -215,7 +224,9 @@ class BaseRobot:
         return self.robot.g(X, casadi=True)
 
     def nominal_input(self, goal, d_min=0.05, k_omega = 2.0, k_a = 1.0, k_v = 1.0):
-        if self.robot_spec['model'] in ['Unicycle2D']:
+        if self.robot_spec['model'] == 'SingleIntegrator2D':
+            return self.robot.nominal_input(self.X, goal, d_min, k_v)
+        elif self.robot_spec['model'] in ['Unicycle2D']:
             return self.robot.nominal_input(self.X, goal, d_min, k_omega, k_v)
         elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'KinematicBicycle2D']:
             return self.robot.nominal_input(self.X, goal, d_min, k_omega, k_a, k_v)
@@ -225,7 +236,7 @@ class BaseRobot:
             return self.robot.nominal_input(self.X, goal, d_min)
 
     def nominal_attitude_input(self, theta_des):
-        if self.robot_spec['model'] == 'DoubleIntegrator2D':
+        if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
             return self.robot.nominal_attitude_input(self.yaw, theta_des)
         else:
             raise NotImplementedError(
@@ -238,7 +249,7 @@ class BaseRobot:
         return self.robot.has_stopped(self.X)
 
     def rotate_to(self, theta):
-        if self.robot_spec['model'] == 'DoubleIntegrator2D':
+        if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
             return self.robot.rotate_to(self.yaw, theta)
         return self.robot.rotate_to(self.X, theta)
 
@@ -253,11 +264,11 @@ class BaseRobot:
         self.U = U.reshape(-1, 1)
         self.X = self.robot.step(self.X, self.U)
         self.U_att = U_att
-        if self.robot_spec['model'] == 'DoubleIntegrator2D' and self.U_att is not None:
+        if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D'] and self.U_att is not None:
             self.U_att = U_att.reshape(-1, 1)
             self.yaw = self.robot.step_rotate(self.yaw, self.U_att)
         elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'Quad2D']:
-            self.yaw = self.X[2, 0] 
+            self.yaw = self.X[2, 0]
         return self.X
 
     def render_plot(self):
@@ -367,7 +378,9 @@ class BaseRobot:
         # self.sensing_footprints = self.sensing_footprints.simplify(0.1)
 
     def update_safety_area(self):
-        if self.robot_spec['model'] == 'Unicycle2D':
+        if self.robot_spec['model'] == 'SingleIntegrator2D':
+            v = np.linalg.norm(self.U)
+        elif self.robot_spec['model'] == 'Unicycle2D':
             v = self.U[0, 0]  # Linear velocity
         elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'KinematicBicycle2D']:
             v = self.X[3, 0]
@@ -555,6 +568,7 @@ if __name__ == "__main__":
     tf = 20
     num_steps = int(tf/dt)
 
+    # model = 'SingleIntegrator2D'
     # model = 'KinematicBicycle2D'
     # model = 'DoubleIntegrator2D' #TODO: double integrator with yaw angle is not supported for this example
     model = 'DynamicUnicycle2D'
@@ -589,11 +603,11 @@ if __name__ == "__main__":
     const = [A1 @ u + b1 >= 0]
     const += [cp.abs(u[0, 0]) <= 0.5]
     const += [cp.abs(u[1, 0]) <= 0.5]
-    cbf_controller = cp.Problem(objective, const)
+    cbf_controller = cp.Problem(objective, const) 
 
     for i in range(num_steps):
         u_ref.value = robot.nominal_input(goal)
-        if robot_spec['model'] in ['Unicycle2D', 'KinematicBicycle2D']:
+        if robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D']:
             alpha = 1.0  # 10.0
             h, dh_dx = robot.agent_barrier(obs)
             A1.value[0, :] = dh_dx @ robot.g()

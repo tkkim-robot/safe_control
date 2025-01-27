@@ -8,7 +8,9 @@ class CBFQP:
 
         self.cbf_param = {}
 
-        if self.robot_spec['model'] == 'Unicycle2D':
+        if self.robot_spec['model'] == "SingleIntegrator2D":
+            self.cbf_param['alpha'] = 1.0
+        elif self.robot_spec['model'] == 'Unicycle2D':
             self.cbf_param['alpha'] = 1.0
         elif self.robot_spec['model'] == 'DynamicUnicycle2D':
             self.cbf_param['alpha1'] = 1.5
@@ -32,7 +34,11 @@ class CBFQP:
         self.b1 = cp.Parameter((1, 1), value=np.zeros((1, 1)))
         objective = cp.Minimize(cp.sum_squares(self.u - self.u_ref))
 
-        if self.robot_spec['model'] == 'Unicycle2D':
+        if self.robot_spec['model'] == 'SingleIntegrator2D':
+            constraints = [self.A1 @ self.u + self.b1 >= 0,
+                           cp.abs(self.u[0]) <=  self.robot_spec['v_max'],
+                           cp.abs(self.u[1]) <=  self.robot_spec['v_max']]
+        elif self.robot_spec['model'] == 'Unicycle2D':
             constraints = [self.A1 @ self.u + self.b1 >= 0,
                            cp.abs(self.u[0]) <= self.robot_spec['v_max'],
                            cp.abs(self.u[1]) <= self.robot_spec['w_max']]
@@ -54,6 +60,7 @@ class CBFQP:
                            self.u[0] <= self.robot_spec["f_max"],
                            self.robot_spec["f_min"] <= self.u[1],
                            self.u[1] <= self.robot_spec["f_max"]]
+
         self.cbf_controller = cp.Problem(objective, constraints)
 
     def solve_control_problem(self, robot_state, control_ref, nearest_obs):
@@ -62,7 +69,7 @@ class CBFQP:
             # deactivate the CBF constraints
             self.A1.value = np.zeros_like(self.A1.value)
             self.b1.value = np.zeros_like(self.b1.value)
-        elif self.robot_spec['model'] == 'Unicycle2D':
+        elif self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D']:
             h, dh_dx = self.robot.agent_barrier(nearest_obs)
             self.A1.value[0,:] = dh_dx @ self.robot.g()
             self.b1.value[0,:] = dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h

@@ -9,3 +9,5 @@ __pycache__/
 
 # Ignore directories and files with "images" in their name
 output/
+
+venv/

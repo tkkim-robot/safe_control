@@ -44,7 +44,13 @@ class LocalTrackingController:
         self.current_goal_index = 0  # Index of the current goal in the path
         self.reached_threshold = 0.2
 
-        if self.robot_spec['model'] == 'DynamicUnicycle2D':
+        if self.robot_spec['model'] == 'SingleIntegrator2D':
+            if X0.shape[0] == 2:
+                X0 = np.array([X0[0], X0[1], 0.0]).reshape(-1, 1)
+            elif X0.shape[0] != 3:
+                raise ValueError(
+                    "Invalid initial state dimension for SingleIntegrator2D")
+        elif self.robot_spec['model'] == 'DynamicUnicycle2D':
             if X0.shape[0] == 3:  # set initial velocity to 0.0
                 X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
@@ -63,8 +69,8 @@ class LocalTrackingController:
                 X0 = np.array([X0[0], X0[1], 0.0, 0.0, 0.0, 0.0]).reshape(-1, 1)
             elif X0.shape[0] != 6:
                 raise ValueError("Invalid initial state dimension for Quad2D")
+    
             
-
         self.u_att = None
 
         self.show_animation = show_animation
@@ -359,7 +365,7 @@ class LocalTrackingController:
         if self.state_machine == 'rotate':
             goal_angle = np.arctan2(self.goal[1] - self.robot.X[1, 0],
                                     self.goal[0] - self.robot.X[0, 0])
-            if self.robot_spec['model'] == 'DoubleIntegrator2D':
+            if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
                 self.u_att = self.robot.rotate_to(goal_angle)
                 u_ref = self.robot.stop()
             elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'Quad2D']:
@@ -481,7 +487,7 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    model = 'Quad2D' # Quad2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D
+    model = 'Quad2D' # SingleIntegrator2D, Quad2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D
 
     waypoints = [
         [2, 2, math.pi/2],
@@ -491,10 +497,10 @@ def single_agent_main(control_type):
     ]
     waypoints = np.array(waypoints, dtype=np.float64)
 
-    if model in ['Quad2D', 'DoubleIntegrator2D']:
+    if model in ['SingleIntegrator2D', 'Quad2D', 'DoubleIntegrator2D']:
         x_init = waypoints[0]
     else:
-        x_init = np.append(waypoints[0], 1.0) 
+        x_init = np.append(waypoints[0], 1.0)
     
     known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
                             [10.0, 7.3, 0.4],
@@ -504,7 +510,13 @@ def single_agent_main(control_type):
     env_handler = env.Env()
 
 
-    if model == 'Quad2D':
+    if model == 'SingleIntegrator2D':
+        robot_spec = {
+            'model': 'SingleIntegrator2D',
+            'v_max': 1.0,
+            'radius': 0.25
+        }
+    elif model == 'Quad2D':
         robot_spec = {
             'model': 'Quad2D',
             'f_min': 3.0,
