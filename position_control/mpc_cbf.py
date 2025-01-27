@@ -33,7 +33,6 @@ class MPCCBF:
             self.Q = np.diag([25, 25, 50, 10, 10, 50])
             self.R = np.array([0.5, 0.5])
 
-
         # DT CBF parameters should scale from 0 to 1
         self.cbf_param = {}
         if self.robot_spec['model'] == 'SingleIntegrator2D':
