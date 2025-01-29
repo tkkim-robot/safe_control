@@ -276,7 +276,7 @@ class BaseRobot:
         if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D'] and self.U_att is not None:
             self.U_att = U_att.reshape(-1, 1)
             self.yaw = self.robot.step_rotate(self.yaw, self.U_att)
-        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'Quad2D']:
+        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'Quad2D', 'VTOL2D']:
             self.yaw = self.X[2, 0]
         return self.X
 
@@ -397,7 +397,7 @@ class BaseRobot:
             vx = self.X[2, 0]
             vy = self.X[3, 0]
             v = np.linalg.norm([vx, vy])
-        elif self.robot_spec['model'] == 'Quad2D':
+        elif self.robot_spec['model'] in ['Quad2D', 'VTOL2D']:
             vx = self.X[3, 0]
             vz = self.X[4, 0]
             v = np.linalg.norm([vx, vz])

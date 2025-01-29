@@ -64,7 +64,7 @@ class LocalTrackingController:
         elif self.robot_spec['model'] == 'KinematicBicycle2D':
             if X0.shape[0] == 3:  # set initial velocity to 0.0
                 X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
-        elif self.robot_spec['model'] == 'Quad2D':
+        elif self.robot_spec['model'] in ['Quad2D', 'VTOL2D']:
             if X0.shape[0] in [2, 3]: # only initialize the x,z position if don't provide the full state
                 X0 = np.array([X0[0], X0[1], 0.0, 0.0, 0.0, 0.0]).reshape(-1, 1)
             elif X0.shape[0] != 6:
@@ -301,7 +301,7 @@ class LocalTrackingController:
             current_angle = self.robot.get_orientation()
             goal_angle = np.arctan2(self.waypoints[0][1] - self.robot.X[1, 0],
                                     self.waypoints[0][0] - self.robot.X[0, 0])
-            if self.robot_spec['model'] == 'Quad2D': # Quad2D skip 'rotate' state since there is no yaw angle
+            if self.robot_spec['model'] in ['Quad2D', 'VTOL2D']: # These skip 'rotate' state since there is no yaw angle
                 self.state_machine = 'track'
             if abs(current_angle - goal_angle) > self.rotation_threshold:
                 return self.waypoints[0][:2]
@@ -368,7 +368,7 @@ class LocalTrackingController:
             if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
                 self.u_att = self.robot.rotate_to(goal_angle)
                 u_ref = self.robot.stop()
-            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'Quad2D']:
+            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'Quad2D', 'VTOL2D']:
                 u_ref = self.robot.rotate_to(goal_angle)
         elif self.goal is None:
             u_ref = self.robot.stop()
@@ -487,7 +487,7 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    model = 'Quad2D' # SingleIntegrator2D, Quad2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D
+    model = 'VTOL2D' # SingleIntegrator2D, Quad2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D, VTOL2D
 
     waypoints = [
         [2, 2, math.pi/2],
@@ -497,7 +497,7 @@ def single_agent_main(control_type):
     ]
     waypoints = np.array(waypoints, dtype=np.float64)
 
-    if model in ['SingleIntegrator2D', 'Quad2D', 'DoubleIntegrator2D']:
+    if model in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'Quad2D', 'VTOL2D']:
         x_init = waypoints[0]
     else:
         x_init = np.append(waypoints[0], 1.0)
@@ -514,14 +514,6 @@ def single_agent_main(control_type):
         robot_spec = {
             'model': 'SingleIntegrator2D',
             'v_max': 1.0,
-            'radius': 0.25
-        }
-    elif model == 'Quad2D':
-        robot_spec = {
-            'model': 'Quad2D',
-            'f_min': 3.0,
-            'f_max': 10.0,
-            'sensor': 'rgbd',
             'radius': 0.25
         }
     elif model == 'DoubleIntegrator2D':
@@ -545,6 +537,18 @@ def single_agent_main(control_type):
             'a_max': 0.5,
             'sensor': 'rgbd',
             'radius': 0.5
+        }
+    elif model == 'Quad2D':
+        robot_spec = {
+            'model': 'Quad2D',
+            'f_min': 3.0,
+            'f_max': 10.0,
+            'sensor': 'rgbd',
+            'radius': 0.25
+        }
+    elif model == 'VTOL2D':
+        robot_spec = {
+            'model': 'VTOL2D'
         }
 
     tracking_controller = LocalTrackingController(x_init, robot_spec,
