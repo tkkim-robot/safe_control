@@ -427,6 +427,11 @@ class VTOL2D:
         M_t  = 0.0
         return fx_i, fy_i, M_t
     
+    def nominal_input(self, X, G):
+        raise NotImplementedError("Not implemented")
+
+
+    
     def agent_barrier(self, X, obs, robot_radius, beta=1.01):
         # Not implemented
         raise NotImplementedError("Not implemented")
