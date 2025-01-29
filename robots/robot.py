@@ -104,7 +104,14 @@ class BaseRobot:
             except ImportError:
                 from robots.quad2D import Quad2D
             self.robot = Quad2D(dt, robot_spec)
-            self.yaw = self.X[2, 0]
+            self.yaw = self.X[2, 0] # it's pitch in this case
+        elif self.robot_spec['model'] == 'VTOL2D':
+            try:
+                from vtol2D import VTOL2D
+            except ImportError:
+                from robots.vtol2D import VTOL2D
+            self.robot = VTOL2D(dt, robot_spec)
+            self.yaw = self.X[2, 0] # it's pitch in this case
 
         else:
             raise ValueError("Invalid robot model")
@@ -194,7 +201,7 @@ class BaseRobot:
     def get_yaw_rate(self):
         if self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D']:
             return self.U[1, 0]
-        elif self.robot_spec['model'] == 'Quad2D':
+        elif self.robot_spec['model'] in ['Quad2D', 'VTOL2D']:
             return self.X[5, 0]
         elif self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
             if self.U_att is not None:
@@ -233,6 +240,8 @@ class BaseRobot:
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
             return self.robot.nominal_input(self.X, goal, d_min, k_v, k_a)
         elif self.robot_spec['model'] == 'Quad2D':
+            return self.robot.nominal_input(self.X, goal, d_min)
+        elif self.robot_spec['model'] == 'VTOL2D':
             return self.robot.nominal_input(self.X, goal, d_min)
 
     def nominal_attitude_input(self, theta_des):

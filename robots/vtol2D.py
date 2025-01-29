@@ -11,7 +11,7 @@ def angle_normalize(x):
         raise TypeError(f"Unsupported input type: {type(x)}")
 
 
-class VTOL2D_Aero:
+class VTOL2D:
     """
     State: X = [ x, y, theta, x_dot, y_dot, theta_dot ]
       x,y      -> inertial positions
@@ -175,13 +175,44 @@ class VTOL2D_Aero:
             m = self.spec['mass']
             I = self.spec['inertia']
 
-            # columns
-            g1 = ca.vertcat(0,0,0, fx_front/m, fy_front/m, M_f/I)
-            g2 = ca.vertcat(0,0,0, fx_rear/m,  fy_rear/m,  M_r/I)
-            g3 = ca.vertcat(0,0,0, fx_thr/m,   fy_thr/m,   M_t/I)
-            g4 = ca.vertcat(0,0,0, fx_elev/m,  fy_elev/m,  M_e/I)
+            #----------------------------------------------------------------------
+            # Using block-building to do list-to-SX (otherwise, it reports error)
+            # Build a 6x4 matrix (since our state dimension is 6)
+            # row=0..5, col=0..3
+            # We fill in the partial derivatives w.r.t. each input in each column.
+            # Everything not affected by the input remains 0.
+            #----------------------------------------------------------------------
+            # Create a list of 6 rows, each row has 4 columns => (6x4)
+            g_list = [[0]*4 for _ in range(6)]
 
-            return ca.horzcat(g1, g2, g3, g4)
+            # Column 0: front rotor
+            g_list[3][0] = fx_front/m
+            g_list[4][0] = fy_front/m
+            g_list[5][0] = M_f/I
+
+            # Column 1: rear rotor
+            g_list[3][1] = fx_rear/m
+            g_list[4][1] = fy_rear/m
+            g_list[5][1] = M_r/I
+
+            # Column 2: forward rotor
+            g_list[3][2] = fx_thr/m
+            g_list[4][2] = fy_thr/m
+            g_list[5][2] = M_t/I
+
+            # Column 3: elevator
+            g_list[3][3] = fx_elev/m
+            g_list[4][3] = fy_elev/m
+            g_list[5][3] = M_e/I
+
+            # Convert each row to a CasADi row vector, then stack them
+            g_sx_rows = []
+            for row_vals in g_list:
+                # row_vals is something like [expr_col0, expr_col1, expr_col2, expr_col3]
+                g_sx_rows.append(ca.horzcat(*row_vals))
+
+            g_sx = ca.vertcat(*g_sx_rows)
+            return g_sx
 
         else:
             theta = X[2,0]
@@ -231,12 +262,12 @@ class VTOL2D_Aero:
     #--------------------------------------------------------------------------
     # Integration step
     #--------------------------------------------------------------------------
-    def step(self, X, U):
+    def step(self, X, U, casadi=False):
         """
         Euler step:
            X_{k+1} = X_k + [ f(X_k) + g(X_k)*U ] * dt
         """
-        Xdot = self.f(X) + self.g(X) @ U
+        Xdot = self.f(X, casadi) + self.g(X, casadi) @ U
         Xnew = X + Xdot * self.dt
         Xnew[2,0] = angle_normalize(Xnew[2,0])
         return Xnew
@@ -395,3 +426,36 @@ class VTOL2D_Aero:
         fy_i = sth*self.spec['k_thrust']
         M_t  = 0.0
         return fx_i, fy_i, M_t
+    
+    def agent_barrier(self, X, obs, robot_radius, beta=1.01):
+        # Not implemented
+        raise NotImplementedError("Not implemented")
+    
+    def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.01):
+        '''Discrete Time High Order CBF'''
+        # Dynamics equations for the next states
+        x_k1 = self.step(x_k, u_k)
+        x_k2 = self.step(x_k1, u_k)
+
+        def h(x, obs, robot_radius, beta=1.01):
+            '''Computes CBF h(x) = ||x-x_obs||^2 - beta*d_min^2'''
+            x_obs = obs[0]
+            y_obs = obs[1]
+            r_obs = obs[2]
+            d_min = robot_radius + r_obs
+
+            h = (x[0, 0] - x_obs)**2 + (x[1, 0] - y_obs)**2 - beta*d_min**2
+            return h
+
+        h_k2 = h(x_k2, obs, robot_radius, beta)
+        h_k1 = h(x_k1, obs, robot_radius, beta)
+        h_k = h(x_k, obs, robot_radius, beta)
+
+        d_h = h_k1 - h_k
+        dd_h = h_k2 - 2 * h_k1 + h_k
+        # hocbf_2nd_order = h_ddot + (gamma1 + gamma2) * h_dot + (gamma1 * gamma2) * h_k
+
+        # h_k = np.zeros_like(h_k)
+        # d_h = np.zeros_like(d_h)
+        # dd_h = np.zeros_like(dd_h)
+        return h_k, d_h, dd_h
