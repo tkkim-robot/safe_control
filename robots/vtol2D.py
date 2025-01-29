@@ -1,0 +1,397 @@
+import numpy as np
+import casadi as ca
+
+def angle_normalize(x):
+    """Normalize angle to (-pi, pi]."""
+    if isinstance(x, (np.ndarray, float, int)):
+        return ((x + np.pi) % (2*np.pi)) - np.pi
+    elif isinstance(x, (ca.SX, ca.MX, ca.DM)):
+        return ca.fmod(x + ca.pi, 2*ca.pi) - ca.pi
+    else:
+        raise TypeError(f"Unsupported input type: {type(x)}")
+
+
+class VTOL2D_Aero:
+    """
+    State: X = [ x, y, theta, x_dot, y_dot, theta_dot ]
+      x,y      -> inertial positions
+      theta    -> pitch angle
+      x_dot,y_dot -> inertial velocities
+      theta_dot   -> pitch rate
+
+    Control: U = [ delta_front, delta_rear, delta_thrust, delta_elevator ]
+
+    We compute angle of attack alpha from body-frame velocity (u_b, w_b):
+        alpha = atan2(w_b, u_b).
+    Then we apply lift & drag in the "wind frame" where
+        F_wind = [ -D, +L ]
+    rotate from wind to body by alpha,
+    then from body to inertial by theta.
+
+    Rotors are assumed to produce linear thrust in body coordinates:
+      front, rear -> ±body_z,
+      forward rotor -> +body_x,
+    and each is rotated to inertial via R(theta).
+
+    Elevator modifies L, D, and also adds a pitch moment linearly => system remains control affine.
+    """
+
+    def __init__(self, dt, robot_spec):
+        self.dt = dt
+        self.spec = robot_spec
+
+        # Default or user-set parameters
+        self.spec.setdefault('mass', 11.0)
+        self.spec.setdefault('inertia', 1.135)
+        self.spec.setdefault('S_wing', 0.55)   # Wing area
+        self.spec.setdefault('rho', 1.2682)   # Air density
+        self.spec.setdefault('C_L0', 0.23)
+        self.spec.setdefault('C_Lalpha', 5.61)
+        self.spec.setdefault('C_Ldelta_e', -0.13)
+        self.spec.setdefault('C_D0', 0.043)
+        self.spec.setdefault('C_Dalpha', 0.03)      # e.g. alpha^2 coefficient
+        self.spec.setdefault('C_Ddelta_e', 0.0135)
+        self.spec.setdefault('C_mdelta_e', -0.99)   # for pitch moment from elevator
+
+        # linear rotor thrust
+        self.spec.setdefault('k_front', 40.0)
+        self.spec.setdefault('k_rear',  40.0)
+        self.spec.setdefault('k_thrust',40.0)
+        # geometry: lever arms
+        self.spec.setdefault('ell_f', 0.5)
+        self.spec.setdefault('ell_r', 0.5)
+
+        self.g = 9.81
+
+    #--------------------------------------------------------------------------
+    # Body-frame velocity => alpha => baseline (no-elevator) lift/drag => inertial
+    #--------------------------------------------------------------------------
+    def f(self, X, casadi=False):
+        """
+        Unforced dynamics: f(X)
+          - includes baseline aerodynamic forces (delta_e = 0)
+          - includes gravity
+          - no rotor thrust
+          - no elevator deflection
+        """
+        if casadi:
+            theta = X[2,0]
+            xdot  = X[3,0]
+            ydot  = X[4,0]
+            thetadot = X[5,0]
+
+            # 1) Body-frame velocity (u_b, w_b)
+            u_b, w_b = self._body_velocity_casadi(xdot, ydot, theta)
+            V = ca.sqrt(u_b*u_b + w_b*w_b)  # actual airspeed magnitude
+            alpha = ca.atan2(w_b, u_b)
+
+            # 2) Baseline lift & drag (no elevator => delta_e=0)
+            L0, D0 = self._lift_drag_casadi(V, alpha, delta_e=0.0)
+
+            # 3) Wind->Body rotation by alpha, Body->Inertial by theta
+            #    => net rotation by (theta + alpha)
+            fx_aero, fy_aero = self._wind_to_inertial_casadi(theta, alpha, -D0, L0)
+
+            # 4) Gravity in inertial is (0, -m*g)
+            m = self.spec['mass']
+            fx_net = fx_aero
+            fy_net = fy_aero - m*self.g
+
+            x_ddot = fx_net / m
+            y_ddot = fy_net / m
+            theta_ddot = 0.0
+
+            return ca.vertcat(
+                xdot,
+                ydot,
+                thetadot,
+                x_ddot,
+                y_ddot,
+                theta_ddot
+            )
+        else:
+            # NumPy version
+            theta = X[2,0]
+            xdot  = X[3,0]
+            ydot  = X[4,0]
+            thetadot = X[5,0]
+
+            u_b, w_b = self._body_velocity_np(xdot, ydot, theta)
+            V = np.sqrt(u_b**2 + w_b**2)
+            alpha = np.arctan2(w_b, u_b)
+
+            L0, D0 = self._lift_drag_np(V, alpha, 0.0)
+
+            fx_aero, fy_aero = self._wind_to_inertial_np(theta, alpha, -D0, L0)
+
+            m = self.spec['mass']
+            fx_net = fx_aero
+            fy_net = fy_aero - m*self.g
+
+            x_ddot = fx_net / m
+            y_ddot = fy_net / m
+            theta_ddot = 0.0
+
+            return np.array([
+                xdot,
+                ydot,
+                thetadot,
+                x_ddot,
+                y_ddot,
+                theta_ddot
+            ]).reshape(-1,1)
+
+    #--------------------------------------------------------------------------
+    # g(X): partial wrt each of the 4 control inputs => columns in a 6x4 matrix
+    #--------------------------------------------------------------------------
+    def g(self, X, casadi=False):
+        """
+        Control-dependent dynamics.  U = [ delta_front, delta_rear, delta_thrust, delta_elevator ]^T.
+        - front, rear, thrust = rotor forces in body coords
+        - elevator => additional (L, D) + pitch moment
+        """
+        if casadi:
+            theta = X[2,0]
+            xdot  = X[3,0]
+            ydot  = X[4,0]
+            # body velocity
+            u_b, w_b = self._body_velocity_casadi(xdot, ydot, theta)
+            V = ca.sqrt(u_b*u_b + w_b*w_b)
+            alpha = ca.atan2(w_b, u_b)
+
+            #-----------------------------------
+            # 1) front rotor => thrust along -body_z
+            fx_front, fy_front, M_f = self._front_rotor_casadi(theta)
+            # 2) rear rotor
+            fx_rear, fy_rear, M_r = self._rear_rotor_casadi(theta)
+            # 3) forward rotor => +body_x
+            fx_thr, fy_thr, M_t = self._forward_rotor_casadi(theta)
+            # 4) elevator => partial in lift/drag + pitch moment
+            #    => difference from delta_e=1 vs 0
+            L_de, D_de = self._lift_drag_casadi(V, alpha, delta_e=1.0)  # "partial"
+            fx_elev, fy_elev = self._wind_to_inertial_casadi(theta, alpha, -D_de, L_de)
+            M_e = self.spec['C_mdelta_e']
+
+            m = self.spec['mass']
+            I = self.spec['inertia']
+
+            # columns
+            g1 = ca.vertcat(0,0,0, fx_front/m, fy_front/m, M_f/I)
+            g2 = ca.vertcat(0,0,0, fx_rear/m,  fy_rear/m,  M_r/I)
+            g3 = ca.vertcat(0,0,0, fx_thr/m,   fy_thr/m,   M_t/I)
+            g4 = ca.vertcat(0,0,0, fx_elev/m,  fy_elev/m,  M_e/I)
+
+            return ca.horzcat(g1, g2, g3, g4)
+
+        else:
+            theta = X[2,0]
+            xdot  = X[3,0]
+            ydot  = X[4,0]
+
+            # body velocity
+            u_b, w_b = self._body_velocity_np(xdot, ydot, theta)
+            V = np.sqrt(u_b**2 + w_b**2)
+            alpha = np.arctan2(w_b, u_b)
+
+            fx_front, fy_front, M_f = self._front_rotor_np(theta)
+            fx_rear,  fy_rear,  M_r = self._rear_rotor_np(theta)
+            fx_thr,   fy_thr,   M_t = self._forward_rotor_np(theta)
+
+            # elevator partial
+            L_de, D_de = self._lift_drag_np(V, alpha, 1.0)
+            fx_elev, fy_elev = self._wind_to_inertial_np(theta, alpha, -D_de, L_de)
+            M_e = self.spec['C_mdelta_e']
+
+            m = self.spec['mass']
+            I = self.spec['inertia']
+
+            g_out = np.zeros((6,4))
+            # front
+            g_out[3,0] = fx_front / m
+            g_out[4,0] = fy_front / m
+            g_out[5,0] = M_f / I
+
+            # rear
+            g_out[3,1] = fx_rear / m
+            g_out[4,1] = fy_rear / m
+            g_out[5,1] = M_r / I
+
+            # forward
+            g_out[3,2] = fx_thr / m
+            g_out[4,2] = fy_thr / m
+            g_out[5,2] = M_t / I
+
+            # elevator
+            g_out[3,3] = fx_elev / m
+            g_out[4,3] = fy_elev / m
+            g_out[5,3] = M_e / I
+
+            return g_out
+
+    #--------------------------------------------------------------------------
+    # Integration step
+    #--------------------------------------------------------------------------
+    def step(self, X, U):
+        """
+        Euler step:
+           X_{k+1} = X_k + [ f(X_k) + g(X_k)*U ] * dt
+        """
+        Xdot = self.f(X) + self.g(X) @ U
+        Xnew = X + Xdot * self.dt
+        Xnew[2,0] = angle_normalize(Xnew[2,0])
+        return Xnew
+
+    #--------------------------------------------------------------------------
+    # Helper: body velocity from inertial velocity
+    #--------------------------------------------------------------------------
+    def _body_velocity_np(self, xdot, ydot, theta):
+        """
+        Rotate inertial velocity (xdot, ydot) into body frame (u_b, w_b).
+         [u_b] = [ cos(theta),  sin(theta)] [ xdot ]
+         [w_b]   [-sin(theta), cos(theta)]  [ ydot ]
+        """
+        cth = np.cos(theta)
+        sth = np.sin(theta)
+        u_b = cth*xdot + sth*ydot
+        w_b = -sth*xdot + cth*ydot
+        return u_b, w_b
+
+    def _body_velocity_casadi(self, xdot, ydot, theta):
+        cth = ca.cos(theta)
+        sth = ca.sin(theta)
+        u_b = cth*xdot + sth*ydot
+        w_b = -sth*xdot + cth*ydot
+        return (u_b, w_b)
+
+    #--------------------------------------------------------------------------
+    # Helper: compute lift, drag in "wind frame"
+    #--------------------------------------------------------------------------
+    def _lift_drag_np(self, V, alpha, delta_e):
+        """
+        L,D from standard formula with linear elevator effect:
+          L = 1/2 * rho * V^2 * S * (C_L0 + C_Lalpha*alpha + C_Ldelta_e * delta_e)
+          D = 1/2 * rho * V^2 * S * (C_D0 + C_Dalpha*(alpha^2) + C_Ddelta_e * delta_e)
+
+        Returns (L, D)  (magnitudes).
+        """
+        rho = self.spec['rho']
+        S   = self.spec['S_wing']
+        CL = (self.spec['C_L0']
+              + self.spec['C_Lalpha']*alpha
+              + self.spec['C_Ldelta_e']*delta_e)
+        CD = (self.spec['C_D0']
+              + self.spec['C_Dalpha']*(alpha**2)
+              + self.spec['C_Ddelta_e']*delta_e)
+
+        qbar = 0.5*rho*(V**2)
+        L = qbar * S * CL
+        D = qbar * S * CD
+        return (L, D)
+
+    def _lift_drag_casadi(self, V, alpha, delta_e):
+        rho = self.spec['rho']
+        S   = self.spec['S_wing']
+
+        CL = (self.spec['C_L0']
+              + self.spec['C_Lalpha']*alpha
+              + self.spec['C_Ldelta_e']*delta_e)
+        CD = (self.spec['C_D0']
+              + self.spec['C_Dalpha']*(alpha**2)
+              + self.spec['C_Ddelta_e']*delta_e)
+
+        qbar = 0.5*rho*(V**2)
+        L = qbar * S * CL
+        D = qbar * S * CD
+        return (L, D)
+
+    #--------------------------------------------------------------------------
+    # Rotation from wind frame to inertial
+    #   wind->body: rotate by alpha
+    #   body->inertial: rotate by theta
+    #   => total rotation by (theta + alpha)
+    #   =>  F_inertial = R(theta+alpha)*F_wind
+    #--------------------------------------------------------------------------
+    def _wind_to_inertial_np(self, theta, alpha, fx_w, fz_w):
+        """
+        wind frame axes: x_w = direction of velocity, z_w = +90 deg from that
+        If (fx_w, fz_w) = (-D, L), then we rotate by (theta+alpha).
+        """
+        heading = theta + alpha
+        c = np.cos(heading)
+        s = np.sin(heading)
+        fx_i = c*fx_w - s*fz_w
+        fy_i = s*fx_w + c*fz_w
+        return fx_i, fy_i
+
+    def _wind_to_inertial_casadi(self, theta, alpha, fx_w, fz_w):
+        heading = theta + alpha
+        c = ca.cos(heading)
+        s = ca.sin(heading)
+        fx_i = c*fx_w - s*fz_w
+        fy_i = s*fx_w + c*fz_w
+        return fx_i, fy_i
+
+    #--------------------------------------------------------------------------
+    # Rotor helpers: front, rear, forward
+    #--------------------------------------------------------------------------
+    def _front_rotor_np(self, theta):
+        """
+        front rotor thrust = k_front * delta_front in +body_z or -body_z?
+        We'll say +body_z => (0, +k_front). Then to inertial => R(theta).
+        Also pitch moment => +ell_f * T_f.  We'll only return partial.
+        """
+        # partial w.r.t delta_front is (k_front)
+        # in body coords => (fx_b, fz_b) = (0, +k_front)
+        # rotate to inertial by R(theta).
+        cth = np.cos(theta)
+        sth = np.sin(theta)
+        # inertial
+        fx_i = -sth * self.spec['k_front']
+        fy_i =  cth * self.spec['k_front']
+        # pitch moment
+        M_f  = +self.spec['ell_f'] * self.spec['k_front']
+        return fx_i, fy_i, M_f
+
+    def _rear_rotor_np(self, theta):
+        cth = np.cos(theta)
+        sth = np.sin(theta)
+        fx_i = -sth * self.spec['k_rear']
+        fy_i =  cth * self.spec['k_rear']
+        M_r  = -self.spec['ell_r'] * self.spec['k_rear']
+        return fx_i, fy_i, M_r
+
+    def _forward_rotor_np(self, theta):
+        """
+        forward rotor => thrust along +body_x => rotate by theta
+        """
+        cth = np.cos(theta)
+        sth = np.sin(theta)
+        fx_i =  cth * self.spec['k_thrust']
+        fy_i =  sth * self.spec['k_thrust']
+        M_t  =  0.0
+        return fx_i, fy_i, M_t
+
+    # CasADi versions
+    def _front_rotor_casadi(self, theta):
+        cth = ca.cos(theta)
+        sth = ca.sin(theta)
+        fx_i = -sth*self.spec['k_front']
+        fy_i =  cth*self.spec['k_front']
+        M_f  =  self.spec['ell_f']*self.spec['k_front']
+        return fx_i, fy_i, M_f
+
+    def _rear_rotor_casadi(self, theta):
+        cth = ca.cos(theta)
+        sth = ca.sin(theta)
+        fx_i = -sth*self.spec['k_rear']
+        fy_i =  cth*self.spec['k_rear']
+        M_r  = -self.spec['ell_r']*self.spec['k_rear']
+        return fx_i, fy_i, M_r
+
+    def _forward_rotor_casadi(self, theta):
+        cth = ca.cos(theta)
+        sth = ca.sin(theta)
+        fx_i = cth*self.spec['k_thrust']
+        fy_i = sth*self.spec['k_thrust']
+        M_t  = 0.0
+        return fx_i, fy_i, M_t
