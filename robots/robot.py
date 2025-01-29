@@ -153,6 +153,59 @@ class BaseRobot:
             self.orientation_rectangle = ax.add_patch(plt.Rectangle(
                 (-rect_width / 2, -rect_height / 2), rect_width, rect_height,
                 linewidth=1, edgecolor='black', facecolor=color, alpha=0.5))
+        elif self.robot_spec['model'] == 'VTOL2D':
+            # Choose some nominal geometry
+            # Main body rectangle
+            self.vis_orient_len = 0.0
+            plane_width = self.robot_spec['plane_width']
+            plane_height  = self.robot_spec['plane_height']
+            self.body_plane = ax.add_patch(
+                plt.Rectangle((-plane_width/2, -plane_height/2),
+                            plane_width,
+                            plane_height,
+                            linewidth=1, edgecolor='black', facecolor=color, alpha=0.6)
+            )
+
+            # Front rotor rectangle
+            front_width  = self.robot_spec['front_width']
+            front_height = self.robot_spec['front_height']
+            self.front_rect = ax.add_patch(
+                plt.Rectangle((-front_width/2, -front_height/2),
+                            front_width,
+                            front_height,
+                            linewidth=1, edgecolor='black', facecolor=color, alpha=0.8)
+            )
+
+            # Rear rotor rectangle
+            rear_width  = self.robot_spec['rear_width']
+            rear_height = self.robot_spec['rear_height']
+            self.rear_rect = ax.add_patch(
+                plt.Rectangle((-rear_width/2, -rear_height/2),
+                            rear_width,
+                            rear_height,
+                            linewidth=1, edgecolor='black', facecolor=color, alpha=0.8)
+            )
+
+            # Forward (pusher) throttle rectangle (vertical shape)
+            pusher_width  = self.robot_spec['pusher_width']
+            pusher_height = self.robot_spec['pusher_height']
+            self.thrust_rect = ax.add_patch(
+                plt.Rectangle((-pusher_width/2, -pusher_height/2),
+                            pusher_width,
+                            pusher_height,
+                            linewidth=1, edgecolor='black', facecolor=color, alpha=0.8)
+            )
+
+            # Elevator rectangle (hinged at tail, to rotate with elevator deflection)
+            elev_width  = self.robot_spec['elev_width']
+            elev_height = self.robot_spec['elev_height']
+            self.elevator_rect = ax.add_patch(
+                plt.Rectangle((-elev_width/2, -elev_height/2),
+                            elev_width,
+                            elev_height,
+                            linewidth=1, edgecolor='black', facecolor='brown', alpha=0.9)
+            )
+
         else:
             # Robot's body represented as a scatter plot
             # self.body = ax.scatter(
@@ -293,6 +346,17 @@ class BaseRobot:
             self.body_circle.center = self.X[0, 0], self.X[1, 0]
             trans_rect = self.robot.render_rigid_body(self.X)
             self.orientation_rectangle.set_transform(trans_rect)
+        elif self.robot_spec['model'] == 'VTOL2D':
+            # retrieve the transforms
+            transform_body, transform_front, transform_rear, transform_thrust, transform_elev = \
+                self.robot.render_rigid_body(self.X, self.U)
+
+            # apply them to each patch
+            self.body_plane.set_transform(transform_body)
+            self.front_rect.set_transform(transform_front)
+            self.rear_rect.set_transform(transform_rear)
+            self.thrust_rect.set_transform(transform_thrust)
+            self.elevator_rect.set_transform(transform_elev)
         else:
             # self.body.set_offsets([self.X[0, 0], self.X[1, 0]])
             self.body.center = self.X[0, 0], self.X[1, 0]

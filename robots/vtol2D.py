@@ -1,6 +1,9 @@
 import numpy as np
 import casadi as ca
 
+import matplotlib.pyplot as plt
+from matplotlib.transforms import Affine2D
+
 def angle_normalize(x):
     """Normalize angle to (-pi, pi]."""
     if isinstance(x, (np.ndarray, float, int)):
@@ -13,10 +16,10 @@ def angle_normalize(x):
 
 class VTOL2D:
     """
-    State: X = [ x, y, theta, x_dot, y_dot, theta_dot ]
-      x,y      -> inertial positions
+    State: X = [ x, z, theta, x_dot, z_dot, theta_dot ]
+      x,z      -> inertial positions
       theta    -> pitch angle
-      x_dot,y_dot -> inertial velocities
+      x_dot,z_dot -> inertial velocities
       theta_dot   -> pitch rate
 
     Control: U = [ delta_front, delta_rear, delta_thrust, delta_elevator ]
@@ -67,6 +70,18 @@ class VTOL2D:
         self.spec.setdefault('elevator_min', -0.5)
         self.spec.setdefault('elevator_max', 0.5)
 
+        # visualization
+        self.spec.setdefault('plane_width', 1.0)
+        self.spec.setdefault('plane_height', 0.3)
+        self.spec.setdefault('front_width', 0.25)
+        self.spec.setdefault('front_height', 0.1)
+        self.spec.setdefault('rear_width', 0.25)
+        self.spec.setdefault('rear_height', 0.1)
+        self.spec.setdefault('pusher_width', 0.1)
+        self.spec.setdefault('pusher_height', 0.4)
+        self.spec.setdefault('elev_width', 0.35)
+        self.spec.setdefault('elev_height', 0.1)
+
 
         self.gravity = 9.81
 
@@ -84,11 +99,11 @@ class VTOL2D:
         if casadi:
             theta = X[2,0]
             xdot  = X[3,0]
-            ydot  = X[4,0]
+            zdot  = X[4,0]
             thetadot = X[5,0]
 
             # 1) Body-frame velocity (u_b, w_b)
-            u_b, w_b = self._body_velocity_casadi(xdot, ydot, theta)
+            u_b, w_b = self._body_velocity_casadi(xdot, zdot, theta)
             V = ca.sqrt(u_b*u_b + w_b*w_b)  # actual airspeed magnitude
             alpha = ca.atan2(w_b, u_b)
 
@@ -97,54 +112,54 @@ class VTOL2D:
 
             # 3) Wind->Body rotation by alpha, Body->Inertial by theta
             #    => net rotation by (theta + alpha)
-            fx_aero, fy_aero = self._wind_to_inertial_casadi(theta, alpha, -D0, L0)
+            fx_aero, fz_aero = self._wind_to_inertial_casadi(theta, alpha, -D0, L0)
 
             # 4) Gravity in inertial is (0, -m*g)
             m = self.spec['mass']
             fx_net = fx_aero
-            fy_net = fy_aero - m*self.gravity
+            fz_net = fz_aero - m*self.gravity
 
             x_ddot = fx_net / m
-            y_ddot = fy_net / m
+            z_ddot = fz_net / m
             theta_ddot = 0.0
 
             return ca.vertcat(
                 xdot,
-                ydot,
+                zdot,
                 thetadot,
                 x_ddot,
-                y_ddot,
+                z_ddot,
                 theta_ddot
             )
         else:
             # NumPy version
             theta = X[2,0]
             xdot  = X[3,0]
-            ydot  = X[4,0]
+            zdot  = X[4,0]
             thetadot = X[5,0]
 
-            u_b, w_b = self._body_velocity_np(xdot, ydot, theta)
+            u_b, w_b = self._body_velocity_np(xdot, zdot, theta)
             V = np.sqrt(u_b**2 + w_b**2)
             alpha = np.arctan2(w_b, u_b)
 
             L0, D0 = self._lift_drag_np(V, alpha, 0.0)
 
-            fx_aero, fy_aero = self._wind_to_inertial_np(theta, alpha, -D0, L0)
+            fx_aero, fz_aero = self._wind_to_inertial_np(theta, alpha, -D0, L0)
 
             m = self.spec['mass']
             fx_net = fx_aero
-            fy_net = fy_aero - m*self.gravity
+            fz_net = fz_aero - m*self.gravity
 
             x_ddot = fx_net / m
-            y_ddot = fy_net / m
+            z_ddot = fz_net / m
             theta_ddot = 0.0
 
             return np.array([
                 xdot,
-                ydot,
+                zdot,
                 thetadot,
                 x_ddot,
-                y_ddot,
+                z_ddot,
                 theta_ddot
             ]).reshape(-1,1)
 
@@ -160,23 +175,23 @@ class VTOL2D:
         if casadi:
             theta = X[2,0]
             xdot  = X[3,0]
-            ydot  = X[4,0]
+            zdot  = X[4,0]
             # body velocity
-            u_b, w_b = self._body_velocity_casadi(xdot, ydot, theta)
+            u_b, w_b = self._body_velocity_casadi(xdot, zdot, theta)
             V = ca.sqrt(u_b*u_b + w_b*w_b)
             alpha = ca.atan2(w_b, u_b)
 
             #-----------------------------------
             # 1) front rotor => thrust along -body_z
-            fx_front, fy_front, M_f = self._front_rotor_casadi(theta)
+            fx_front, fz_front, M_f = self._front_rotor_casadi(theta)
             # 2) rear rotor
-            fx_rear, fy_rear, M_r = self._rear_rotor_casadi(theta)
+            fx_rear, fz_rear, M_r = self._rear_rotor_casadi(theta)
             # 3) forward rotor => +body_x
-            fx_thr, fy_thr, M_t = self._forward_rotor_casadi(theta)
+            fx_thr, fz_thr, M_t = self._forward_rotor_casadi(theta)
             # 4) elevator => partial in lift/drag + pitch moment
             #    => difference from delta_e=1 vs 0
             L_de, D_de = self._lift_drag_casadi(V, alpha, delta_e=1.0)  # "partial"
-            fx_elev, fy_elev = self._wind_to_inertial_casadi(theta, alpha, -D_de, L_de)
+            fx_elev, fz_elev = self._wind_to_inertial_casadi(theta, alpha, -D_de, L_de)
             M_e = self.spec['C_mdelta_e']
 
             m = self.spec['mass']
@@ -194,22 +209,22 @@ class VTOL2D:
 
             # Column 0: front rotor
             g_list[3][0] = fx_front/m
-            g_list[4][0] = fy_front/m
+            g_list[4][0] = fz_front/m
             g_list[5][0] = M_f/I
 
             # Column 1: rear rotor
             g_list[3][1] = fx_rear/m
-            g_list[4][1] = fy_rear/m
+            g_list[4][1] = fz_rear/m
             g_list[5][1] = M_r/I
 
             # Column 2: forward rotor
             g_list[3][2] = fx_thr/m
-            g_list[4][2] = fy_thr/m
+            g_list[4][2] = fz_thr/m
             g_list[5][2] = M_t/I
 
             # Column 3: elevator
             g_list[3][3] = fx_elev/m
-            g_list[4][3] = fy_elev/m
+            g_list[4][3] = fz_elev/m
             g_list[5][3] = M_e/I
 
             # Convert each row to a CasADi row vector, then stack them
@@ -224,20 +239,20 @@ class VTOL2D:
         else:
             theta = X[2,0]
             xdot  = X[3,0]
-            ydot  = X[4,0]
+            zdot  = X[4,0]
 
             # body velocity
-            u_b, w_b = self._body_velocity_np(xdot, ydot, theta)
+            u_b, w_b = self._body_velocity_np(xdot, zdot, theta)
             V = np.sqrt(u_b**2 + w_b**2)
             alpha = np.arctan2(w_b, u_b)
 
-            fx_front, fy_front, M_f = self._front_rotor_np(theta)
-            fx_rear,  fy_rear,  M_r = self._rear_rotor_np(theta)
-            fx_thr,   fy_thr,   M_t = self._forward_rotor_np(theta)
+            fx_front, fz_front, M_f = self._front_rotor_np(theta)
+            fx_rear,  fz_rear,  M_r = self._rear_rotor_np(theta)
+            fx_thr,   fz_thr,   M_t = self._forward_rotor_np(theta)
 
             # elevator partial
             L_de, D_de = self._lift_drag_np(V, alpha, 1.0)
-            fx_elev, fy_elev = self._wind_to_inertial_np(theta, alpha, -D_de, L_de)
+            fx_elev, fz_elev = self._wind_to_inertial_np(theta, alpha, -D_de, L_de)
             M_e = self.spec['C_mdelta_e']
 
             m = self.spec['mass']
@@ -246,22 +261,22 @@ class VTOL2D:
             g_out = np.zeros((6,4))
             # front
             g_out[3,0] = fx_front / m
-            g_out[4,0] = fy_front / m
+            g_out[4,0] = fz_front / m
             g_out[5,0] = M_f / I
 
             # rear
             g_out[3,1] = fx_rear / m
-            g_out[4,1] = fy_rear / m
+            g_out[4,1] = fz_rear / m
             g_out[5,1] = M_r / I
 
             # forward
             g_out[3,2] = fx_thr / m
-            g_out[4,2] = fy_thr / m
+            g_out[4,2] = fz_thr / m
             g_out[5,2] = M_t / I
 
             # elevator
             g_out[3,3] = fx_elev / m
-            g_out[4,3] = fy_elev / m
+            g_out[4,3] = fz_elev / m
             g_out[5,3] = M_e / I
 
             return g_out
@@ -282,23 +297,23 @@ class VTOL2D:
     #--------------------------------------------------------------------------
     # Helper: body velocity from inertial velocity
     #--------------------------------------------------------------------------
-    def _body_velocity_np(self, xdot, ydot, theta):
+    def _body_velocity_np(self, xdot, zdot, theta):
         """
-        Rotate inertial velocity (xdot, ydot) into body frame (u_b, w_b).
+        Rotate inertial velocity (xdot, zdot) into body frame (u_b, w_b).
          [u_b] = [ cos(theta),  sin(theta)] [ xdot ]
-         [w_b]   [-sin(theta), cos(theta)]  [ ydot ]
+         [w_b]   [-sin(theta), cos(theta)]  [ zdot ]
         """
         cth = np.cos(theta)
         sth = np.sin(theta)
-        u_b = cth*xdot + sth*ydot
-        w_b = -sth*xdot + cth*ydot
+        u_b = cth*xdot + sth*zdot
+        w_b = -sth*xdot + cth*zdot
         return u_b, w_b
 
-    def _body_velocity_casadi(self, xdot, ydot, theta):
+    def _body_velocity_casadi(self, xdot, zdot, theta):
         cth = ca.cos(theta)
         sth = ca.sin(theta)
-        u_b = cth*xdot + sth*ydot
-        w_b = -sth*xdot + cth*ydot
+        u_b = cth*xdot + sth*zdot
+        w_b = -sth*xdot + cth*zdot
         return (u_b, w_b)
 
     #--------------------------------------------------------------------------
@@ -358,16 +373,16 @@ class VTOL2D:
         c = np.cos(heading)
         s = np.sin(heading)
         fx_i = c*fx_w - s*fz_w
-        fy_i = s*fx_w + c*fz_w
-        return fx_i, fy_i
+        fz_i = s*fx_w + c*fz_w
+        return fx_i, fz_i
 
     def _wind_to_inertial_casadi(self, theta, alpha, fx_w, fz_w):
         heading = theta + alpha
         c = ca.cos(heading)
         s = ca.sin(heading)
         fx_i = c*fx_w - s*fz_w
-        fy_i = s*fx_w + c*fz_w
-        return fx_i, fy_i
+        fz_i = s*fx_w + c*fz_w
+        return fx_i, fz_i
 
     #--------------------------------------------------------------------------
     # Rotor helpers: front, rear, forward
@@ -385,18 +400,18 @@ class VTOL2D:
         sth = np.sin(theta)
         # inertial
         fx_i = -sth * self.spec['k_front']
-        fy_i =  cth * self.spec['k_front']
+        fz_i =  cth * self.spec['k_front']
         # pitch moment
         M_f  = +self.spec['ell_f'] * self.spec['k_front']
-        return fx_i, fy_i, M_f
+        return fx_i, fz_i, M_f
 
     def _rear_rotor_np(self, theta):
         cth = np.cos(theta)
         sth = np.sin(theta)
         fx_i = -sth * self.spec['k_rear']
-        fy_i =  cth * self.spec['k_rear']
+        fz_i =  cth * self.spec['k_rear']
         M_r  = -self.spec['ell_r'] * self.spec['k_rear']
-        return fx_i, fy_i, M_r
+        return fx_i, fz_i, M_r
 
     def _forward_rotor_np(self, theta):
         """
@@ -405,34 +420,34 @@ class VTOL2D:
         cth = np.cos(theta)
         sth = np.sin(theta)
         fx_i =  cth * self.spec['k_thrust']
-        fy_i =  sth * self.spec['k_thrust']
+        fz_i =  sth * self.spec['k_thrust']
         M_t  =  0.0
-        return fx_i, fy_i, M_t
+        return fx_i, fz_i, M_t
 
     # CasADi versions
     def _front_rotor_casadi(self, theta):
         cth = ca.cos(theta)
         sth = ca.sin(theta)
         fx_i = -sth*self.spec['k_front']
-        fy_i =  cth*self.spec['k_front']
+        fz_i =  cth*self.spec['k_front']
         M_f  =  self.spec['ell_f']*self.spec['k_front']
-        return fx_i, fy_i, M_f
+        return fx_i, fz_i, M_f
 
     def _rear_rotor_casadi(self, theta):
         cth = ca.cos(theta)
         sth = ca.sin(theta)
         fx_i = -sth*self.spec['k_rear']
-        fy_i =  cth*self.spec['k_rear']
+        fz_i =  cth*self.spec['k_rear']
         M_r  = -self.spec['ell_r']*self.spec['k_rear']
-        return fx_i, fy_i, M_r
+        return fx_i, fz_i, M_r
 
     def _forward_rotor_casadi(self, theta):
         cth = ca.cos(theta)
         sth = ca.sin(theta)
         fx_i = cth*self.spec['k_thrust']
-        fy_i = sth*self.spec['k_thrust']
+        fz_i = sth*self.spec['k_thrust']
         M_t  = 0.0
-        return fx_i, fy_i, M_t
+        return fx_i, fz_i, M_t
     
     def nominal_input(self, X, G):
         # not imeplemented
@@ -459,11 +474,11 @@ class VTOL2D:
         def h(x, obs, robot_radius, beta=1.01):
             '''Computes CBF h(x) = ||x-x_obs||^2 - beta*d_min^2'''
             x_obs = obs[0]
-            y_obs = obs[1]
+            z_obs = obs[1]
             r_obs = obs[2]
             d_min = robot_radius + r_obs
 
-            h = (x[0, 0] - x_obs)**2 + (x[1, 0] - y_obs)**2 - beta*d_min**2
+            h = (x[0, 0] - x_obs)**2 + (x[1, 0] - z_obs)**2 - beta*d_min**2
             return h
 
         h_k2 = h(x_k2, obs, robot_radius, beta)
@@ -478,3 +493,63 @@ class VTOL2D:
         # d_h = np.zeros_like(d_h)
         # dd_h = np.zeros_like(dd_h)
         return h_k, d_h, dd_h
+    
+    def render_rigid_body(self, X, U):
+        """
+        Return transforms for body, front rotor, rear rotor,
+        forward (pusher) throttle, and elevator.
+        """
+        x, z, theta, xdot, zdot, thetadot = X.flatten()
+        delta_front, delta_rear, delta_thrust, delta_elev = U.flatten()
+
+        # 1) Body transform: rotate by theta, then translate by (x,z)
+        transform_body = Affine2D().rotate(theta).translate(x, z) + plt.gca().transData
+
+        # 2) Front rotor: place it at the front of the plane
+        #    Suppose the front is ~ +0.5 * plane_width from center
+        #    We'll rotate the same theta, then translate to (x_front, z_front)
+        front_offset = self.spec['plane_width']/2  # tune as needed
+        x_front = x + front_offset * np.cos(theta)
+        z_front = z + front_offset * np.sin(theta)
+        transform_front = Affine2D().rotate(theta).translate(x_front, z_front) + plt.gca().transData
+
+        # 3) Rear rotor: place it at the negative front_offset
+        x_rear = x - front_offset * np.cos(theta)
+        z_rear = z - front_offset * np.sin(theta)
+        transform_rear = Affine2D().rotate(theta).translate(x_rear, z_rear) + plt.gca().transData
+
+        # 4) Forward (pusher) throttle: maybe placed on top or behind the body center
+        #    e.g. 0.3 behind the body center in the +Z direction, etc.
+        #    For simplicity, place it behind the plane in the x-axis frame
+        push_offset_x = 0.0
+        push_offset_z = -self.spec['plane_height']/2 - self.spec['pusher_height']/2
+        # 1) Translate locally:
+        transform_thrust = Affine2D().translate(push_offset_x, push_offset_z)
+            # e.g. push_offset_x=0.0, push_offset_z = -plane_width/2 - pusher_height/2
+
+        # 2) Rotate about local origin:
+        transform_thrust = transform_thrust.rotate(theta)
+
+        # 3) Translate to global position (x,z):
+        transform_thrust = transform_thrust.translate(x, z)
+
+        # Finally, attach it to the axes:
+        transform_thrust = transform_thrust + plt.gca().transData
+        
+        # 5) Elevator: hinge at the rear
+        #    We want to rotate it by (theta + delta_elev) around the hinge
+        #    => shift the coordinate so hinge is at origin, rotate, shift back
+        #    But a simpler approach is: rotate by 'theta', then do a local rotate by 'delta_elev'
+        #    about local rectangle corner. For illustration:
+        elevator_offset = -0.75  # plane length/2 plus a bit
+        x_elev = x + elevator_offset * np.cos(theta)
+        z_elev = z + elevator_offset * np.sin(theta)
+        # first rotate by "theta" (plane orientation), then rotate about the local rectangle's pivot by 'delta_elev'
+        # we can do an .rotate_around(px, pz, angle)
+        # Or we do a two-step Affine2D manually:
+        transform_elev = Affine2D()
+        transform_elev = transform_elev.rotate_around(self.spec['elev_width']/2, 0, delta_elev)  # local rotation about rectangle corner
+        transform_elev = transform_elev.rotate(theta)
+        transform_elev = transform_elev.translate(x_elev, z_elev) + plt.gca().transData
+
+        return transform_body, transform_front, transform_rear, transform_thrust, transform_elev
