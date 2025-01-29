@@ -54,14 +54,21 @@ class VTOL2D:
         self.spec.setdefault('C_mdelta_e', -0.99)   # for pitch moment from elevator
 
         # linear rotor thrust
-        self.spec.setdefault('k_front', 40.0)
-        self.spec.setdefault('k_rear',  40.0)
-        self.spec.setdefault('k_thrust',40.0)
+        self.spec.setdefault('k_front', 80.0)
+        self.spec.setdefault('k_rear',  80.0)
+        self.spec.setdefault('k_thrust',60.0)
         # geometry: lever arms
         self.spec.setdefault('ell_f', 0.5)
         self.spec.setdefault('ell_r', 0.5)
 
-        self.g = 9.81
+        # control limits
+        self.spec.setdefault('throttle_min', 0.0)
+        self.spec.setdefault('throttle_max', 1.0)
+        self.spec.setdefault('elevator_min', -0.5)
+        self.spec.setdefault('elevator_max', 0.5)
+
+
+        self.gravity = 9.81
 
     #--------------------------------------------------------------------------
     # Body-frame velocity => alpha => baseline (no-elevator) lift/drag => inertial
@@ -95,7 +102,7 @@ class VTOL2D:
             # 4) Gravity in inertial is (0, -m*g)
             m = self.spec['mass']
             fx_net = fx_aero
-            fy_net = fy_aero - m*self.g
+            fy_net = fy_aero - m*self.gravity
 
             x_ddot = fx_net / m
             y_ddot = fy_net / m
@@ -126,7 +133,7 @@ class VTOL2D:
 
             m = self.spec['mass']
             fx_net = fx_aero
-            fy_net = fy_aero - m*self.g
+            fy_net = fy_aero - m*self.gravity
 
             x_ddot = fx_net / m
             y_ddot = fy_net / m
@@ -428,10 +435,17 @@ class VTOL2D:
         return fx_i, fy_i, M_t
     
     def nominal_input(self, X, G):
-        raise NotImplementedError("Not implemented")
+        # not imeplemented
+        return np.zeros((4, 1))
 
-
+    def stop(self, X):
+        # not imeplemented
+        return np.zeros((4, 1))
     
+    def has_stopped(self, X, tol=0.05):
+        """Check if quadrotor has stopped within tolerance."""
+        return np.linalg.norm(X[3:5, 0]) < tol
+
     def agent_barrier(self, X, obs, robot_radius, beta=1.01):
         # Not implemented
         raise NotImplementedError("Not implemented")
@@ -439,8 +453,8 @@ class VTOL2D:
     def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.01):
         '''Discrete Time High Order CBF'''
         # Dynamics equations for the next states
-        x_k1 = self.step(x_k, u_k)
-        x_k2 = self.step(x_k1, u_k)
+        x_k1 = self.step(x_k, u_k, casadi=True)
+        x_k2 = self.step(x_k1, u_k, casadi=True)
 
         def h(x, obs, robot_radius, beta=1.01):
             '''Computes CBF h(x) = ||x-x_obs||^2 - beta*d_min^2'''
