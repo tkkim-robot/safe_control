@@ -240,9 +240,9 @@ class BaseRobot:
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
             return self.robot.nominal_input(self.X, goal, d_min, k_v, k_a)
         elif self.robot_spec['model'] == 'Quad2D':
-            return self.robot.nominal_input(self.X, goal, d_min)
+            return self.robot.nominal_input(self.X, goal)
         elif self.robot_spec['model'] == 'VTOL2D':
-            return self.robot.nominal_input(self.X, goal, d_min)
+            return self.robot.nominal_input(self.X, goal)
 
     def nominal_attitude_input(self, theta_des):
         if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
