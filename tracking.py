@@ -66,7 +66,8 @@ class LocalTrackingController:
                 X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
         elif self.robot_spec['model'] in ['Quad2D', 'VTOL2D']:
             if X0.shape[0] in [2, 3]: # only initialize the x,z position if don't provide the full state
-                X0 = np.array([X0[0], X0[1], 0.0, 0.0, 0.0, 0.0]).reshape(-1, 1)
+                # set initial velocity to 3.0
+                X0 = np.array([X0[0], X0[1], 0.0, 3.0, 0.0, 0.0]).reshape(-1, 1)
             elif X0.shape[0] != 6:
                 raise ValueError("Invalid initial state dimension for Quad2D")
     
@@ -390,6 +391,7 @@ class LocalTrackingController:
         else:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
+            
 
         # 5. Raise an error if the QP is infeasible, or the robot collides with the obstacle
         collide = self.is_collide_unknown()
@@ -486,8 +488,8 @@ class LocalTrackingController:
 
 
 def single_agent_main(control_type):
-    dt = 0.05
-    model = 'VTOL2D' # SingleIntegrator2D, Quad2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D, VTOL2D
+    dt = 0.03
+    model = 'Quad2D' # SingleIntegrator2D, Quad2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D, VTOL2D
 
     waypoints = [
         [2, 2, math.pi/2],
@@ -495,20 +497,10 @@ def single_agent_main(control_type):
         [12, 12, 0],
         [12, 2, 0]
     ]
-    waypoints = np.array(waypoints, dtype=np.float64)
 
-    if model in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'Quad2D', 'VTOL2D']:
-        x_init = waypoints[0]
-    else:
-        x_init = np.append(waypoints[0], 1.0)
-    
     known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
-                            [10.0, 7.3, 0.4],
-                            [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
-    plot_handler = plotting.Plotting(known_obs=known_obs)
-    ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here
-    env_handler = env.Env()
-
+                        [10.0, 7.3, 0.4],
+                        [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
 
     if model == 'SingleIntegrator2D':
         robot_spec = {
@@ -548,14 +540,58 @@ def single_agent_main(control_type):
         }
     elif model == 'VTOL2D':
         robot_spec = {
-            'model': 'VTOL2D'
+            'model': 'VTOL2D',
+            'radius': 0.6
         }
+        # override the waypoints and known_obs
+        waypoints = [
+            [2, 12],
+            [10, 12],
+            [10, 0.5]
+        ]
+        pillar_1_x = 7.0
+        pillar_2_x = 13.0
+        known_obs = np.array([
+            [pillar_1_x, 1.0, 0.5],
+            [pillar_1_x, 2.0, 0.5],
+            [pillar_1_x, 3.0, 0.5],
+            [pillar_1_x, 4.0, 0.5],
+            [pillar_2_x, 1.0, 0.5],
+            [pillar_2_x, 2.0, 0.5],
+            [pillar_2_x, 3.0, 0.5],
+            [pillar_2_x, 4.0, 0.5],
+            [pillar_2_x, 5.0, 0.5],
+            [pillar_2_x, 6.0, 0.5],
+            [10.0, 10.0, 0.5],
+            [9.5, 9.0, 0.6],
+            [12.0, 7.0, 0.8],
+            [12.0, 12.0, 0.6],
+            [8.0, 12.0, 0.9],
+            [10.0, 4.0, 0.6]
+        ])
+
+
+
+    waypoints = np.array(waypoints, dtype=np.float64)
+
+    if model in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'Quad2D']:
+        x_init = waypoints[0]
+    elif model == 'VTOL2D':
+        v_init = 3.0 # m/s
+        x_init = np.hstack((waypoints[0][0:2], 0.0, v_init, 0.0, 0.0))
+    else:
+        x_init = np.append(waypoints[0], 1.0)
+    
+
+    plot_handler = plotting.Plotting(known_obs=known_obs)
+    ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here
+    env_handler = env.Env()
 
     tracking_controller = LocalTrackingController(x_init, robot_spec,
                                                   control_type=control_type,
                                                   dt=dt,
                                                   show_animation=True,
-                                                  save_animation=False,
+                                                  save_animation=True,
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
 
