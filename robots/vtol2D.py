@@ -4,6 +4,14 @@ import casadi as ca
 import matplotlib.pyplot as plt
 from matplotlib.transforms import Affine2D
 
+"""
+Created on January 27th, 2025
+@author: Taekyung Kim
+
+@description: 
+Implement quadplane in 2D and visualize the rigid body plus elevators.
+"""
+
 def angle_normalize(x):
     """Normalize angle to (-pi, pi]."""
     if isinstance(x, (np.ndarray, float, int)):
