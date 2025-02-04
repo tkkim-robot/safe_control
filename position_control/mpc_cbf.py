@@ -1,13 +1,14 @@
 import numpy as np
 import casadi as ca
 import do_mpc
-
+import matplotlib.pyplot as plt
 
 class MPCCBF:
-    def __init__(self, robot, robot_spec):
+    def __init__(self, robot, robot_spec, show_mpc_traj=False):
         self.robot = robot
         self.robot_spec = robot_spec
         self.status = 'optimal'  # TODO: not implemented
+        self.show_mpc_traj = show_mpc_traj
 
         # MPC parameters
         self.horizon = 10
@@ -33,8 +34,9 @@ class MPCCBF:
             self.Q = np.diag([25, 25, 50, 10, 10, 50])
             self.R = np.array([0.5, 0.5])
         elif self.robot_spec['model'] == 'VTOL2D':
-            self.Q = np.diag([50, 50, 25, 10, 10, 50])
-            self.R = np.array([0.5, 0.5, 0.5, 50])
+            self.horizon = 30
+            self.Q = np.diag([10, 10, 250, 10, 10, 50])
+            self.R = np.array([0.5, 0.5, 0.5, 500000])
 
         self.n_controls = 2
 
@@ -118,6 +120,17 @@ class MPCCBF:
         cost = ca.mtimes([(_x - _goal).T, self.Q, (_x - _goal)])
         model.set_expression(expr_name='cost', expr=cost)
 
+        if self.show_mpc_traj:
+            if self.robot_spec['model'] == 'VTOL2D':
+                model.set_expression('u_0', _u[0])
+                model.set_expression('u_1', _u[1])
+                model.set_expression('u_2', _u[2])
+                model.set_expression('u_3', _u[3]*180/3.14159)
+                model.set_expression('v', ca.hypot(_x[3], _x[4]))
+            else:
+                for i in range(self.n_controls):
+                    model.set_expression('u_' + str(i), _u[i])
+
         model.setup()
         return model
 
@@ -181,11 +194,33 @@ class MPCCBF:
                 [self.robot_spec['throttle_min'], self.robot_spec['throttle_min'], self.robot_spec['throttle_min'], self.robot_spec['elevator_min']])
             mpc.bounds['upper', '_u', 'u'] = np.array(
                 [self.robot_spec['throttle_max'], self.robot_spec['throttle_max'], self.robot_spec['throttle_max'], self.robot_spec['elevator_max']])
+            mpc.bounds['lower', '_x', 'x', 3] = -self.robot_spec['v_max']
+            mpc.bounds['upper', '_x', 'x', 3] = self.robot_spec['v_max']
+            mpc.bounds['lower', '_x', 'x', 4] = -self.robot_spec['descent_speed_max']
 
         mpc = self.set_tvp(mpc)
         mpc = self.set_cbf_constraint(mpc)
 
         mpc.setup()
+        if self.show_mpc_traj:
+            plt.ion()
+            self.graphics = do_mpc.graphics.Graphics(mpc.data)
+                        
+            if self.robot_spec['model'] == 'VTOL2D':
+                self.fig, ax = plt.subplots(self.n_controls + 1, sharex=True)
+                ax[0].set_ylabel('d_front')
+                ax[1].set_ylabel('d_rear')
+                ax[2].set_ylabel('d_pusher')
+                ax[3].set_ylabel('elevator [\u00B0]')
+
+                ax[4].set_ylabel('v [m/s]')
+                self.graphics.add_line(var_type='_aux', var_name='v', axis=ax[self.n_controls])
+            else: 
+                raise NotImplementedError('Model not implemented')
+            
+            for i in range(self.n_controls):
+                self.graphics.add_line(var_type='_aux', var_name='u_' + str(i), axis=ax[i])
+            self.fig.align_ylabels()
         return mpc
 
     def set_tvp(self, mpc):
@@ -292,13 +327,23 @@ class MPCCBF:
         if control_ref['state_machine'] != 'track':
             # if outer loop is doing something else, just return the reference
             return control_ref['u_ref']
-
+        
         # Solve MPC problem
         u = self.mpc.make_step(robot_state)
 
         # Update simulator and estimator
         y_next = self.simulator.make_step(u)
         x_next = self.estimator.make_step(y_next)
+
+        if self.show_mpc_traj:
+            self.graphics.plot_results()
+            self.graphics.plot_predictions()
+            self.graphics.reset_axes()
+
+            plt.figure(self.fig.number)
+            self.fig.canvas.draw_idle()
+            self.fig.canvas.flush_events()
+            plt.pause(0.001)
 
         # if nearest_obs is not None:
         #     cbf_constraint = self.compute_cbf_constraint(
