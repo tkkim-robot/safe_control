@@ -71,9 +71,11 @@ class Plotting:
             )
 
         main_ax.set_title(name)
-        eps = 0.2
-        main_ax.set_xlim(self.env.x_range[0] - eps, self.env.x_range[1] + eps)
-        main_ax.set_ylim(self.env.y_range[0] - eps, self.env.y_range[1] + eps)
+        eps = 0.015
+        eps_x = (self.env.x_range[1] - self.env.x_range[0])  * eps
+        eps_y = (self.env.y_range[1] - self.env.y_range[0]) * eps
+        main_ax.set_xlim(self.env.x_range[0] - eps_x, self.env.x_range[1] + eps_x)
+        main_ax.set_ylim(self.env.y_range[0] - eps_y, self.env.y_range[1] + eps_y)
         main_ax.set_aspect('equal', adjustable='box')
         plt.tight_layout()
 
