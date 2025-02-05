@@ -197,6 +197,7 @@ class MPCCBF:
             mpc.bounds['lower', '_x', 'x', 3] = -self.robot_spec['v_max']
             mpc.bounds['upper', '_x', 'x', 3] = self.robot_spec['v_max']
             mpc.bounds['lower', '_x', 'x', 4] = -self.robot_spec['descent_speed_max']
+            mpc.bounds['upper', '_x', 'x', 1] = 14.0
 
         mpc = self.set_tvp(mpc)
         mpc = self.set_cbf_constraint(mpc)

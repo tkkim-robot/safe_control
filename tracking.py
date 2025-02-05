@@ -403,7 +403,7 @@ class LocalTrackingController:
 
         # 5. Raise an error if the QP is infeasible, or the robot collides with the obstacle
         collide = self.is_collide_unknown()
-        if self.pos_controller.status != 'optimal' or collide:
+        if self.pos_controller.status != 'optimal' or collide or self.robot.X[1, 0 ] > 14.0 or np.abs(self.robot.X[2,0]) > np.deg2rad(45):
             self.draw_infeasible()
             print("Infeasible or Collision")
             if self.raise_error:
@@ -557,8 +557,8 @@ def single_agent_main(control_type):
         }
         # override the waypoints and known_obs
         waypoints = [
-            [2, 12],
-            [70, 12],
+            [2, 10],
+            [70, 10],
             [70, 0.5]
         ]
         pillar_1_x = 67.0
@@ -573,7 +573,17 @@ def single_agent_main(control_type):
             [pillar_2_x, 3.0, 0.5],
             [pillar_2_x, 4.0, 0.5],
             [pillar_2_x, 5.0, 0.5],
-            [pillar_2_x, 6.0, 0.5]
+            [pillar_2_x, 6.0, 0.5],
+            [pillar_2_x, 7.0, 0.5],
+            [pillar_2_x, 8.0, 0.5],
+            [pillar_2_x, 9.0, 0.5],
+            [pillar_2_x, 10.0, 0.5],
+            [pillar_2_x, 11.0, 0.5],
+            [pillar_2_x, 12.0, 0.5],
+            [pillar_2_x, 13.0, 0.5],
+            [pillar_2_x, 14.0, 0.5],
+            [pillar_2_x, 15.0, 0.5],
+            [60.0, 12.0, 0.5]
         ])
 
         env_width = 75.0

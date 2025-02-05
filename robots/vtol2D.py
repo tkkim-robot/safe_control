@@ -68,8 +68,8 @@ class VTOL2D:
         self.spec.setdefault('chord', 0.18994)      # mean chord length
 
         # linear rotor thrust
-        self.spec.setdefault('k_front', 100.0)
-        self.spec.setdefault('k_rear',  100.0)
+        self.spec.setdefault('k_front', 90.0)
+        self.spec.setdefault('k_rear',  90.0)
         self.spec.setdefault('k_thrust',60.0)
         # geometry: lever arms
         self.spec.setdefault('ell_f', 0.5)
