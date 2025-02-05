@@ -142,7 +142,7 @@ Supported robot dynamics can be found in the [`robots/`](https://github.com/tkki
 - `kinematic_bicycle2D`
 - `quad2d`: x - forward, z - vertical
 - `quad3d`: under development
-- `vtol2d`: under development
+- `vtol2d`: x - forward, z - vertical
 
 ### Positional Control Algorithms
 
