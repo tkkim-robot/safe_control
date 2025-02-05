@@ -32,7 +32,7 @@ class InfeasibleError(Exception):
 
 class LocalTrackingController:
     def __init__(self, X0, robot_spec, control_type='cbf_qp', dt=0.05,
-                 show_animation=False, save_animation=False, raise_error=True, ax=None, fig=None, env=None):
+                 show_animation=False, save_animation=False, show_mpc_traj=False, raise_error=True, ax=None, fig=None, env=None):
 
         self.robot_spec = robot_spec
         self.control_type = control_type  # 'cbf_qp' or 'mpc_cbf'
@@ -42,7 +42,7 @@ class LocalTrackingController:
         self.rotation_threshold = 0.1  # Radians
 
         self.current_goal_index = 0  # Index of the current goal in the path
-        self.reached_threshold = 0.2
+        self.reached_threshold = 3 # FIXME:
 
         if self.robot_spec['model'] == 'SingleIntegrator2D':
             if X0.shape[0] == 2:
@@ -64,17 +64,24 @@ class LocalTrackingController:
         elif self.robot_spec['model'] == 'KinematicBicycle2D':
             if X0.shape[0] == 3:  # set initial velocity to 0.0
                 X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
-        elif self.robot_spec['model'] == 'Quad2D':
+        elif self.robot_spec['model'] in ['Quad2D']:
             if X0.shape[0] in [2, 3]: # only initialize the x,z position if don't provide the full state
                 X0 = np.array([X0[0], X0[1], 0.0, 0.0, 0.0, 0.0]).reshape(-1, 1)
             elif X0.shape[0] != 6:
                 raise ValueError("Invalid initial state dimension for Quad2D")
+        elif self.robot_spec['model'] in ['VTOL2D']:
+            if X0.shape[0] in [2, 3]: 
+                # set initial velocity to 5.0
+                X0 = np.array([X0[0], X0[1], 0.0, 5.0, 0.0, 0.0]).reshape(-1, 1)
+            elif X0.shape[0] != 6:
+                raise ValueError("Invalid initial state dimension for VTOL2D")
     
             
         self.u_att = None
 
         self.show_animation = show_animation
         self.save_animation = save_animation
+        self.show_mpc_traj = show_mpc_traj
         self.raise_error = raise_error
         if self.save_animation:
             self.setup_animation_saving()
@@ -98,7 +105,7 @@ class LocalTrackingController:
             self.pos_controller = CBFQP(self.robot, self.robot_spec)
         elif control_type == 'mpc_cbf':
             from position_control.mpc_cbf import MPCCBF
-            self.pos_controller = MPCCBF(self.robot, self.robot_spec)
+            self.pos_controller = MPCCBF(self.robot, self.robot_spec, show_mpc_traj=self.show_mpc_traj)
         elif control_type == 'optimal_decay_cbf_qp':
             from position_control.optimal_decay_cbf_qp import OptimalDecayCBFQP
             self.pos_controller = OptimalDecayCBFQP(self.robot, self.robot_spec)
@@ -301,7 +308,7 @@ class LocalTrackingController:
             current_angle = self.robot.get_orientation()
             goal_angle = np.arctan2(self.waypoints[0][1] - self.robot.X[1, 0],
                                     self.waypoints[0][0] - self.robot.X[0, 0])
-            if self.robot_spec['model'] == 'Quad2D': # Quad2D skip 'rotate' state since there is no yaw angle
+            if self.robot_spec['model'] in ['Quad2D', 'VTOL2D']: # These skip 'rotate' state since there is no yaw angle
                 self.state_machine = 'track'
             if abs(current_angle - goal_angle) > self.rotation_threshold:
                 return self.waypoints[0][:2]
@@ -327,7 +334,9 @@ class LocalTrackingController:
 
     def draw_plot(self, pause=0.01, force_save=False):
         if self.show_animation:
-            self.fig.canvas.draw()
+            
+            self.fig.canvas.draw_idle()
+            self.fig.canvas.flush_events()
             plt.pause(pause)
             if self.save_animation:
                 self.ani_idx += 1
@@ -368,7 +377,7 @@ class LocalTrackingController:
             if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
                 self.u_att = self.robot.rotate_to(goal_angle)
                 u_ref = self.robot.stop()
-            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'Quad2D']:
+            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'Quad2D', 'VTOL2D']:
                 u_ref = self.robot.rotate_to(goal_angle)
         elif self.goal is None:
             u_ref = self.robot.stop()
@@ -390,10 +399,11 @@ class LocalTrackingController:
         else:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
+        plt.figure(self.fig.number)
 
         # 5. Raise an error if the QP is infeasible, or the robot collides with the obstacle
         collide = self.is_collide_unknown()
-        if self.pos_controller.status != 'optimal' or collide:
+        if self.pos_controller.status != 'optimal' or collide or self.robot.X[1, 0 ] > 14.0 or np.abs(self.robot.X[2,0]) > np.deg2rad(45):
             self.draw_infeasible()
             print("Infeasible or Collision")
             if self.raise_error:
@@ -487,7 +497,7 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    model = 'Quad2D' # SingleIntegrator2D, Quad2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D
+    model = 'VTOL2D' # SingleIntegrator2D, Quad2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D, VTOL2D
 
     waypoints = [
         [2, 2, math.pi/2],
@@ -495,33 +505,17 @@ def single_agent_main(control_type):
         [12, 12, 0],
         [12, 2, 0]
     ]
-    waypoints = np.array(waypoints, dtype=np.float64)
 
-    if model in ['SingleIntegrator2D', 'Quad2D', 'DoubleIntegrator2D']:
-        x_init = waypoints[0]
-    else:
-        x_init = np.append(waypoints[0], 1.0)
-    
     known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
-                            [10.0, 7.3, 0.4],
-                            [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
-    plot_handler = plotting.Plotting(known_obs=known_obs)
-    ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here
-    env_handler = env.Env()
+                        [10.0, 7.3, 0.4],
+                        [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
 
-
+    env_width = 14.0
+    env_height = 14.0
     if model == 'SingleIntegrator2D':
         robot_spec = {
             'model': 'SingleIntegrator2D',
             'v_max': 1.0,
-            'radius': 0.25
-        }
-    elif model == 'Quad2D':
-        robot_spec = {
-            'model': 'Quad2D',
-            'f_min': 3.0,
-            'f_max': 10.0,
-            'sensor': 'rgbd',
             'radius': 0.25
         }
     elif model == 'DoubleIntegrator2D':
@@ -546,12 +540,78 @@ def single_agent_main(control_type):
             'sensor': 'rgbd',
             'radius': 0.5
         }
+    elif model == 'Quad2D':
+        robot_spec = {
+            'model': 'Quad2D',
+            'f_min': 3.0,
+            'f_max': 10.0,
+            'sensor': 'rgbd',
+            'radius': 0.25
+        }
+    elif model == 'VTOL2D':
+        # VTOL has pretty different dynacmis, so create a special test case
+        robot_spec = {
+            'model': 'VTOL2D',
+            'radius': 0.6,
+            'v_max': 20.0,
+        }
+        # override the waypoints and known_obs
+        waypoints = [
+            [2, 10],
+            [70, 10],
+            [70, 0.5]
+        ]
+        pillar_1_x = 67.0
+        pillar_2_x = 73.0
+        known_obs = np.array([
+            [pillar_1_x, 1.0, 0.5],
+            [pillar_1_x, 2.0, 0.5],
+            [pillar_1_x, 3.0, 0.5],
+            [pillar_1_x, 4.0, 0.5],
+            [pillar_2_x, 1.0, 0.5],
+            [pillar_2_x, 2.0, 0.5],
+            [pillar_2_x, 3.0, 0.5],
+            [pillar_2_x, 4.0, 0.5],
+            [pillar_2_x, 5.0, 0.5],
+            [pillar_2_x, 6.0, 0.5],
+            [pillar_2_x, 7.0, 0.5],
+            [pillar_2_x, 8.0, 0.5],
+            [pillar_2_x, 9.0, 0.5],
+            [pillar_2_x, 10.0, 0.5],
+            [pillar_2_x, 11.0, 0.5],
+            [pillar_2_x, 12.0, 0.5],
+            [pillar_2_x, 13.0, 0.5],
+            [pillar_2_x, 14.0, 0.5],
+            [pillar_2_x, 15.0, 0.5],
+            #[60.0, 12.0, 0.5]
+        ])
+
+        env_width = 75.0
+        env_height = 15.0
+
+
+
+    waypoints = np.array(waypoints, dtype=np.float64)
+
+    if model in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'Quad2D']:
+        x_init = waypoints[0]
+    elif model == 'VTOL2D':
+        v_init = robot_spec['v_max'] # m/s
+        x_init = np.hstack((waypoints[0][0:2], 0.0, v_init, 0.0, 0.0))
+    else:
+        x_init = np.append(waypoints[0], 1.0)
+    
+
+    plot_handler = plotting.Plotting(width=env_width, height=env_height, known_obs=known_obs)
+    ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here
+    env_handler = env.Env()
 
     tracking_controller = LocalTrackingController(x_init, robot_spec,
                                                   control_type=control_type,
                                                   dt=dt,
                                                   show_animation=True,
                                                   save_animation=False,
+                                                  show_mpc_traj=True,
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
 
