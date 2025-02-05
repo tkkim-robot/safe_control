@@ -583,7 +583,7 @@ def single_agent_main(control_type):
             [pillar_2_x, 13.0, 0.5],
             [pillar_2_x, 14.0, 0.5],
             [pillar_2_x, 15.0, 0.5],
-            [60.0, 12.0, 0.5]
+            #[60.0, 12.0, 0.5]
         ])
 
         env_width = 75.0
