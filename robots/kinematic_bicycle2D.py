@@ -213,8 +213,13 @@ class KinematicBicycle2D:
         theta = X[2, 0]
         v = X[3, 0]
         
-        obs_vel_x = 0
-        obs_vel_y = 0
+        # Check if obstacles have velocity components (static or moving)
+        if len(obs) > 3:
+            obs_vel_x = obs[3][0]
+            obs_vel_y = obs[4][0]
+        else:
+            obs_vel_x = 0.0
+            obs_vel_y = 0.0
 
         # Combine radius R
         ego_dim = (obs[2][0] + robot_radius) * beta   # Total collision safe radius
@@ -263,8 +268,13 @@ class KinematicBicycle2D:
             theta = x[2, 0]
             v = x[3, 0]
 
-            obs_vel_x = 0
-            obs_vel_y = 0
+            # Check if obstacles have velocity components (static or moving)
+            if len(obs) > 3:
+                obs_vel_x = obs[3][0]
+                obs_vel_y = obs[4][0]
+            else:
+                obs_vel_x = 0.0
+                obs_vel_y = 0.0
             
             # Combine radius R
             ego_dim = (obs[2][0] + robot_radius) * beta   # Total collision radius
