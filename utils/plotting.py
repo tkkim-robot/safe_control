@@ -64,8 +64,11 @@ class Plotting:
             main_ax.add_patch(
                 patches.Circle(
                     (ox, oy), r,
+                    # Case for static obstacles
                     edgecolor='black',
                     facecolor='gray',
+                    # Case for moving obstacles
+                    # edgecolor='black', facecolor='none', linestyle='--'
                     fill=True
                 )
             )

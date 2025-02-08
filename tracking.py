@@ -44,6 +44,10 @@ class LocalTrackingController:
         self.current_goal_index = 0  # Index of the current goal in the path
         self.reached_threshold = 3 # FIXME:
 
+        # Initialize moving obstacles
+        self.obs = np.array([])
+        self.obs_patches = []
+
         if self.robot_spec['model'] == 'SingleIntegrator2D':
             if X0.shape[0] == 2:
                 X0 = np.array([X0[0], X0[1], 0.0]).reshape(-1, 1)
