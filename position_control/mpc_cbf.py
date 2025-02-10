@@ -201,7 +201,7 @@ class MPCCBF:
                 [self.robot_spec['f_max'], self.robot_spec['f_max']])
         elif self.robot_spec['model'] == 'Quad3D':
             mpc.bounds['lower', '_u', 'u'] = np.array(
-                [-self.robot_spec['f_max'], -self.robot_spec['phi_dot_max'], -self.robot_spec['theta_dot_max'], -self.robot_spec['psi_dot_max']])
+                [0.0, -self.robot_spec['phi_dot_max'], -self.robot_spec['theta_dot_max'], -self.robot_spec['psi_dot_max']])
             mpc.bounds['upper', '_u', 'u'] = np.array(
                 [self.robot_spec['f_max'], self.robot_spec['phi_dot_max'], self.robot_spec['theta_dot_max'], self.robot_spec['psi_dot_max']])
         elif self.robot_spec['model'] == 'VTOL2D':
