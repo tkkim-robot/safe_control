@@ -5,6 +5,10 @@ import os
 import glob
 import subprocess
 
+from robots.kinematic_bicycle2D import KinematicBicycle2D
+from robots.kinematic_bicycle2D_c3bf import KinematicBicycle2D_C3BF
+
+
 """
 Created on June 20th, 2024
 @author: Taekyung Kim
@@ -68,6 +72,9 @@ class LocalTrackingController:
         elif self.robot_spec['model'] == 'KinematicBicycle2D':
             if X0.shape[0] == 3:  # set initial velocity to 0.0
                 X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
+        elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
+            if X0.shape[0] == 3:  # set initial velocity to 0.0
+                X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
         elif self.robot_spec['model'] in ['Quad2D']:
             if X0.shape[0] in [2, 3]: # only initialize the x,z position if don't provide the full state
                 X0 = np.array([X0[0], X0[1], 0.0, 0.0, 0.0, 0.0]).reshape(-1, 1)
@@ -93,7 +100,8 @@ class LocalTrackingController:
         self.ax = ax
         self.fig = fig
         self.obs = np.array(env.obs_circle)
-        self.unknown_obs = None
+        self.known_obs = np.array([])
+        self.unknown_obs = np.array([])
 
         if show_animation:
             self.setup_animation_plot()
@@ -144,8 +152,13 @@ class LocalTrackingController:
 
     def setup_robot(self, X0):
         from robots.robot import BaseRobot
-        self.robot = BaseRobot(
-            X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
+        if self.robot_spec['model'] == 'KinematicBicycle2D':
+            self.robot = KinematicBicycle2D(self.dt, self.robot_spec) # Use original
+        elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
+            self.robot = KinematicBicycle2D_C3BF(self.dt, self.robot_spec)
+        else:
+            self.robot = BaseRobot(
+                X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
 
     def set_waypoints(self, waypoints):
         if type(waypoints) == list:
@@ -188,18 +201,22 @@ class LocalTrackingController:
         return self.goal is None
 
     def set_unknown_obs(self, unknown_obs):
-        # set initially
+        unknown_obs = np.array(unknown_obs)
+        if unknown_obs.shape[1] == 3:
+            zeros = np.zeors((unknown_obs.shape[0], 2))
+            unknown_obs = np.hstack((unknown_obs, zeros))
         self.unknown_obs = unknown_obs
-        for (ox, oy, r) in self.unknown_obs:
-            self.ax.add_patch(
-                patches.Circle(
-                    (ox, oy), r,
-                    edgecolor='black',
-                    facecolor='orange',
-                    fill=True,
-                    alpha=0.4
+        if self.ax is not None:
+            for (ox, oy, r) in self.unknown_obs:
+                self.ax.add_patch(
+                    patches.Circle(
+                        (ox, oy), r,
+                        edgecolor='black',
+                        facecolor='orange',
+                        fill=True,
+                        alpha=0.4
+                    )
                 )
-            )
 
     def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=5):
         def angle_normalize(x):
@@ -210,7 +227,7 @@ class LocalTrackingController:
         
         if self.robot_spec['model'] == 'Quad2D':
             angle_unpassed=np.pi*2
-        elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D']:
+        elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
             angle_unpassed=np.pi*1.2
         
         if len(detected_obs) != 0:
@@ -260,29 +277,6 @@ class LocalTrackingController:
         
         return unpassed_obs[nearest_indices]
 
-    def get_nearest_obs(self, detected_obs):
-        # if there was new obstacle detected, update the obs
-        if len(detected_obs) != 0:
-            if len(self.obs) == 0:
-                all_obs = np.array(detected_obs)
-            else:
-                all_obs = np.vstack((self.obs, detected_obs))
-            # return np.array(detected_obs).reshape(-1, 1) just returning the detected obs
-        else:
-            all_obs = self.obs
-
-        if len(all_obs) == 0:
-            return None
-
-        if all_obs.ndim == 1:
-            all_obs = all_obs.reshape(1, -1)
-
-        radius = all_obs[:, 2]
-        distances = np.linalg.norm(all_obs[:, :2] - self.robot.X[:2].T, axis=1)
-        min_distance_index = np.argmin(distances-radius)
-        nearest_obstacle = all_obs[min_distance_index]
-        return nearest_obstacle.reshape(-1, 1)
-    
     def get_nearest_obs(self, detected_obs):
         # if there was new obstacle detected, update the obs
         if len(detected_obs) != 0:
@@ -440,7 +434,7 @@ class LocalTrackingController:
             if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
                 self.u_att = self.robot.rotate_to(goal_angle)
                 u_ref = self.robot.stop()
-            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'Quad2D', 'VTOL2D']:
+            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF' 'Quad2D', 'VTOL2D']:
                 u_ref = self.robot.rotate_to(goal_angle)
         elif self.goal is None:
             u_ref = self.robot.stop()
@@ -564,8 +558,8 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    model = 'VTOL2D' # SingleIntegrator2D, Quad2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D, VTOL2D
-
+    # model = 'VTOL2D' # SingleIntegrator2D, Quad2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBycycle2D_C3BF, DoubleIntegrator2D, VTOL2D
+    model = 'KinematicBicycle2D_C3BF'
     waypoints = [
         [2, 2, math.pi/2],
         [2, 12, 0],
@@ -573,12 +567,18 @@ def single_agent_main(control_type):
         [12, 2, 0]
     ]
 
+    # Define static obs
     known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
                         [10.0, 7.3, 0.4],
                         [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
 
+    if known_obs.shape[1] == 3:
+        zeros = np.zeros((known_obs.shape[0], 2))
+        known_obs = np.hstack((known_obs, zeros))
+
+
     # Allocate velocity(vx, vy) per obs
-    dynamic_obs = []
+    dynamic_obs = known_obs.copy()  # known_obs 복사 후 속도 할당
     for i, obs in enumerate(known_obs):
         if i % 2 == 0:
             vx = 0.1
@@ -586,9 +586,8 @@ def single_agent_main(control_type):
         else:
             vx = -0.1
             vy = -0.05
-        dynamic_obs.append([obs[0], obs[1], obs[2], vx, vy])
+        dynamic_obs.append(np.append(obs, [vx, vy]))
     dynamic_obs = np.array(dynamic_obs)
-    dynamic_obs_initial = dynamic_obs.copy()
 
     env_width = 14.0
     env_height = 14.0
@@ -616,6 +615,13 @@ def single_agent_main(control_type):
     elif model == 'KinematicBicycle2D':
         robot_spec = {
             'model': 'KinematicBicycle2D',
+            'a_max': 0.5,
+            'sensor': 'rgbd',
+            'radius': 0.5
+        }
+    elif model == 'KinematicBicycle2D_C3BF':
+        robot_spec = {
+            'model': 'KinematicBicycle2D_C3BF',
             'a_max': 0.5,
             'sensor': 'rgbd',
             'radius': 0.5
@@ -695,10 +701,9 @@ def single_agent_main(control_type):
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
 
-    tracking_controller.obs = dynamic_obs
-    tracking_controller.obs_initial = dynamic_obs_initial
-    tracking_controller.obs = known_obs
-    # tracking_controller.set_unknown_obs(unknown_obs)
+    # Set obstacles
+    tracking_controller.set_unknown_obs(known_obs)
+    # tracking_controller.set_unknown_obs(known_obs)
     tracking_controller.set_waypoints(waypoints)
     unexpected_beh = tracking_controller.run_all_steps(tf=100)
 

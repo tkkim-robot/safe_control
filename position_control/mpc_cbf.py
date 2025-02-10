@@ -30,6 +30,9 @@ class MPCCBF:
         elif self.robot_spec['model'] == 'KinematicBicycle2D':
             self.Q = np.diag([50, 50, 1, 1])  # State cost matrix
             self.R = np.array([0.5, 50.0])  # Input cost matrix
+        elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
+            self.Q = np.diag([50, 50, 1, 1])  # State cost matrix
+            self.R = np.array([0.5, 50.0])  # Input cost matrix
         elif self.robot_spec['model'] == 'Quad2D':
             self.Q = np.diag([25, 25, 50, 10, 10, 50])
             self.R = np.array([0.5, 0.5])
@@ -59,6 +62,9 @@ class MPCCBF:
         elif self.robot_spec['model'] == 'KinematicBicycle2D':
             self.cbf_param['alpha1'] = 0.15
             self.cbf_param['alpha2'] = 0.15
+            self.n_states = 4
+        elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
+            self.cbf_param['alpha'] = 0.15
             self.n_states = 4
         elif self.robot_spec['model'] == 'Quad2D':
             self.cbf_param['alpha1'] = 0.15
@@ -98,7 +104,7 @@ class MPCCBF:
         _obs = model.set_variable(
             var_type='_tvp', var_name='obs', shape=(5, 5)) # Edit (5, 3) -> (5, 5) for dyn obs
 
-        if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D']:
+        if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
             _alpha = model.set_variable(
                 var_type='_tvp', var_name='alpha', shape=(1, 1))
         elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'VTOL2D']:
@@ -184,6 +190,13 @@ class MPCCBF:
                 [-self.robot_spec['a_max'], -self.robot_spec['beta_max']])
             mpc.bounds['upper', '_u', 'u'] = np.array(
                 [self.robot_spec['a_max'], self.robot_spec['beta_max']])
+        elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
+            mpc.bounds['lower', '_x', 'x', 3] = -self.robot_spec['v_max']
+            mpc.bounds['upper', '_x', 'x', 3] = self.robot_spec['v_max']
+            mpc.bounds['lower', '_u', 'u'] = np.array(
+                [-self.robot_spec['a_max'], -self.robot_spec['beta_max']])
+            mpc.bounds['upper', '_u', 'u'] = np.array(
+                [self.robot_spec['a_max'], self.robot_spec['beta_max']])
         elif self.robot_spec['model'] == 'Quad2D':
             mpc.bounds['lower', '_u', 'u'] = np.array(
                 [self.robot_spec['f_min'], self.robot_spec['f_min']])
@@ -203,7 +216,7 @@ class MPCCBF:
         mpc = self.set_cbf_constraint(mpc)
 
         mpc.setup()
-        if self.show_mpc_traj:
+        if self.show_mpc_traj and self.robot_spec == 'VTOL2D':
             plt.ion()
             self.graphics = do_mpc.graphics.Graphics(mpc.data)
                         
@@ -250,7 +263,7 @@ class MPCCBF:
                     # Use the detected obstacles directly
                     tvp_template['_tvp', :, 'obs'] = self.obs[:5, :]  # Limit to 5 obstacles
 
-            if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D']:
+            if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
                 tvp_template['_tvp', :, 'alpha'] = self.cbf_param['alpha']
             elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'VTOL2D']:
                 tvp_template['_tvp', :, 'alpha1'] = self.cbf_param['alpha1']
@@ -278,9 +291,9 @@ class MPCCBF:
         '''compute cbf constraint value
         We reuse this function to print the CBF constraint'''
 
-        if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D']:
+        if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
             _alpha = self.model.tvp['alpha']
-            h_k, d_h = self.robot.agent_barrier_dt(_x, _u, _obs)
+            h_k, d_h = self.robot.agent_barrier_dt(_x, _u, _obs, self.robot_spec['radius'])
             cbf_constraint = d_h + _alpha * h_k
         elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'VTOL2D']:
             _alpha1 = self.model.tvp['alpha1']
