@@ -42,7 +42,10 @@ class LocalTrackingController:
         self.rotation_threshold = 0.1  # Radians
 
         self.current_goal_index = 0  # Index of the current goal in the path
-        self.reached_threshold = 3 # FIXME:
+        self.reached_threshold = 0.2 
+        # if robot_spec specifies a different reached_threshold, use that (ex. VTOL)
+        if 'reached_threshold' in robot_spec:
+            self.reached_threshold = robot_spec['reached_threshold']
 
         if self.robot_spec['model'] == 'SingleIntegrator2D':
             if X0.shape[0] == 2:
@@ -69,6 +72,15 @@ class LocalTrackingController:
                 X0 = np.array([X0[0], X0[1], 0.0, 0.0, 0.0, 0.0]).reshape(-1, 1)
             elif X0.shape[0] != 6:
                 raise ValueError("Invalid initial state dimension for Quad2D")
+        elif self.robot_spec['model'] == 'Quad3D':
+            if X0.shape[0] == 2:
+                X0 = np.array([X0[0], X0[1], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]).reshape(-1, 1)
+            elif X0.shape[0] == 3:
+                X0 = np.array([X0[0], X0[1], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, X0[2]]).reshape(-1, 1)
+            elif X0.shape[0] == 4:
+                X0 = np.array([X0[0], X0[1], X0[2], 0.0, 0.0, 0.0, 0.0, 0.0, X0[3]]).reshape(-1, 1)
+            elif X0.shape[0] != 9:
+                raise ValueError("Invalid initial state dimension for Quad3D")
         elif self.robot_spec['model'] in ['VTOL2D']:
             if X0.shape[0] in [2, 3]: 
                 # set initial velocity to 5.0
@@ -168,7 +180,15 @@ class LocalTrackingController:
             return waypoints
 
         robot_pos = self.robot.get_position()
-        aug_waypoints = np.vstack((robot_pos, waypoints[:, :2]))
+        if self.robot_spec['model'] in ['Quad3D']:
+            n_pos = 3
+            print("robot_pos", robot_pos)
+            print("get_z", self.robot.get_z())
+            robot_pos = np.hstack([robot_pos, self.robot.get_z()])
+            aug_waypoints = np.vstack((robot_pos, waypoints[:, :n_pos]))
+        else:
+            n_pos = 2
+            aug_waypoints = np.vstack((robot_pos, waypoints[:, :n_pos]))
 
         distances = np.linalg.norm(np.diff(aug_waypoints, axis=0), axis=1)
         mask = np.concatenate(([False], distances >= self.reached_threshold))
@@ -303,6 +323,11 @@ class LocalTrackingController:
         '''
         Update the goal from waypoints
         '''
+        if self.robot_spec['model'] in ['Quad3D']:
+            n_pos = 3
+        else:
+            n_pos = 2
+
         if self.state_machine == 'rotate':
             # in-place rotation
             current_angle = self.robot.get_orientation()
@@ -311,7 +336,7 @@ class LocalTrackingController:
             if self.robot_spec['model'] in ['Quad2D', 'VTOL2D']: # These skip 'rotate' state since there is no yaw angle
                 self.state_machine = 'track'
             if abs(current_angle - goal_angle) > self.rotation_threshold:
-                return self.waypoints[0][:2]
+                return self.waypoints[0][:n_pos]
             else:
                 self.state_machine = 'track'
                 self.u_att = None
@@ -328,8 +353,7 @@ class LocalTrackingController:
                 self.state_machine = 'idle'
                 return None
 
-        # set goal to next waypoint's (x,y)
-        goal = np.array(self.waypoints[self.current_goal_index][0:2])
+        goal = np.array(self.waypoints[self.current_goal_index][0:n_pos])
         return goal
 
     def draw_plot(self, pause=0.01, force_save=False):
@@ -377,7 +401,7 @@ class LocalTrackingController:
             if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
                 self.u_att = self.robot.rotate_to(goal_angle)
                 u_ref = self.robot.stop()
-            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'Quad2D', 'VTOL2D']:
+            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'Quad2D', 'Quad3D', 'VTOL2D']:
                 u_ref = self.robot.rotate_to(goal_angle)
         elif self.goal is None:
             u_ref = self.robot.stop()
@@ -497,7 +521,7 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    model = 'VTOL2D' # SingleIntegrator2D, Quad2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D, VTOL2D
+    model = 'Quad3D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     waypoints = [
         [2, 2, math.pi/2],
@@ -548,12 +572,26 @@ def single_agent_main(control_type):
             'sensor': 'rgbd',
             'radius': 0.25
         }
+    elif model == 'Quad3D':
+        robot_spec = {
+            'model': 'Quad3D',
+            'f_max': 500.0,
+            'radius': 0.25
+        }
+        # override the waypoints with z axis
+        waypoints = [
+            [2, 2, 0, math.pi/2],
+            [2, 12, 4, 0],
+            [12, 12, -4, 0],
+            [12, 2, -1, 0]
+        ]
     elif model == 'VTOL2D':
         # VTOL has pretty different dynacmis, so create a special test case
         robot_spec = {
             'model': 'VTOL2D',
             'radius': 0.6,
             'v_max': 20.0,
+            'reach_threshold': 3.0 # meter
         }
         # override the waypoints and known_obs
         waypoints = [
@@ -593,7 +631,7 @@ def single_agent_main(control_type):
 
     waypoints = np.array(waypoints, dtype=np.float64)
 
-    if model in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'Quad2D']:
+    if model in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'Quad2D', 'Quad3D']:
         x_init = waypoints[0]
     elif model == 'VTOL2D':
         v_init = robot_spec['v_max'] # m/s
@@ -611,7 +649,7 @@ def single_agent_main(control_type):
                                                   dt=dt,
                                                   show_animation=True,
                                                   save_animation=False,
-                                                  show_mpc_traj=True,
+                                                  show_mpc_traj=False,
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
 

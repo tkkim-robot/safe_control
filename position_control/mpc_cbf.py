@@ -33,12 +33,16 @@ class MPCCBF:
         elif self.robot_spec['model'] == 'Quad2D':
             self.Q = np.diag([25, 25, 50, 10, 10, 50])
             self.R = np.array([0.5, 0.5])
+        elif self.robot_spec['model'] == 'Quad3D':
+            self.Q = np.diag([50, 50, 50, 20, 20, 20, 20, 20, 20]) 
+            self.R = np.array([0.5, 0.2, 0.2, 0.2])
         elif self.robot_spec['model'] == 'VTOL2D':
             self.horizon = 30
             self.Q = np.diag([10, 10, 250, 10, 10, 50])
             self.R = np.array([0.5, 0.5, 0.5, 500000])
 
         self.n_controls = 2
+        self.goal = np.array([0, 0])
 
         # DT CBF parameters should scale from 0 to 1
         self.cbf_param = {}
@@ -64,13 +68,19 @@ class MPCCBF:
             self.cbf_param['alpha1'] = 0.15
             self.cbf_param['alpha2'] = 0.15
             self.n_states = 6
+        elif self.robot_spec['model'] == 'Quad3D':
+            self.cbf_param['alpha1'] = 0.15
+            self.cbf_param['alpha2'] = 0.15
+            self.n_states = 9
+            self.n_controls = 4 # override n_controls for Quad3D
+            self.goal = np.array([0, 0, 0]) # override goal with z placeholder
         elif self.robot_spec['model'] == 'VTOL2D':
             self.cbf_param['alpha1'] = 0.15
             self.cbf_param['alpha2'] = 0.15
             self.n_states = 6
             self.n_controls = 4 # override n_controls for VTOL2D
 
-        self.goal = np.array([0, 0])
+        
         self.obs = None
 
         self.setup_control_problem()
@@ -101,7 +111,7 @@ class MPCCBF:
         if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D']:
             _alpha = model.set_variable(
                 var_type='_tvp', var_name='alpha', shape=(1, 1))
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'VTOL2D']:
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'Quad3D', 'VTOL2D']:
             _alpha1 = model.set_variable(
                 var_type='_tvp', var_name='alpha1', shape=(1, 1))
             _alpha2 = model.set_variable(
@@ -189,6 +199,11 @@ class MPCCBF:
                 [self.robot_spec['f_min'], self.robot_spec['f_min']])
             mpc.bounds['upper', '_u', 'u'] = np.array(
                 [self.robot_spec['f_max'], self.robot_spec['f_max']])
+        elif self.robot_spec['model'] == 'Quad3D':
+            mpc.bounds['lower', '_u', 'u'] = np.array(
+                [-self.robot_spec['f_max'], -self.robot_spec['phi_dot_max'], -self.robot_spec['theta_dot_max'], -self.robot_spec['psi_dot_max']])
+            mpc.bounds['upper', '_u', 'u'] = np.array(
+                [self.robot_spec['f_max'], self.robot_spec['phi_dot_max'], self.robot_spec['theta_dot_max'], self.robot_spec['psi_dot_max']])
         elif self.robot_spec['model'] == 'VTOL2D':
             mpc.bounds['lower', '_u', 'u'] = np.array(
                 [self.robot_spec['throttle_min'], self.robot_spec['throttle_min'], self.robot_spec['throttle_min'], self.robot_spec['elevator_min']])
@@ -217,7 +232,7 @@ class MPCCBF:
                 ax[4].set_ylabel('v [m/s]')
                 self.graphics.add_line(var_type='_aux', var_name='v', axis=ax[self.n_controls])
             else: 
-                raise NotImplementedError('Model not implemented')
+                raise NotImplementedError('Model not implemented for MPC traj plot')
             
             for i in range(self.n_controls):
                 self.graphics.add_line(var_type='_aux', var_name='u_' + str(i), axis=ax[i])
@@ -230,7 +245,7 @@ class MPCCBF:
             tvp_template = mpc.get_tvp_template()
 
             # Set goal
-            tvp_template['_tvp', :, 'goal'] = np.concatenate([self.goal, [0] * (self.n_states - 2)])
+            tvp_template['_tvp', :, 'goal'] = np.concatenate([self.goal, [0] * (self.n_states - self.goal.shape[0])])
 
             # Handle up to 5 obstacles (if fewer than 5, substitute dummy obstacles)
             if self.obs is None:
@@ -249,7 +264,7 @@ class MPCCBF:
 
             if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D']:
                 tvp_template['_tvp', :, 'alpha'] = self.cbf_param['alpha']
-            elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'VTOL2D']:
+            elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'Quad3D', 'VTOL2D']:
                 tvp_template['_tvp', :, 'alpha1'] = self.cbf_param['alpha1']
                 tvp_template['_tvp', :, 'alpha2'] = self.cbf_param['alpha2']
 
@@ -279,7 +294,7 @@ class MPCCBF:
             _alpha = self.model.tvp['alpha']
             h_k, d_h = self.robot.agent_barrier_dt(_x, _u, _obs)
             cbf_constraint = d_h + _alpha * h_k
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'VTOL2D']:
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'Quad3D', 'VTOL2D']:
             _alpha1 = self.model.tvp['alpha1']
             _alpha2 = self.model.tvp['alpha2']
             h_k, d_h, dd_h = self.robot.agent_barrier_dt(_x, _u, _obs)
