@@ -583,6 +583,9 @@ def single_agent_main(control_type):
             [12, 12, -0.5, 0],
             [12, 2, 0, 0]
         ]
+        known_obs = np.array([[3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0],
+                        [10.0, 7.3, 0.4],
+                        [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
     elif model == 'VTOL2D':
         # VTOL has pretty different dynacmis, so create a special test case
         robot_spec = {
@@ -737,7 +740,7 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main('mpc_cbf')
+    single_agent_main('cbf_qp')
     # multi_agent_main('mpc_cbf', save_animation=True)
     # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')

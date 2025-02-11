@@ -34,13 +34,13 @@ class Quad3D:
         self.dt = dt
         self.robot_spec = robot_spec
         if 'phi_dot_max' not in self.robot_spec:
-            self.robot_spec['phi_dot_max'] = 10.0
+            self.robot_spec['phi_dot_max'] = np.deg2rad(25.0)
         if 'theta_dot_max' not in self.robot_spec:
-            self.robot_spec['theta_dot_max'] = 10.0
+            self.robot_spec['theta_dot_max'] = np.deg2rad(25.0)
         if 'psi_dot_max' not in self.robot_spec:
-            self.robot_spec['psi_dot_max'] = 10.0
+            self.robot_spec['psi_dot_max'] = np.deg2rad(25.0)
         if 'f_max' not in self.robot_spec:
-            self.robot_spec['f_max'] = 500.0
+            self.robot_spec['f_max'] = 50.0
         if 'mass' not in self.robot_spec:
             self.robot_spec['mass'] = 1.0
         self.df_dx = np.vstack([np.hstack([np.zeros([3,3]), np.eye(3),np.zeros([3,3])]),np.zeros([6,9])])
@@ -117,7 +117,7 @@ class Quad3D:
         X[8,0] = angle_normalize(X[8,0])
         return X
 
-    def nominal_input(self, X, goal, k_p = 1, k_d = 2, k_ang = 5):
+    def nominal_input(self, X, goal, k_p = 0.05, k_d = 2, k_ang = 5):
         '''
         nominal input for CBF-QP
         '''
@@ -126,12 +126,13 @@ class Quad3D:
         theta_dot_max = self.robot_spec['theta_dot_max']
         psi_dot_max = self.robot_spec['psi_dot_max']
         f_max = self.robot_spec['f_max']
+        f_min = 0.0
         
         u_nom = np.zeros([4,1])
         x_err = np.atleast_2d(goal[0:3]).T - X[0:3]
         v_err = 0 - X[3:6]
         F_des = x_err * k_p + v_err * k_d + np.array([0, 0, - self.gravity * self.m]).reshape(-1,1) #proportional control & gravity compensation
-        u_nom[0] = max(min(np.linalg.norm(F_des), f_max), -f_max)
+        u_nom[0] = max(min(np.linalg.norm(F_des), f_max), f_min)
         a_des = F_des / np.linalg.norm(F_des)
         theta_des = np.arcsin(-1 * a_des[0])
         psi_des = np.arctan2(x_err[1], x_err[0])
