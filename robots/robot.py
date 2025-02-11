@@ -348,7 +348,7 @@ class BaseRobot:
             self.yaw = self.X[2, 0]
         elif self.robot_spec['model'] == 'Quad3D':
             self.yaw = self.X[8, 0]
-            # print(f"z,{self.X[2,0]:+0.2f},z_dot,{self.X[5,0]:+0.2f}")
+            #print(f"z,{self.X[2,0]:+0.2f},z_dot,{self.X[5,0]:+0.2f}")
         return self.X
 
     def render_plot(self):
@@ -378,7 +378,6 @@ class BaseRobot:
         else:
             # self.body.set_offsets([self.X[0, 0], self.X[1, 0]])
             self.body.center = self.X[0, 0], self.X[1, 0]
-
 
         self.axis.set_ydata([self.X[1, 0], self.X[1, 0] +
                             self.vis_orient_len*np.sin(self.yaw)])

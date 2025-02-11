@@ -182,8 +182,6 @@ class LocalTrackingController:
         robot_pos = self.robot.get_position()
         if self.robot_spec['model'] in ['Quad3D']:
             n_pos = 3
-            print("robot_pos", robot_pos)
-            print("get_z", self.robot.get_z())
             robot_pos = np.hstack([robot_pos, self.robot.get_z()])
             aug_waypoints = np.vstack((robot_pos, waypoints[:, :n_pos]))
         else:
@@ -575,15 +573,15 @@ def single_agent_main(control_type):
     elif model == 'Quad3D':
         robot_spec = {
             'model': 'Quad3D',
-            'f_max': 500.0,
+            'f_max': 30.0, #500
             'radius': 0.25
         }
         # override the waypoints with z axis
         waypoints = [
             [2, 2, 0, math.pi/2],
-            [2, 12, 4, 0],
-            [12, 12, -4, 0],
-            [12, 2, -1, 0]
+            [2, 12, 0.5, 0],
+            [12, 12, -0.5, 0],
+            [12, 2, 0, 0]
         ]
     elif model == 'VTOL2D':
         # VTOL has pretty different dynacmis, so create a special test case

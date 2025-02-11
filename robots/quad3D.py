@@ -34,11 +34,11 @@ class Quad3D:
         self.dt = dt
         self.robot_spec = robot_spec
         if 'phi_dot_max' not in self.robot_spec:
-            self.robot_spec['phi_dot_max'] = 5.0
+            self.robot_spec['phi_dot_max'] = 10.0
         if 'theta_dot_max' not in self.robot_spec:
-            self.robot_spec['theta_dot_max'] = 5.0
+            self.robot_spec['theta_dot_max'] = 10.0
         if 'psi_dot_max' not in self.robot_spec:
-            self.robot_spec['psi_dot_max'] = 5.0
+            self.robot_spec['psi_dot_max'] = 10.0
         if 'f_max' not in self.robot_spec:
             self.robot_spec['f_max'] = 500.0
         if 'mass' not in self.robot_spec:
@@ -49,11 +49,14 @@ class Quad3D:
         self.gravity = 9.8
 
     def f(self, X, casadi=False):
+        vx = X[3, 0]
+        vy = X[4, 0]
+        vz = X[5, 0]
         if casadi:
             return ca.vertcat(
-                X[3],
-                X[4],
-                X[5],
+                vx,
+                vy,
+                vz,
                 0,
                 0,
                 self.gravity,
@@ -63,9 +66,9 @@ class Quad3D:
             )
         else:
             return np.vstack([
-                X[3],
-                X[4],
-                X[5],
+                vx,
+                vy,
+                vz,
                 0,
                 0,
                 self.gravity,
@@ -75,27 +78,40 @@ class Quad3D:
             ]).reshape(-1,1)
     
     def g(self, X, casadi=False):
+        phi = X[6, 0] # assign it to scalar symbolic to flatten (avoid error)
+        theta = X[7, 0]
+        psi = X[8, 0]
         if casadi:
-            g = ca.SX.zeros(9, 4)
-            g[3, 0] = -ca.sin(X[7]) / self.m
-            g[4, 0] = ca.cos(X[7]) * ca.sin(X[6]) / self.m
-            g[5, 0] = -ca.cos(X[7]) * ca.cos(X[6]) / self.m
-            g[6, 1] = 1
-            g[7, 2] = 1
-            g[8, 3] = 1
-            return g
+            # Create a 9x4 list-of-lists with symbolic entries:
+            # using block-building to do list-to-SX.
+            g_list = [[0]*4 for _ in range(9)]
+            g_list[3][0] = -ca.sin(theta) / self.m
+            g_list[4][0] = ca.cos(theta) * ca.sin(phi) / self.m
+            g_list[5][0] = -ca.cos(theta) * ca.cos(phi) / self.m
+            g_list[6][1] = 1
+            g_list[7][2] = 1
+            g_list[8][3] = 1
+
+            # Convert list-of-lists into a single CasADi SX matrix:
+            #  - first convert each row (list) to a CasADi row via horzcat
+            #  - then stack the rows via vertcat
+            g_sx_rows = []
+            for row in g_list:
+                g_sx_rows.append(ca.horzcat(*row))  # turn [expr1, expr2, ...] into one row
+            g_sx = ca.vertcat(*g_sx_rows)
+            return g_sx
         else:
             g = np.zeros([9, 4])
-            g[3, 0] = -np.sin(X[7]) / self.m
-            g[4, 0] = np.cos(X[7]) * np.sin(X[6]) / self.m
-            g[5, 0] = -np.cos(X[7]) * np.cos(X[6]) / self.m
+            g[3, 0] = -np.sin(theta) / self.m
+            g[4, 0] = np.cos(theta) * np.sin(phi) / self.m
+            g[5, 0] = -np.cos(theta) * np.cos(phi) / self.m
             g[6, 1] = 1
             g[7, 2] = 1
             g[8, 3] = 1
             return g
         
-    def step(self, X, U): 
-        X = X + ( self.f(X) + self.g(X) @ U )*self.dt
+    def step(self, X, U, casadi=False): 
+        X = X + ( self.f(X, casadi) + self.g(X, casadi) @ U )*self.dt
         X[6,0] = angle_normalize(X[6,0])
         X[7,0] = angle_normalize(X[7,0])
         X[8,0] = angle_normalize(X[8,0])
@@ -178,8 +194,8 @@ class Quad3D:
     def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta = 1.01):
         '''Discrete Time High Order CBF'''
         # Dynamics equations for the next states
-        x_k1 = self.step(x_k, u_k)
-        x_k2 = self.step(x_k1, u_k)
+        x_k1 = self.step(x_k, u_k, casadi=True)
+        x_k2 = self.step(x_k1, u_k, casadi=True)
 
         def h(x, obs, robot_radius, beta = 1.01):
             '''Computes CBF h(x) = ||x-x_obs||^2 - beta*d_min^2'''
