@@ -34,7 +34,7 @@ class MPCCBF:
             self.Q = np.diag([25, 25, 50, 10, 10, 50])
             self.R = np.array([0.5, 0.5])
         elif self.robot_spec['model'] == 'Quad3D':
-            self.Q = np.diag([50, 50, 50, 20, 20, 20, 20, 20, 20]) 
+            self.Q = np.diag([50, 50, 20, 20, 20, 20, 20, 20, 20]) 
             self.R = np.array([0.5, 0.2, 0.2, 0.2])
         elif self.robot_spec['model'] == 'VTOL2D':
             self.horizon = 30
