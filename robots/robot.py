@@ -348,7 +348,8 @@ class BaseRobot:
             self.yaw = self.X[2, 0]
         elif self.robot_spec['model'] == 'Quad3D':
             self.yaw = self.X[8, 0]
-            #print(f"z,{self.X[2,0]:+0.2f},z_dot,{self.X[5,0]:+0.2f}")
+            print(f"z,{self.X[2,0]:+0.2f},z_dot,{self.X[5,0]:+0.2f}")
+            print("roll,pitch,yaw",self.X[6,0],self.X[7,0],self.X[8,0]) # FIXME:
         return self.X
 
     def render_plot(self):

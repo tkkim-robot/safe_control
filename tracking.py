@@ -224,7 +224,7 @@ class LocalTrackingController:
         
         if self.robot_spec['model'] == 'Quad2D':
             angle_unpassed=np.pi*2
-        elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D']:
+        elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'Quad3D']:
             angle_unpassed=np.pi*1.2
         
         if len(detected_obs) != 0:
@@ -425,7 +425,7 @@ class LocalTrackingController:
 
         # 5. Raise an error if the QP is infeasible, or the robot collides with the obstacle
         collide = self.is_collide_unknown()
-        if self.pos_controller.status != 'optimal' or collide or self.robot.X[1, 0 ] > 14.0 or np.abs(self.robot.X[2,0]) > np.deg2rad(45):
+        if self.pos_controller.status != 'optimal' or collide or self.robot.X[1, 0 ] > 14.0 or np.abs(self.robot.X[2,0]) > np.deg2rad(45): #FIXME:
             self.draw_infeasible()
             print("Infeasible or Collision")
             if self.raise_error:
@@ -573,19 +573,17 @@ def single_agent_main(control_type):
     elif model == 'Quad3D':
         robot_spec = {
             'model': 'Quad3D',
-            'f_max': 30.0, #500
+            'f_max': 500.0, #500
             'radius': 0.25
         }
         # override the waypoints with z axis
         waypoints = [
             [2, 2, 0, math.pi/2],
-            [2, 12, 0.5, 0],
-            [12, 12, -0.5, 0],
+            [2, 12, 4.0, 0],
+            [12, 12, -4, 0],
             [12, 2, 0, 0]
         ]
-        known_obs = np.array([[3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0],
-                        [10.0, 7.3, 0.4],
-                        [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
+        known_obs = np.array([[10, 12, .1]])
     elif model == 'VTOL2D':
         # VTOL has pretty different dynacmis, so create a special test case
         robot_spec = {

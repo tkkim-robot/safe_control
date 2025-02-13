@@ -34,11 +34,11 @@ class Quad3D:
         self.dt = dt
         self.robot_spec = robot_spec
         if 'phi_dot_max' not in self.robot_spec:
-            self.robot_spec['phi_dot_max'] = np.deg2rad(25.0)
+            self.robot_spec['phi_dot_max'] = 5 #np.deg2rad(45.0) # FIXME: fix to reasonable value
         if 'theta_dot_max' not in self.robot_spec:
-            self.robot_spec['theta_dot_max'] = np.deg2rad(25.0)
+            self.robot_spec['theta_dot_max'] = 5#np.deg2rad(45.0)
         if 'psi_dot_max' not in self.robot_spec:
-            self.robot_spec['psi_dot_max'] = np.deg2rad(25.0)
+            self.robot_spec['psi_dot_max'] = 5#np.deg2rad(45.0)
         if 'f_max' not in self.robot_spec:
             self.robot_spec['f_max'] = 50.0
         if 'mass' not in self.robot_spec:
@@ -117,7 +117,7 @@ class Quad3D:
         X[8,0] = angle_normalize(X[8,0])
         return X
 
-    def nominal_input(self, X, goal, k_p = 0.05, k_d = 2, k_ang = 5):
+    def nominal_input(self, X, goal, k_p = 1, k_d = 2, k_ang = 5):
         '''
         nominal input for CBF-QP
         '''
