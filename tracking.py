@@ -5,9 +5,6 @@ import os
 import glob
 import subprocess
 
-from robots.kinematic_bicycle2D import KinematicBicycle2D
-from robots.kinematic_bicycle2D_c3bf import KinematicBicycle2D_C3BF
-
 
 """
 Created on June 20th, 2024
@@ -152,13 +149,8 @@ class LocalTrackingController:
 
     def setup_robot(self, X0):
         from robots.robot import BaseRobot
-        if self.robot_spec['model'] == 'KinematicBicycle2D':
-            self.robot = KinematicBicycle2D(self.dt, self.robot_spec) # Use original
-        elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
-            self.robot = KinematicBicycle2D_C3BF(self.dt, self.robot_spec)
-        else:
-            self.robot = BaseRobot(
-                X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
+        self.robot = BaseRobot(
+            X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
 
     def set_waypoints(self, waypoints):
         if type(waypoints) == list:
@@ -387,7 +379,8 @@ class LocalTrackingController:
 
     def draw_plot(self, pause=0.01, force_save=False):
         if self.show_animation:
-            
+            if self.dyn_obs_patch is None:
+                self.ax
             self.fig.canvas.draw_idle()
             self.fig.canvas.flush_events()
             plt.pause(pause)
@@ -434,7 +427,7 @@ class LocalTrackingController:
             if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
                 self.u_att = self.robot.rotate_to(goal_angle)
                 u_ref = self.robot.stop()
-            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF' 'Quad2D', 'VTOL2D']:
+            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad2D', 'VTOL2D']:
                 u_ref = self.robot.rotate_to(goal_angle)
         elif self.goal is None:
             u_ref = self.robot.stop()
@@ -572,23 +565,6 @@ def single_agent_main(control_type):
                         [10.0, 7.3, 0.4],
                         [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
 
-    if known_obs.shape[1] == 3:
-        zeros = np.zeros((known_obs.shape[0], 2))
-        known_obs = np.hstack((known_obs, zeros))
-
-
-    # Allocate velocity(vx, vy) per obs
-    dynamic_obs = known_obs.copy()  # known_obs 복사 후 속도 할당
-    for i, obs in enumerate(known_obs):
-        if i % 2 == 0:
-            vx = 0.1
-            vy = 0.05
-        else:
-            vx = -0.1
-            vy = -0.05
-        dynamic_obs.append(np.append(obs, [vx, vy]))
-    dynamic_obs = np.array(dynamic_obs)
-
     env_width = 14.0
     env_height = 14.0
     if model == 'SingleIntegrator2D':
@@ -623,9 +599,17 @@ def single_agent_main(control_type):
         robot_spec = {
             'model': 'KinematicBicycle2D_C3BF',
             'a_max': 0.5,
-            'sensor': 'rgbd',
             'radius': 0.5
         }
+        dynamic_obs = []
+        for i, obs_info in enumerate(known_obs):
+            if i % 2 == 0:
+                vx, vy = 0.1, 0.05
+            else:
+                vx, vy = -0.1, -0.05
+            dynamic_obs.append(np.append(obs_info, [vx, vy]))
+        dynamic_obs = np.array(dynamic_obs)
+
     elif model == 'Quad2D':
         robot_spec = {
             'model': 'Quad2D',

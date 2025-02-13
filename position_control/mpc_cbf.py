@@ -293,7 +293,7 @@ class MPCCBF:
 
         if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
             _alpha = self.model.tvp['alpha']
-            h_k, d_h = self.robot.agent_barrier_dt(_x, _u, _obs, self.robot_spec['radius'])
+            h_k, d_h = self.robot.agent_barrier_dt(_x, _u, _obs)
             cbf_constraint = d_h + _alpha * h_k
         elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'VTOL2D']:
             _alpha1 = self.model.tvp['alpha1']

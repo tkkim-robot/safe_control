@@ -7,10 +7,6 @@ from shapely.geometry import Polygon, Point, LineString
 from shapely import is_valid_reason
 from utils.geometry import custom_merge
 
-from robots.kinematic_bicycle2D import KinematicBicycle2D
-from robots.kinematic_bicycle2D_c3bf import KinematicBicycle2D_C3BF
-
-
 """
 Created on June 21st, 2024
 @author: Taekyung Kim
