@@ -375,6 +375,10 @@ class LocalTrackingController:
                     (0, 0), 0, edgecolor='black', facecolor='gray', fill=True)) for _ in range(len(self.obs))]
                 self.init_obs_info = self.obs.copy()
                 self.init_obs_circle = [self.ax.add_patch(plt.Circle((0, 0), 0, edgecolor='black', facecolor='none', linestyle='--')) for _ in self.init_obs_info]
+
+            # Draw Collision Cone for C3BF
+            if self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
+                self.robot.render_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax, self.control_type)
             
             self.render_dynamic_obs()
 
@@ -549,8 +553,8 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    # model = 'VTOL2D' # SingleIntegrator2D, Quad2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBycycle2D_C3BF, DoubleIntegrator2D, VTOL2D
-    model = 'KinematicBicycle2D_C3BF'
+    # model = 'VTOL2D' # SingleIntegrator2D, Quad2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, VTOL2D
+    model = 'SingleIntegrator2D'
     waypoints = [
         [2, 2, math.pi/2],
         [2, 12, 0],
@@ -672,7 +676,7 @@ def single_agent_main(control_type):
         x_init = np.append(waypoints[0], 1.0)
     
     if known_obs.shape[1] != 5:
-        known_obs = np.hstack((known_obs, np.zeros((known_obs.shape[0], 2))))
+        known_obs = np.hstack((known_obs, np.zeros((known_obs.shape[0], 2)))) # Set static obs velocity 0.0 at (5, 5)
 
     plot_handler = plotting.Plotting(width=env_width, height=env_height, known_obs=known_obs)
     ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here

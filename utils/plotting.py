@@ -65,17 +65,11 @@ class Plotting:
                 ox, oy, r = obs_info
             elif obs_info.shape[0] == 5:
                 continue
-                #ox, oy, r, _, _ = obs_info
-            else:
-                raise NotImplementedError("Unknown obstacle shape")
             main_ax.add_patch(
                 patches.Circle(
                     (ox, oy), r,
-                    # Case for static obstacles
                     edgecolor='black',
                     facecolor='gray',
-                    # Case for moving obstacles
-                    # edgecolor='black', facecolor='none', linestyle='--'
                     fill=True
                 )
             )

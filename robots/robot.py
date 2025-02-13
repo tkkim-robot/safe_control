@@ -436,7 +436,7 @@ class BaseRobot:
         theta = X[2, 0]
         v = X[3, 0]
 
-        # if cbf_qp, use only nearest_obs
+        # if cbf_qp, use only nearest obs
         if control_type == "cbf_qp":
             obs_list = [obs_list[0]]
 
@@ -454,7 +454,7 @@ class BaseRobot:
 
             p_rel = obs_pos - robot_pos
             v_rel = np.array([[obs_vel_x - v * np.cos(theta)], 
-                            [obs_vel_y - v * np.sin(theta)]]) # since obstacle is static
+                            [obs_vel_y - v * np.sin(theta)]])
 
             p_rel_mag = np.linalg.norm(p_rel)
 
@@ -483,11 +483,10 @@ class BaseRobot:
             ax.add_patch(collision_cone_patch)
             self.collision_cone_patches.append(collision_cone_patch)
 
-        # Plot the relative velocity vector
+        # Plot the relative velocity vector for nearest obs
         v_rel_start = robot_pos
 
-        # Remove previous velocity vector if exists
-        if hasattr(self, 'v_rel_arrow') and self.v_rel_arrow is not None:
+        if hasattr(self, 'v_rel_arrow') and self.v_rel_arrow is not None: # Remove previous velocity vector if exists
             self.v_rel_arrow.remove()
 
         self.v_rel_arrow = ax.arrow(
