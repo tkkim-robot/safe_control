@@ -60,7 +60,14 @@ class Plotting:
                 )
             )
 
-        for (ox, oy, r) in self.obs_circle:
+        for obs_info in self.obs_circle:
+            if obs_info.shape[0] == 3:
+                ox, oy, r = obs_info
+            elif obs_info.shape[0] == 5:
+                continue
+                #ox, oy, r, _, _ = obs_info
+            else:
+                raise NotImplementedError("Unknown obstacle shape")
             main_ax.add_patch(
                 patches.Circle(
                     (ox, oy), r,

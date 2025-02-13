@@ -5,7 +5,6 @@ import os
 import glob
 import subprocess
 
-
 """
 Created on June 20th, 2024
 @author: Taekyung Kim
@@ -43,11 +42,7 @@ class LocalTrackingController:
         self.rotation_threshold = 0.1  # Radians
 
         self.current_goal_index = 0  # Index of the current goal in the path
-        self.reached_threshold = 3 # FIXME:
-
-        # Initialize moving obstacles
-        self.obs = np.array([])
-        self.obs_patches = []
+        self.reached_threshold = 0.2 #3 # FIXME:
 
         if self.robot_spec['model'] == 'SingleIntegrator2D':
             if X0.shape[0] == 2:
@@ -97,6 +92,12 @@ class LocalTrackingController:
         self.ax = ax
         self.fig = fig
         self.obs = np.array(env.obs_circle)
+
+        # Initialize moving obstacles
+        self.dyn_obs_patch = None # will be initialized after the first step
+        self.init_obs_info = None
+        self.init_obs_circle = None
+        
         self.known_obs = np.array([])
         self.unknown_obs = np.array([])
 
@@ -150,7 +151,7 @@ class LocalTrackingController:
     def setup_robot(self, X0):
         from robots.robot import BaseRobot
         self.robot = BaseRobot(
-            X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
+                X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
 
     def set_waypoints(self, waypoints):
         if type(waypoints) == list:
@@ -199,7 +200,8 @@ class LocalTrackingController:
             unknown_obs = np.hstack((unknown_obs, zeros))
         self.unknown_obs = unknown_obs
         if self.ax is not None:
-            for (ox, oy, r) in self.unknown_obs:
+            for obs_info in self.unknown_obs:
+                ox, oy, r = obs_info[:3]
                 self.ax.add_patch(
                     patches.Circle(
                         (ox, oy), r,
@@ -295,34 +297,22 @@ class LocalTrackingController:
     # Update dynamic obs position
     def get_dynamic_obs(self):
         """if self.obs (n,5) array (ex) [x, y, r, vx, vy], update obs position per time step"""
-        if self.obs is not None and self.obs.size != 0 and self.obs.shape[1] >= 5:
-            x_min, x_max = 0, 15
-            y_min, y_max = 0, 15
-            for i in range(self.obs.shape[0]):
-                self.obs[i, 0] += self.obs[i, 3] * self.dt
-                self.obs[i, 1] += self.obs[i, 4] * self.dt
-                if self.obs[i, 0] < x_min or self.obs[i, 0] > x_max:
-                    self.obs[i, 3] = -self.obs[i, 3]
-                if self.obs[i, 1] < y_min or self.obs[i, 1] > y_max:
-                    self.obs[i, 4] = -self.obs[i, 4]
+        if len(self.obs) != 0 and self.obs.shape[1] >= 5:
+            self.obs[:, 0] += self.obs[:, 3] * self.dt
+            self.obs[:, 1] += self.obs[:, 4] * self.dt
     
     def render_dynamic_obs(self):
-        for patch in self.obs_patches:
-            patch.remove()
-        self.obs_patches = []
+        for i, obs_info in enumerate(self.obs):
+            print(i)
+            # obs: [x, y, r, vx, vy]
+            ox, oy, r = obs_info[:3]
+            self.dyn_obs_patch[i].center = ox, oy
+            self.dyn_obs_patch[i].set_radius(r)
 
-        if self.obs is not None and self.obs.size != 0 and hasattr(self, 'obs_initial'):
-            for idx, obs in enumerate(self.obs):
-                # obs: [x, y, t, vx, vy]
-                current_circle = patches.Circle((obs[0], obs[1]), obs[2],
-                                        edgecolor='black', facecolor='gray', linestyle='-', fill=True)
-                self.ax.add_patch(current_circle)
-                self.obs_patches.append(current_circle)
-
-                initial_obs = self.obs_initial[idx]
-                initial_circle = patches.Circle((initial_obs[0], initial_obs[1]), initial_obs[2], edgecolor='none', facecolor='none', linestyle='--')
-                self.ax.add_patch(initial_circle)
-                self.obs_patches.append(initial_circle)
+        for i, obs_info in enumerate(self.init_obs_info):
+            ox, oy, r = obs_info[:3]
+            self.init_obs_circle[i].center = ox, oy
+            self.init_obs_circle[i].set_radius(r)
 
     def is_collide_unknown(self):
         # if self.unknown_obs is None:
@@ -380,7 +370,14 @@ class LocalTrackingController:
     def draw_plot(self, pause=0.01, force_save=False):
         if self.show_animation:
             if self.dyn_obs_patch is None:
-                self.ax
+                # Initialize moving obstacles
+                self.dyn_obs_patch = [self.ax.add_patch(plt.Circle(
+                    (0, 0), 0, edgecolor='black', facecolor='gray', fill=True)) for _ in range(len(self.obs))]
+                self.init_obs_info = self.obs.copy()
+                self.init_obs_circle = [self.ax.add_patch(plt.Circle((0, 0), 0, edgecolor='black', facecolor='none', linestyle='--')) for _ in self.init_obs_info]
+            
+            self.render_dynamic_obs()
+
             self.fig.canvas.draw_idle()
             self.fig.canvas.flush_events()
             plt.pause(pause)
@@ -420,7 +417,10 @@ class LocalTrackingController:
         else:
             self.nearest_obs = None
 
-        # 2. Compuite nominal control input, pre-defined in the robot class
+        # 2. Update Moving Obstacles
+        self.get_dynamic_obs()
+
+        # 3. Compuite nominal control input, pre-defined in the robot class
         if self.state_machine == 'rotate':
             goal_angle = np.arctan2(self.goal[1] - self.robot.X[1, 0],
                                     self.goal[0] - self.robot.X[0, 0])
@@ -453,7 +453,7 @@ class LocalTrackingController:
 
         # 5. Raise an error if the QP is infeasible, or the robot collides with the obstacle
         collide = self.is_collide_unknown()
-        if self.pos_controller.status != 'optimal' or collide or self.robot.X[1, 0 ] > 14.0 or np.abs(self.robot.X[2,0]) > np.deg2rad(45):
+        if self.pos_controller.status != 'optimal': #or collide or self.robot.X[1, 0 ] > 14.0 or np.abs(self.robot.X[2,0]) > np.deg2rad(45):
             self.draw_infeasible()
             print("Infeasible or Collision")
             if self.raise_error:
@@ -529,10 +529,8 @@ class LocalTrackingController:
 
         for _ in range(int(tf / self.dt)):
             # update dynamic obs pos
-            self.get_dynamic_obs()
+            #self.get_dynamic_obs()
             ret = self.control_step()
-            if self.show_animation:
-                self.render_dynamic_obs()
             self.draw_plot()
             unexpected_beh += ret
             if ret == -1:  # all waypoints reached
@@ -601,14 +599,15 @@ def single_agent_main(control_type):
             'a_max': 0.5,
             'radius': 0.5
         }
-        dynamic_obs = []
+        dynamic_obs = []  
         for i, obs_info in enumerate(known_obs):
+            ox, oy, r = obs_info[:3]
             if i % 2 == 0:
                 vx, vy = 0.1, 0.05
             else:
-                vx, vy = -0.1, -0.05
-            dynamic_obs.append(np.append(obs_info, [vx, vy]))
-        dynamic_obs = np.array(dynamic_obs)
+                vx, vy = -0.1, 0.05
+            dynamic_obs.append([ox, oy, r, vx, vy])
+        known_obs = np.array(dynamic_obs)
 
     elif model == 'Quad2D':
         robot_spec = {
@@ -661,6 +660,7 @@ def single_agent_main(control_type):
 
 
 
+
     waypoints = np.array(waypoints, dtype=np.float64)
 
     if model in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'Quad2D']:
@@ -671,6 +671,8 @@ def single_agent_main(control_type):
     else:
         x_init = np.append(waypoints[0], 1.0)
     
+    if known_obs.shape[1] != 5:
+        known_obs = np.hstack((known_obs, np.zeros((known_obs.shape[0], 2))))
 
     plot_handler = plotting.Plotting(width=env_width, height=env_height, known_obs=known_obs)
     ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here
@@ -681,12 +683,12 @@ def single_agent_main(control_type):
                                                   dt=dt,
                                                   show_animation=True,
                                                   save_animation=False,
-                                                  show_mpc_traj=True,
+                                                  show_mpc_traj=False,
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
 
     # Set obstacles
-    tracking_controller.set_unknown_obs(known_obs)
+    tracking_controller.obs = known_obs
     # tracking_controller.set_unknown_obs(known_obs)
     tracking_controller.set_waypoints(waypoints)
     unexpected_beh = tracking_controller.run_all_steps(tf=100)
