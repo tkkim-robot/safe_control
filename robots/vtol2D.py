@@ -78,8 +78,8 @@ class VTOL2D:
         self.spec.setdefault('chord', 0.18994)            # mean chord length
 
         # linear rotor thrust
-        self.spec.setdefault('k_front', 90.0)
-        self.spec.setdefault('k_rear',  90.0)
+        self.spec.setdefault('k_front', 70.0)
+        self.spec.setdefault('k_rear',  70.0)
         self.spec.setdefault('k_pusher',60.0)
         # geometry: lever arms
         self.spec.setdefault('ell_f', 0.5)
@@ -105,7 +105,8 @@ class VTOL2D:
 
         # spec safety constraint
         self.spec.setdefault('v_max', 15.0)
-        self.spec.setdefault('descent_speed_max', 2.0) # in negative z
+        self.spec.setdefault('pitch_max', 15.0)
+        self.spec.setdefault('descent_speed_max', 5.0) # in negative z
 
         self.gravity = 9.81
 

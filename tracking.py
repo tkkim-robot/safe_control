@@ -46,6 +46,7 @@ class LocalTrackingController:
         # if robot_spec specifies a different reached_threshold, use that (ex. VTOL)
         if 'reached_threshold' in robot_spec:
             self.reached_threshold = robot_spec['reached_threshold']
+            print("Using custom reached_threshold: ", self.reached_threshold)
 
         if self.robot_spec['model'] == 'SingleIntegrator2D':
             if X0.shape[0] == 2:
@@ -239,7 +240,7 @@ class LocalTrackingController:
         
         if self.robot_spec['model'] == 'Quad2D':
             angle_unpassed=np.pi*2
-        elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad3D']:
+        elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad3D', 'VTOL2D']:
             angle_unpassed=np.pi*1.2
         
         if len(detected_obs) != 0:
@@ -349,6 +350,13 @@ class LocalTrackingController:
                 distance = np.linalg.norm(self.robot.X[:2, 0] - obs[:2])
                 if distance < (obs[2] + robot_radius):
                     return True
+
+        # Collision with the ground
+        if self.robot_spec['model'] in ['VTOL2D']:
+            if self.robot.X[1, 0] < 0:
+                return True
+            if np.abs(self.robot.X[2, 0]) > self.robot_spec['pitch_max']:
+                return True
         return False
 
     def update_goal(self):
@@ -564,7 +572,7 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    model = 'KinematicBicycle2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'VTOL2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     waypoints = [
         [2, 2, math.pi/2],
@@ -651,7 +659,7 @@ def single_agent_main(control_type):
             'model': 'VTOL2D',
             'radius': 0.6,
             'v_max': 20.0,
-            'reach_threshold': 3.0 # meter
+            'reached_threshold': 1.0 # meter
         }
         # override the waypoints and known_obs
         waypoints = [
@@ -662,10 +670,15 @@ def single_agent_main(control_type):
         pillar_1_x = 67.0
         pillar_2_x = 73.0
         known_obs = np.array([
-            [pillar_1_x, 1.0, 0.5],
-            [pillar_1_x, 2.0, 0.5],
-            [pillar_1_x, 3.0, 0.5],
-            [pillar_1_x, 4.0, 0.5],
+            # [pillar_1_x, 1.0, 0.5],
+            # [pillar_1_x, 2.0, 0.5],
+            # [pillar_1_x, 3.0, 0.5],
+            # [pillar_1_x, 4.0, 0.5],
+            # [pillar_1_x, 5.0, 0.5],
+            [pillar_1_x, 6.0, 0.5],
+            [pillar_1_x, 7.0, 0.5],
+            [pillar_1_x, 8.0, 0.5],
+            [pillar_1_x, 9.0, 0.5],
             [pillar_2_x, 1.0, 0.5],
             [pillar_2_x, 2.0, 0.5],
             [pillar_2_x, 3.0, 0.5],
@@ -681,7 +694,7 @@ def single_agent_main(control_type):
             [pillar_2_x, 13.0, 0.5],
             [pillar_2_x, 14.0, 0.5],
             [pillar_2_x, 15.0, 0.5],
-            [60.0, 12.0, 0.5]
+            [60.0, 12.0, 1.5]
         ])
 
         env_width = 75.0
@@ -711,8 +724,8 @@ def single_agent_main(control_type):
                                                   control_type=control_type,
                                                   dt=dt,
                                                   show_animation=True,
-                                                  save_animation=False,
-                                                  show_mpc_traj=False,
+                                                  save_animation=True,
+                                                  show_mpc_traj=True,
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
 

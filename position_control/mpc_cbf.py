@@ -39,7 +39,7 @@ class MPCCBF:
         elif self.robot_spec['model'] == 'VTOL2D':
             self.horizon = 30
             self.Q = np.diag([10, 10, 250, 10, 10, 50])
-            self.R = np.array([0.5, 0.5, 0.5, 500000])
+            self.R = np.array([0.5, 0.5, 0.5, 50000])
 
         self.n_controls = 2
         self.goal = np.array([0, 0])
@@ -78,8 +78,8 @@ class MPCCBF:
             self.n_controls = 4 # override n_controls for Quad3D
             self.goal = np.array([0, 0, 0]) # override goal with z placeholder
         elif self.robot_spec['model'] == 'VTOL2D':
-            self.cbf_param['alpha1'] = 0.15
-            self.cbf_param['alpha2'] = 0.15
+            self.cbf_param['alpha1'] = 0.05
+            self.cbf_param['alpha2'] = 0.05
             self.n_states = 6
             self.n_controls = 4 # override n_controls for VTOL2D
 
@@ -217,8 +217,8 @@ class MPCCBF:
             mpc.bounds['upper', '_x', 'x', 3] = self.robot_spec['v_max']
             mpc.bounds['lower', '_x', 'x', 4] = -self.robot_spec['descent_speed_max']
             mpc.bounds['upper', '_x', 'x', 1] = 15.0
-            mpc.bounds['lower', '_x', 'x', 2] = -15.0*3.14159/180
-            mpc.bounds['upper', '_x', 'x', 2] = 15.0*3.14159/180
+            mpc.bounds['lower', '_x', 'x', 2] = -self.robot_spec['pitch_max']*3.14159/180
+            mpc.bounds['upper', '_x', 'x', 2] = self.robot_spec['pitch_max']*3.14159/180
 
         mpc = self.set_tvp(mpc)
         mpc = self.set_cbf_constraint(mpc)
