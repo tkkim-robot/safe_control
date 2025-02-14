@@ -64,10 +64,7 @@ class LocalTrackingController:
             elif X0.shape[0] != 5:
                 raise ValueError(
                     "Invalid initial state dimension for DoubleIntegrator2D")
-        elif self.robot_spec['model'] == 'KinematicBicycle2D':
-            if X0.shape[0] == 3:  # set initial velocity to 0.0
-                X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
-        elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
+        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
             if X0.shape[0] == 3:  # set initial velocity to 0.0
                 X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
         elif self.robot_spec['model'] in ['Quad2D']:
@@ -112,9 +109,6 @@ class LocalTrackingController:
         
         self.known_obs = np.array([])
         self.unknown_obs = np.array([])
-
-        self.collision_cone_patches = []
-        self.collision_cone_patch = None
 
         if show_animation:
             self.setup_animation_plot()
@@ -224,18 +218,17 @@ class LocalTrackingController:
             zeros = np.zeors((unknown_obs.shape[0], 2))
             unknown_obs = np.hstack((unknown_obs, zeros))
         self.unknown_obs = unknown_obs
-        if self.ax is not None:
-            for obs_info in self.unknown_obs:
-                ox, oy, r = obs_info[:3]
-                self.ax.add_patch(
-                    patches.Circle(
-                        (ox, oy), r,
-                        edgecolor='black',
-                        facecolor='orange',
-                        fill=True,
-                        alpha=0.4
-                    )
+        for obs_info in self.unknown_obs:
+            ox, oy, r = obs_info[:3]
+            self.ax.add_patch(
+                patches.Circle(
+                    (ox, oy), r,
+                    edgecolor='black',
+                    facecolor='orange',
+                    fill=True,
+                    alpha=0.4
                 )
+            )
 
     def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=5):
         def angle_normalize(x):
@@ -320,15 +313,14 @@ class LocalTrackingController:
         return nearest_obstacle.reshape(-1, 1)
 
     # Update dynamic obs position
-    def get_dynamic_obs(self):
+    def step_dyn_obs(self):
         """if self.obs (n,5) array (ex) [x, y, r, vx, vy], update obs position per time step"""
         if len(self.obs) != 0 and self.obs.shape[1] >= 5:
             self.obs[:, 0] += self.obs[:, 3] * self.dt
             self.obs[:, 1] += self.obs[:, 4] * self.dt
     
-    def render_dynamic_obs(self):
+    def render_dyn_obs(self):
         for i, obs_info in enumerate(self.obs):
-            print(i)
             # obs: [x, y, r, vx, vy]
             ox, oy, r = obs_info[:3]
             self.dyn_obs_patch[i].center = ox, oy
@@ -404,12 +396,8 @@ class LocalTrackingController:
                     (0, 0), 0, edgecolor='black', facecolor='gray', fill=True)) for _ in range(len(self.obs))]
                 self.init_obs_info = self.obs.copy()
                 self.init_obs_circle = [self.ax.add_patch(plt.Circle((0, 0), 0, edgecolor='black', facecolor='none', linestyle='--')) for _ in self.init_obs_info]
-
-            # Draw Collision Cone for C3BF
-            if self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
-                self.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax, self.control_type)
             
-            self.render_dynamic_obs()
+            self.render_dyn_obs()
 
             self.fig.canvas.draw_idle()
             self.fig.canvas.flush_events()
@@ -419,86 +407,6 @@ class LocalTrackingController:
                 if force_save or self.ani_idx % self.save_per_frame == 0:
                     plt.savefig(self.current_directory_path +
                                 "/output/animations/" + "t_step_" + str(self.ani_idx//self.save_per_frame).zfill(4) + ".png")
-
-    def draw_collision_cone(self, X, obs_list, ax, control_type):
-        '''
-        Render the collision cone based on phi
-        obs: [obs_x, obs_y, obs_r]
-        '''
-        # Remove previous collision cones safely
-        if not hasattr(self, 'collision_cone_patches'):
-            self.collision_cone_patches = [] # Initialize attribute
-
-        for patch in list(self.collision_cone_patches):
-            if patch in ax.patches:
-                patch.remove()
-        self.collision_cone_patches.clear()
-
-        # Robot and obstacle positions
-        robot_pos = self.robot.get_position()
-        theta = X[2, 0]
-        v = X[3, 0]
-
-        # if cbf_qp, use only nearest obs
-        if control_type == "cbf_qp":
-            obs_list = [obs_list[0]]
-
-        # colors = cm.viridis(np.linspace(0, 1, len(obs_list)))
-        colors = plt.get_cmap('viridis')(np.linspace(0, 1, len(obs_list)))
-
-        
-        for i, obs in enumerate(obs_list):
-            obs = np.array(obs).flatten()
-            obs_pos = np.array([obs[0], obs[1]])
-            obs_radius = obs[2]
-            obs_vel_x = obs[3]
-            obs_vel_y = obs[4]
-
-            # Combine radius R
-            ego_dim = obs_radius + self.robot_spec['body_width'] # max(c1,c2) + robot_width/2
-
-            p_rel = obs_pos - robot_pos
-            v_rel = np.array([[obs_vel_x - v * np.cos(theta)], 
-                            [obs_vel_y - v * np.sin(theta)]])
-
-            p_rel_mag = np.linalg.norm(p_rel)
-
-            # Calculate Collision cone angle
-            phi = np.arcsin(ego_dim / p_rel_mag)
-
-            cone_dir = -p_rel / p_rel_mag
-            rot_matrix_left = np.array([[np.cos(phi), -np.sin(phi)],
-                                        [np.sin(phi),  np.cos(phi)]])
-            rot_matrix_right = np.array([[np.cos(-phi), -np.sin(-phi)],
-                                        [np.sin(-phi),  np.cos(-phi)]])
-            cone_left = (rot_matrix_left @ cone_dir).flatten()
-            cone_right = (rot_matrix_right @ cone_dir).flatten()
-
-            # Extend cone boundaries
-            cone_left = (robot_pos + 2 * cone_left).tolist()
-            cone_right = (robot_pos + 2 * cone_right).tolist()
-
-            # Draw the cone
-            cone_points = np.array ([robot_pos.tolist(), cone_left, cone_right])
-            collision_cone_patch = patches.Polygon( # only edgecolors different
-                cone_points, closed = True,
-                edgecolor=colors[i] if control_type == 'mpc_cbf' else 'black',
-                linestyle='--', alpha=0.5, label=f"Obstacle {i}" if control_type == 'mpc_cbf' else None
-            )
-            ax.add_patch(collision_cone_patch)
-            self.collision_cone_patches.append(collision_cone_patch)
-
-        # Plot the relative velocity vector for nearest obs
-        v_rel_start = robot_pos
-
-        if hasattr(self, 'v_rel_arrow') and self.v_rel_arrow is not None: # Remove previous velocity vector if exists
-            self.v_rel_arrow.remove()
-
-        self.v_rel_arrow = ax.arrow(
-            v_rel_start[0], v_rel_start[1],
-            v_rel[0, 0], v_rel[1, 0],
-            color = 'red', width = 0.02, label = 'Relative Velocity'
-        )
 
     def control_step(self):
         '''
@@ -522,16 +430,10 @@ class LocalTrackingController:
         # self.nearest_obs = self.get_nearest_obs(detected_obs)
         self.nearest_multi_obs = self.get_nearest_unpassed_obs(detected_obs, obs_num=self.num_constraints)
         if self.nearest_multi_obs is not None:
-            # check multi dyn obs
-            if self.obs.size != 0 and self.obs.shape[1] >= 5:
-                self.nearest_obs = self.nearest_multi_obs[0].reshape(-1, 1)
-            else:
-                self.nearest_obs = self.nearest_multi_obs[0].reshape(3, 1)
-        else:
-            self.nearest_obs = None
+            self.nearest_obs = self.nearest_multi_obs[0].reshape(-1, 1)
 
         # 2. Update Moving Obstacles
-        self.get_dynamic_obs()
+        self.step_dyn_obs()
 
         # 3. Compuite nominal control input, pre-defined in the robot class
         if self.state_machine == 'rotate':
@@ -559,9 +461,11 @@ class LocalTrackingController:
         if self.control_type == 'optimal_decay_cbf_qp' or self.control_type == 'cbf_qp':
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_obs)
+            self.robot.render_collision_cone(self.robot.X, [self.nearest_obs], self.ax)
         else:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
+            self.robot.render_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)
         plt.figure(self.fig.number)
 
         # 6. Raise an error if the QP is infeasible, or the robot collides with the obstacle

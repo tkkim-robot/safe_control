@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 from shapely.geometry import Polygon, Point, LineString
 from shapely import is_valid_reason
@@ -132,6 +133,9 @@ class BaseRobot:
 
         self.U = np.array([0, 0]).reshape(-1, 1)
         self.U_att = np.array([0]).reshape(-1, 1)
+
+        self.collision_cone_patches = []
+        self.collision_cone_patch = None
 
         # Plot handles
         self.vis_orient_len = 0.5
@@ -427,6 +431,83 @@ class BaseRobot:
             if len(self.detected_points) > 0:
                 self.detected_points_scatter.set_offsets(
                     np.array(self.detected_points))
+                
+    def render_collision_cone(self, X, obs_list, ax):
+        '''
+        Render the collision cone based on phi
+        obs: [obs_x, obs_y, obs_r]
+        '''
+        if self.robot_spec['model'] != 'KinematicBicycle2D_C3BF':
+            return
+        
+        # Remove previous collision cones safely
+        if not hasattr(self, 'collision_cone_patches'):
+            self.collision_cone_patches = [] # Initialize attribute
+
+        for patch in list(self.collision_cone_patches):
+            if patch in ax.patches:
+                patch.remove()
+        self.collision_cone_patches.clear()
+
+        # Robot and obstacle positions
+        robot_pos = self.get_position()
+        theta = X[2, 0]
+        v = X[3, 0]
+
+        # Get colors for Collision Cone edges
+        colors = plt.get_cmap('viridis')(np.linspace(0, 1, len(obs_list)))
+
+        for i, obs in enumerate(obs_list):
+            obs = np.array(obs).flatten()
+            obs_pos = np.array([obs[0], obs[1]])
+            obs_radius = obs[2]
+            obs_vel_x = obs[3]
+            obs_vel_y = obs[4]
+
+            # Combine radius R
+            ego_dim = obs_radius + self.robot_spec['body_width'] # max(c1,c2) + robot_width/2
+
+            p_rel = obs_pos - robot_pos
+            v_rel = np.array([[obs_vel_x - v * np.cos(theta)], 
+                            [obs_vel_y - v * np.sin(theta)]])
+
+            p_rel_mag = np.linalg.norm(p_rel)
+
+            # Calculate Collision cone angle
+            phi = np.arcsin(ego_dim / p_rel_mag)
+
+            cone_dir = -p_rel / p_rel_mag
+            rot_matrix_left = np.array([[np.cos(phi), -np.sin(phi)],
+                                        [np.sin(phi),  np.cos(phi)]])
+            rot_matrix_right = np.array([[np.cos(-phi), -np.sin(-phi)],
+                                        [np.sin(-phi),  np.cos(-phi)]])
+            cone_left = (rot_matrix_left @ cone_dir).flatten()
+            cone_right = (rot_matrix_right @ cone_dir).flatten()
+
+            # Extend cone boundaries
+            cone_left = (robot_pos + 2 * cone_left).tolist()
+            cone_right = (robot_pos + 2 * cone_right).tolist()
+
+            # Draw the cone
+            cone_points = np.array ([robot_pos.tolist(), cone_left, cone_right])
+            collision_cone_patch = patches.Polygon( # only edgecolors different
+                cone_points, closed = True,
+                edgecolor=colors[i], linestyle='--', alpha=0.5, label=f"Obstacle {i}"
+            )
+            ax.add_patch(collision_cone_patch)
+            self.collision_cone_patches.append(collision_cone_patch)
+
+        # Plot the relative velocity vector for nearest obs
+        v_rel_start = robot_pos
+
+        if hasattr(self, 'v_rel_arrow') and self.v_rel_arrow is not None: # Remove previous velocity vector if exists
+            self.v_rel_arrow.remove()
+
+        self.v_rel_arrow = ax.arrow(
+            v_rel_start[0], v_rel_start[1],
+            v_rel[0, 0], v_rel[1, 0],
+            color = 'red', width = 0.02, label = 'Relative Velocity'
+        )
 
     def process_sensing_footprints_visualization(self):
         '''

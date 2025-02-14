@@ -27,10 +27,7 @@ class MPCCBF:
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
             self.Q = np.diag([50, 50, 20, 20])  # State cost matrix
             self.R = np.array([0.5, 0.5])  # Input cost matrix
-        elif self.robot_spec['model'] == 'KinematicBicycle2D':
-            self.Q = np.diag([50, 50, 1, 1])  # State cost matrix
-            self.R = np.array([0.5, 50.0])  # Input cost matrix
-        elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
+        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
             self.Q = np.diag([50, 50, 1, 1])  # State cost matrix
             self.R = np.array([0.5, 50.0])  # Input cost matrix
         elif self.robot_spec['model'] == 'Quad2D':
@@ -112,7 +109,7 @@ class MPCCBF:
         _goal = model.set_variable(
             var_type='_tvp', var_name='goal', shape=(self.n_states, 1))
         _obs = model.set_variable(
-            var_type='_tvp', var_name='obs', shape=(5, 5)) # Edit (5, 3) -> (5, 5) for dyn obs
+            var_type='_tvp', var_name='obs', shape=(5, 5)) # (num_obs, obs_info), where [x, y, r, vx, vy]
 
         if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
             _alpha = model.set_variable(
@@ -193,14 +190,7 @@ class MPCCBF:
                 [-self.robot_spec['ax_max'], -self.robot_spec['ay_max']])
             mpc.bounds['upper', '_u', 'u'] = np.array(
                 [self.robot_spec['ax_max'], self.robot_spec['ay_max']])
-        elif self.robot_spec['model'] == 'KinematicBicycle2D':
-            mpc.bounds['lower', '_x', 'x', 3] = -self.robot_spec['v_max']
-            mpc.bounds['upper', '_x', 'x', 3] = self.robot_spec['v_max']
-            mpc.bounds['lower', '_u', 'u'] = np.array(
-                [-self.robot_spec['a_max'], -self.robot_spec['beta_max']])
-            mpc.bounds['upper', '_u', 'u'] = np.array(
-                [self.robot_spec['a_max'], self.robot_spec['beta_max']])
-        elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
+        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
             mpc.bounds['lower', '_x', 'x', 3] = -self.robot_spec['v_max']
             mpc.bounds['upper', '_x', 'x', 3] = self.robot_spec['v_max']
             mpc.bounds['lower', '_u', 'u'] = np.array(
