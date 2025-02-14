@@ -432,7 +432,7 @@ class BaseRobot:
                 self.detected_points_scatter.set_offsets(
                     np.array(self.detected_points))
                 
-    def render_collision_cone(self, X, obs_list, ax):
+    def draw_collision_cone(self, X, obs_list, ax):
         '''
         Render the collision cone based on phi
         obs: [obs_x, obs_y, obs_r]

@@ -454,21 +454,21 @@ class LocalTrackingController:
             self.u_att = self.att_controller.solve_control_problem(
                     self.robot.X)
 
-        # 4. Update the CBF constraints & # 5. Solve the control problem
+        # 4. Update the CBF constraints & 5. Solve the control problem & 6. Draw Collision Cones for C3BF
         control_ref = {'state_machine': self.state_machine,
                        'u_ref': u_ref,
                        'goal': self.goal}
         if self.control_type == 'optimal_decay_cbf_qp' or self.control_type == 'cbf_qp':
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_obs)
-            self.robot.render_collision_cone(self.robot.X, [self.nearest_obs], self.ax)
+            self.robot.draw_collision_cone(self.robot.X, [self.nearest_obs], self.ax)
         else:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
-            self.robot.render_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)
+            self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)
         plt.figure(self.fig.number)
 
-        # 6. Raise an error if the QP is infeasible, or the robot collides with the obstacle
+        # 7. Raise an error if the QP is infeasible, or the robot collides with the obstacle
         collide = self.is_collide_unknown()
         if self.pos_controller.status != 'optimal' or collide:
             cause = "Collision" if collide else "Infeasible"
@@ -478,13 +478,13 @@ class LocalTrackingController:
                 raise InfeasibleError(f"{cause} detected !!")
             return -2
 
-        # 7. Step the robot
+        # 8. Step the robot
         self.robot.step(u, self.u_att)
     
         if self.show_animation:
             self.robot.render_plot()
 
-        # 8. Update sensing information
+        # 9. Update sensing information
         if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
             self.robot.update_sensing_footprints()
             self.robot.update_safety_area()
