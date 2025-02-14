@@ -641,8 +641,6 @@ class LocalTrackingController:
         unexpected_beh = 0
 
         for _ in range(int(tf / self.dt)):
-            # update dynamic obs pos
-            #self.get_dynamic_obs()
             ret = self.control_step()
             self.draw_plot()
             unexpected_beh += ret
@@ -784,7 +782,6 @@ def single_agent_main(control_type):
 
         env_width = 75.0
         env_height = 15.0
-
 
 
 
