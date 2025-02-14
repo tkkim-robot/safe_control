@@ -114,6 +114,13 @@ class BaseRobot:
                 from robots.quad2D import Quad2D
             self.robot = Quad2D(dt, robot_spec)
             self.yaw = self.X[2, 0] # it's pitch in this case
+        elif self.robot_spec['model'] == 'Quad3D':
+            try:
+                from quad3D import Quad3D
+            except ImportError:
+                from robots.quad3D import Quad3D
+            self.robot = Quad3D(dt, robot_spec)
+            self.yaw = self.X[8, 0]
         elif self.robot_spec['model'] == 'VTOL2D':
             try:
                 from vtol2D import VTOL2D
@@ -259,6 +266,12 @@ class BaseRobot:
 
     def get_position(self):
         return self.X[0:2].reshape(-1)
+    
+    def get_z(self):
+        if self.robot_spec['model'] == 'Quad3D':
+            return self.X[3, 0]
+        else:
+            raise NotImplementedError("get_z is not implemented for this model")
 
     def get_orientation(self):
         return self.yaw
@@ -268,6 +281,8 @@ class BaseRobot:
             return self.U[1, 0]
         elif self.robot_spec['model'] in ['Quad2D', 'VTOL2D']:
             return self.X[5, 0]
+        elif self.robot_spec['model'] == 'Quad3D':
+            return self.U[3, 0]
         elif self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
             if self.U_att is not None:
                 return self.U_att[0, 0]
@@ -304,9 +319,9 @@ class BaseRobot:
             return self.robot.nominal_input(self.X, goal, d_min, k_omega, k_a, k_v)
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
             return self.robot.nominal_input(self.X, goal, d_min, k_v, k_a)
-        elif self.robot_spec['model'] == 'Quad2D':
-            return self.robot.nominal_input(self.X, goal)
-        elif self.robot_spec['model'] == 'VTOL2D':
+        elif self.robot_spec['model'] in ['Quad2D', 'Quad3D', 'VTOL2D']:
+            # these three have quite complex nominal input
+            # so recommend to tune gains inside of each script
             return self.robot.nominal_input(self.X, goal)
 
     def nominal_attitude_input(self, theta_des):
@@ -343,6 +358,8 @@ class BaseRobot:
             self.yaw = self.robot.step_rotate(self.yaw, self.U_att)
         elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad2D', 'VTOL2D']:
             self.yaw = self.X[2, 0]
+        elif self.robot_spec['model'] == 'Quad3D':
+            self.yaw = self.X[8, 0]
         return self.X
 
     def render_plot(self):
@@ -372,7 +389,6 @@ class BaseRobot:
         else:
             # self.body.set_offsets([self.X[0, 0], self.X[1, 0]])
             self.body.center = self.X[0, 0], self.X[1, 0]
-
 
         self.axis.set_ydata([self.X[1, 0], self.X[1, 0] +
                             self.vis_orient_len*np.sin(self.yaw)])
@@ -694,14 +710,17 @@ class BaseRobot:
         return fov_left, fov_right
 
     def is_in_fov(self, point, is_in_cam_range=False):
-        if self.robot_spec['model'] == 'Quad2D':
+        '''
+            point: [2, ] or [3, ] 
+        '''
+        if self.robot_spec['model'] in ['Quad2D', 'VTOL2D']:
             # These dynmaics do not have a stop() method
             return True
 
         robot_pos = self.get_position()
         robot_yaw = self.get_orientation()
 
-        to_point = point - robot_pos
+        to_point = point[:2] - robot_pos
 
         angle_to_point = np.arctan2(to_point[1], to_point[0])
         angle_diff = abs(angle_normalize(angle_to_point - robot_yaw))
@@ -740,9 +759,7 @@ if __name__ == "__main__":
     robot_spec = {
         'model': model,
         'w_max': 0.5,
-        'a_max': 0.5,
-        'fov_angle': 70.0,
-        'cam_range': 3.0
+        'a_max': 0.5
     }
 
     robot = BaseRobot(
