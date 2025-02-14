@@ -57,16 +57,24 @@ class VTOL2D:
         self.spec.setdefault('inertia', 1.135)
         self.spec.setdefault('S_wing', 0.55)   # Wing area
         self.spec.setdefault('rho', 1.2682)   # Air density
+
+        # linear lift coefficients
         self.spec.setdefault('C_L0', 0.23)
         self.spec.setdefault('C_Lalpha', 5.61)
-        self.spec.setdefault('C_Ldelta_e', 0.13)    # TODO: might be wrong, but it should be positive
+        # non-linear lift coefficient
+        self.spec.setdefault('M', 50.0)                   # transition rate
+        self.spec.setdefault('alpha_0', np.deg2rad(15))   # stall angle
+
+        self.spec.setdefault('C_Ldelta_e', 0.13)          # TODO: might be wrong, but it should be positive
+
         self.spec.setdefault('C_D0', 0.043)
-        self.spec.setdefault('C_Dalpha', 0.03)      # e.g. alpha^2 coefficient
-        self.spec.setdefault('C_Ddelta_e', 0.0)     # should be abs(), but makes it not affine
-        self.spec.setdefault('C_m0', 0.0135)        # in 2D, use small m for pitch moment
-        self.spec.setdefault('C_malpha', -2.74)     # coeff of pitch moment from alpha
-        self.spec.setdefault('C_mdelta_e', -0.99)   # for pitch moment from elevator
-        self.spec.setdefault('chord', 0.18994)      # mean chord length
+        self.spec.setdefault('C_Dalpha', 0.03)            # e.g. alpha^2 coefficient
+        self.spec.setdefault('C_Ddelta_e', 0.0)           # should be abs(), but makes it not affine
+
+        self.spec.setdefault('C_m0', 0.0135)              # in 2D, use small m for pitch moment
+        self.spec.setdefault('C_malpha', -2.74)           # coeff of pitch moment from alpha
+        self.spec.setdefault('C_mdelta_e', -0.99)         # for pitch moment from elevator
+        self.spec.setdefault('chord', 0.18994)            # mean chord length
 
         # linear rotor thrust
         self.spec.setdefault('k_front', 90.0)
@@ -118,16 +126,16 @@ class VTOL2D:
             thetadot = X[5,0]
 
             # 1) Body-frame velocity (u_b, w_b)
-            u_b, w_b = self._body_velocity_casadi(xdot, zdot, theta)
+            u_b, w_b = self._body_velocity(xdot, zdot, theta, casadi=True)
             V = ca.sqrt(u_b*u_b + w_b*w_b)  # actual airspeed magnitude
             alpha = ca.atan2(w_b, u_b)
 
             # 2) Baseline lift & drag (no elevator => delta_e=0)
-            L0, D0, M0 = self._lift_drag_moment(V, alpha, delta_e=0.0)
+            L0, D0, M0 = self._lift_drag_moment(V, alpha, delta_e=0.0, casadi=True)
 
             # 3) Wind->Body rotation by alpha, Body->Inertial by theta
             #    => net rotation by (theta + alpha)
-            fx_aero, fz_aero = self._wind_to_inertial_casadi(theta, alpha, -D0, L0)
+            fx_aero, fz_aero = self._wind_to_inertial(theta, alpha, -D0, L0, casadi=True)
 
             # 4) Gravity in inertial is (0, -m*g)
             m = self.spec['mass']
@@ -154,13 +162,13 @@ class VTOL2D:
             zdot  = X[4,0]
             thetadot = X[5,0]
 
-            u_b, w_b = self._body_velocity_np(xdot, zdot, theta)
+            u_b, w_b = self._body_velocity(xdot, zdot, theta, casadi=False)
             V = np.sqrt(u_b**2 + w_b**2)
             alpha = np.arctan2(w_b, u_b)
 
-            L0, D0, M0 = self._lift_drag_moment(V, alpha, 0.0)
+            L0, D0, M0 = self._lift_drag_moment(V, alpha, delta_e=0.0, casadi=False)
 
-            fx_aero, fz_aero = self._wind_to_inertial_np(theta, alpha, -D0, L0)
+            fx_aero, fz_aero = self._wind_to_inertial(theta, alpha, -D0, L0, casadi=False)
 
             m = self.spec['mass']
             I = self.spec['inertia']
@@ -194,21 +202,21 @@ class VTOL2D:
             xdot  = X[3,0]
             zdot  = X[4,0]
             # body velocity
-            u_b, w_b = self._body_velocity_casadi(xdot, zdot, theta)
+            u_b, w_b = self._body_velocity(xdot, zdot, theta, casadi=True)
             V = ca.sqrt(u_b*u_b + w_b*w_b)
             alpha = ca.atan2(w_b, u_b)
 
             #-----------------------------------
             # 1) front rotor => thrust along -body_z
-            fx_front, fz_front, M_f = self._front_rotor_casadi(theta)
+            fx_front, fz_front, M_f = self._front_rotor(theta, casadi=True)
             # 2) rear rotor
-            fx_rear, fz_rear, M_r = self._rear_rotor_casadi(theta)
+            fx_rear, fz_rear, M_r = self._rear_rotor(theta, casadi=True)
             # 3) pusher rotor => +body_x
-            fx_thr, fz_thr, M_t = self._pusher_rotor_casadi(theta)
+            fx_thr, fz_thr, M_t = self._pusher_rotor(theta, casadi=True)
             # 4) elevator => partial in lift/drag + pitch moment
             #    => difference from delta_e=1 vs 0
-            L_de, D_de, M_de = self._lift_drag_moment(V, alpha, delta_e=1.0)  # "partial"
-            fx_elev, fz_elev = self._wind_to_inertial_casadi(theta, alpha, -D_de, L_de)
+            L_de, D_de, M_de = self._lift_drag_moment(V, alpha, delta_e=1.0, casadi=True)  # "partial"
+            fx_elev, fz_elev = self._wind_to_inertial(theta, alpha, -D_de, L_de, casadi=True)
 
             m = self.spec['mass']
             I = self.spec['inertia']
@@ -258,17 +266,17 @@ class VTOL2D:
             zdot  = X[4,0]
 
             # body velocity
-            u_b, w_b = self._body_velocity_np(xdot, zdot, theta)
+            u_b, w_b = self._body_velocity(xdot, zdot, theta, casadi=False)
             V = np.sqrt(u_b**2 + w_b**2)
             alpha = np.arctan2(w_b, u_b)
 
-            fx_front, fz_front, M_f = self._front_rotor_np(theta)
-            fx_rear,  fz_rear,  M_r = self._rear_rotor_np(theta)
-            fx_thr,   fz_thr,   M_t = self._pusher_rotor_np(theta)
+            fx_front, fz_front, M_f = self._front_rotor(theta, casadi=False)
+            fx_rear,  fz_rear,  M_r = self._rear_rotor(theta, casadi=False)
+            fx_thr,   fz_thr,   M_t = self._pusher_rotor(theta, casadi=False)
 
             # elevator partial
-            L_de, D_de, M_de = self._lift_drag_moment(V, alpha, 1.0)
-            fx_elev, fz_elev = self._wind_to_inertial_np(theta, alpha, -D_de, L_de)
+            L_de, D_de, M_de = self._lift_drag_moment(V, alpha, delta_e=1.0, casadi=False) # "partial"
+            fx_elev, fz_elev = self._wind_to_inertial(theta, alpha, -D_de, L_de, casadi=False)
 
             m = self.spec['mass']
             I = self.spec['inertia']
@@ -309,29 +317,56 @@ class VTOL2D:
     #--------------------------------------------------------------------------
     # TF utils: body velocity from inertial velocity
     #--------------------------------------------------------------------------
-    def _body_velocity_np(self, xdot, zdot, theta):
+    def _cos_sin(self, theta, casadi=False):
+        if casadi:
+            cth = ca.cos(theta)
+            sth = ca.sin(theta)
+        else:
+            cth = np.cos(theta)
+            sth = np.sin(theta)
+        return cth, sth
+
+    def _body_velocity(self, xdot, zdot, theta, casadi=False):
         """
         Rotate inertial velocity (xdot, zdot) into body frame (u_b, w_b).
          [u_b] = [ cos(theta),  sin(theta)] [ xdot ]
          [w_b]   [-sin(theta), cos(theta)]  [ zdot ]
         """
-        cth = np.cos(theta)
-        sth = np.sin(theta)
+        cth, sth = self._cos_sin(theta, casadi)
         u_b = cth*xdot + sth*zdot
         w_b = -sth*xdot + cth*zdot
         return u_b, w_b
 
-    def _body_velocity_casadi(self, xdot, zdot, theta):
-        cth = ca.cos(theta)
-        sth = ca.sin(theta)
-        u_b = cth*xdot + sth*zdot
-        w_b = -sth*xdot + cth*zdot
-        return (u_b, w_b)
-
     #--------------------------------------------------------------------------
     # compute lift, drag in "wind frame"
     #--------------------------------------------------------------------------
-    def _lift_drag_moment(self, V, alpha, delta_e):
+    def _lift_blending(self, alpha, casadi=False):
+        """
+        Blend between linear and non-linear lift models:
+        reference:
+            - Blending function: Small Unmanned Aircraft: Theory and Pracice, Chap. 4:
+                    https://drive.google.com/file/d/1BjJuj8QLWV9E1FX6sHVHXIGaIizUaAJ5/view
+            - Nonlinear lift: Pitch and Thrust Allocation for Full-Flight-Regime Control of Winged eVTOL UAVs, L-CSS, 2022. 
+        """
+        alpha_0 = self.spec['alpha_0']
+        M = self.spec['M']
+
+        CL_linear = self.spec['C_L0'] + self.spec['C_Lalpha']*alpha
+        c_alpha, s_alpha = self._cos_sin(alpha, casadi)
+        CL_nonlinear = 2*s_alpha*c_alpha
+        
+        if casadi:
+            tmp1 = ca.exp(-M * (alpha - alpha_0))
+            tmp2 = ca.exp(M * (alpha + alpha_0))
+        else:
+            tmp1 = np.exp(-M * (alpha - alpha_0))
+            tmp2 = np.exp(M * (alpha + alpha_0))
+        sigma = (1 + tmp1 + tmp2) / ((1 + tmp1) * (1 + tmp2))
+
+        CL_alpha = (1 - sigma) * CL_linear + sigma * CL_nonlinear
+        return CL_alpha
+                                                                    
+    def _lift_drag_moment(self, V, alpha, delta_e, casadi=False):
         """
         NOTE: universal to np and casadi
         L,D from standard formula with linear elevator effect:
@@ -343,9 +378,10 @@ class VTOL2D:
         """
         rho = self.spec['rho']
         S   = self.spec['S_wing']
-        CL = (self.spec['C_L0']
-              + self.spec['C_Lalpha']*alpha
-              + self.spec['C_Ldelta_e']*delta_e)
+
+        CL_alpha = self._lift_blending(alpha, casadi)
+        CL = CL_alpha + self.spec['C_Ldelta_e']*delta_e
+
         CD = (self.spec['C_D0']
               + self.spec['C_Dalpha']*(alpha**2)
               + self.spec['C_Ddelta_e']*delta_e)
@@ -368,30 +404,21 @@ class VTOL2D:
     #   => total rotation by (theta + alpha)
     #   =>  F_inertial = R(theta+alpha)*F_wind
     #--------------------------------------------------------------------------
-    def _wind_to_inertial_np(self, theta, alpha, fx_w, fz_w):
+    def _wind_to_inertial(self, theta, alpha, fx_w, fz_w, casadi=False):
         """
         wind frame axes: x_w = direction of velocity, z_w = +90 deg from that
         If (fx_w, fz_w) = (-D, L), then we rotate by (theta+alpha).
         """
         heading = theta + alpha
-        c = np.cos(heading)
-        s = np.sin(heading)
-        fx_i = c*fx_w - s*fz_w
-        fz_i = s*fx_w + c*fz_w
-        return fx_i, fz_i
-
-    def _wind_to_inertial_casadi(self, theta, alpha, fx_w, fz_w):
-        heading = theta + alpha
-        c = ca.cos(heading)
-        s = ca.sin(heading)
-        fx_i = c*fx_w - s*fz_w
-        fz_i = s*fx_w + c*fz_w
+        c_heading, s_heading = self._cos_sin(heading, casadi)
+        fx_i = c_heading * fx_w - s_heading * fz_w
+        fz_i = s_heading * fx_w + c_heading * fz_w
         return fx_i, fz_i
 
     #--------------------------------------------------------------------------
     # Rotors utils: front, rear, pusher
     #--------------------------------------------------------------------------
-    def _front_rotor_np(self, theta):
+    def _front_rotor(self, theta, casadi=False):
         """
         front rotor pusher = k_front * delta_front in +body_z
         We'll say +body_z => (0, +k_front). Then to inertial => R(theta).
@@ -400,8 +427,7 @@ class VTOL2D:
         # partial w.r.t delta_front is (k_front)
         # in body coords => (fx_b, fz_b) = (0, +k_front)
         # rotate to inertial by R(theta).
-        cth = np.cos(theta)
-        sth = np.sin(theta)
+        cth, sth = self._cos_sin(theta, casadi)
         # inertial
         fx_i = -sth * self.spec['k_front']
         fz_i =  cth * self.spec['k_front']
@@ -409,50 +435,23 @@ class VTOL2D:
         M_f  = +self.spec['ell_f'] * self.spec['k_front']
         return fx_i, fz_i, M_f
 
-    def _rear_rotor_np(self, theta):
-        cth = np.cos(theta)
-        sth = np.sin(theta)
+    def _rear_rotor(self, theta, casadi=False):
+        cth, sth = self._cos_sin(theta, casadi)
         fx_i = -sth * self.spec['k_rear']
         fz_i =  cth * self.spec['k_rear']
         M_r  = -self.spec['ell_r'] * self.spec['k_rear']
         return fx_i, fz_i, M_r
 
-    def _pusher_rotor_np(self, theta):
+    def _pusher_rotor(self, theta, casadi=False):
         """
         pusher rotor => pusher along +body_x => rotate by theta
         """
-        cth = np.cos(theta)
-        sth = np.sin(theta)
+        cth, sth = self._cos_sin(theta, casadi)
         fx_i =  cth * self.spec['k_pusher']
         fz_i =  sth * self.spec['k_pusher']
         M_t  =  0.0
         return fx_i, fz_i, M_t
 
-    # CasADi versions
-    def _front_rotor_casadi(self, theta):
-        cth = ca.cos(theta)
-        sth = ca.sin(theta)
-        fx_i = -sth*self.spec['k_front']
-        fz_i =  cth*self.spec['k_front']
-        M_f  =  self.spec['ell_f']*self.spec['k_front']
-        return fx_i, fz_i, M_f
-
-    def _rear_rotor_casadi(self, theta):
-        cth = ca.cos(theta)
-        sth = ca.sin(theta)
-        fx_i = -sth*self.spec['k_rear']
-        fz_i =  cth*self.spec['k_rear']
-        M_r  = -self.spec['ell_r']*self.spec['k_rear']
-        return fx_i, fz_i, M_r
-
-    def _pusher_rotor_casadi(self, theta):
-        cth = ca.cos(theta)
-        sth = ca.sin(theta)
-        fx_i = cth*self.spec['k_pusher']
-        fz_i = sth*self.spec['k_pusher']
-        M_t  = 0.0
-        return fx_i, fz_i, M_t
-    
     def nominal_input(self, X, G):
         # not imeplemented
         return np.zeros((4, 1))
