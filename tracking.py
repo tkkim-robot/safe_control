@@ -523,7 +523,7 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    model = 'KinematicBicycle2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'DynamicUnicycle2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     waypoints = [
         [2, 2, math.pi/2],
@@ -623,11 +623,12 @@ def single_agent_main(control_type):
             [pillar_2_x, 13.0, 0.5],
             [pillar_2_x, 14.0, 0.5],
             [pillar_2_x, 15.0, 0.5],
-            #[60.0, 12.0, 0.5]
+            [60.0, 12.0, 0.5]
         ])
 
         env_width = 75.0
         env_height = 15.0
+        plt.rcParams['figure.figsize'] = [12, 8]
 
 
 
