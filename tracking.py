@@ -170,7 +170,7 @@ class LocalTrackingController:
     def setup_robot(self, X0):
         from robots.robot import BaseRobot
         self.robot = BaseRobot(
-                X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
+            X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
 
     def set_waypoints(self, waypoints):
         if type(waypoints) == list:
@@ -552,7 +552,7 @@ class LocalTrackingController:
             self.u_att = self.att_controller.solve_control_problem(
                     self.robot.X)
 
-        # 3. Update the CBF constraints & # 4. Solve the control problem
+        # 4. Update the CBF constraints & # 5. Solve the control problem
         control_ref = {'state_machine': self.state_machine,
                        'u_ref': u_ref,
                        'goal': self.goal}
@@ -564,7 +564,7 @@ class LocalTrackingController:
                 self.robot.X, control_ref, self.nearest_multi_obs)
         plt.figure(self.fig.number)
 
-        # 5. Raise an error if the QP is infeasible, or the robot collides with the obstacle
+        # 6. Raise an error if the QP is infeasible, or the robot collides with the obstacle
         collide = self.is_collide_unknown()
         if self.pos_controller.status != 'optimal' or collide:
             cause = "Collision" if collide else "Infeasible"
@@ -574,13 +574,13 @@ class LocalTrackingController:
                 raise InfeasibleError(f"{cause} detected !!")
             return -2
 
-        # 6. Step the robot
+        # 7. Step the robot
         self.robot.step(u, self.u_att)
     
         if self.show_animation:
             self.robot.render_plot()
 
-        # 7. Update sensing information
+        # 8. Update sensing information
         if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
             self.robot.update_sensing_footprints()
             self.robot.update_safety_area()
@@ -662,8 +662,8 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    # model = 'KinematicBicycle2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
-    model = 'VTOL2D'
+    model = 'KinematicBicycle2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+
     waypoints = [
         [2, 2, math.pi/2],
         [2, 12, 0],
@@ -816,7 +816,7 @@ def single_agent_main(control_type):
 
     # Set obstacles
     tracking_controller.obs = known_obs
-    # tracking_controller.set_unknown_obs(known_obs)
+    # tracking_controller.set_unknown_obs(unknown_obs)
     tracking_controller.set_waypoints(waypoints)
     unexpected_beh = tracking_controller.run_all_steps(tf=100)
 
