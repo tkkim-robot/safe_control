@@ -24,13 +24,14 @@ def angle_normalize(x):
 
 class VTOL2D:
     """
-    State: X = [ x, z, theta, x_dot, z_dot, theta_dot ]
-      x,z      -> inertial positions
-      theta    -> pitch angle
-      x_dot,z_dot -> inertial velocities
-      theta_dot   -> pitch rate
-
-    Control: U = [ delta_front, delta_rear, delta_pusher, delta_elevator ]
+    X: [ x, z, theta, x_dot, z_dot, theta_dot ]
+        - x,z      -> inertial positions
+        - theta    -> pitch angle
+        - x_dot,z_dot -> inertial velocities
+        - theta_dot   -> pitch rate
+    U:[ delta_front, delta_rear, delta_pusher, delta_elevator ]
+    cbf: h(x) = ||x-x_obs||^2 - beta*d_min^2
+    relative degree: 2
 
     We compute angle of attack alpha from body-frame velocity (u_b, w_b):
         alpha = atan2(w_b, u_b).
