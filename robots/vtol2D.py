@@ -34,7 +34,8 @@ class VTOL2D:
     relative degree: 2
 
     We compute angle of attack alpha from body-frame velocity (u_b, w_b):
-        alpha = atan2(w_b, u_b).
+        alpha = atan2(-w_b, u_b).
+        ** w_b is positive UP, so -w_b is positive DOWN, WHICH IS OPPOSITE to aero convention
     Then we apply lift & drag in the "wind frame" where
         F_wind = [ -D, +L ]
     rotate from wind to body by alpha,
@@ -128,7 +129,7 @@ class VTOL2D:
             # 1) Body-frame velocity (u_b, w_b)
             u_b, w_b = self._body_velocity(xdot, zdot, theta, casadi=True)
             V = ca.sqrt(u_b*u_b + w_b*w_b)  # actual airspeed magnitude
-            alpha = ca.atan2(w_b, u_b)
+            alpha = ca.atan2(-w_b, u_b)
 
             # 2) Baseline lift & drag (no elevator => delta_e=0)
             L0, D0, M0 = self._lift_drag_moment(V, alpha, delta_e=0.0, casadi=True)
@@ -164,7 +165,7 @@ class VTOL2D:
 
             u_b, w_b = self._body_velocity(xdot, zdot, theta, casadi=False)
             V = np.sqrt(u_b**2 + w_b**2)
-            alpha = np.arctan2(w_b, u_b)
+            alpha = np.arctan2(-w_b, u_b)
 
             L0, D0, M0 = self._lift_drag_moment(V, alpha, delta_e=0.0, casadi=False)
 
@@ -204,7 +205,7 @@ class VTOL2D:
             # body velocity
             u_b, w_b = self._body_velocity(xdot, zdot, theta, casadi=True)
             V = ca.sqrt(u_b*u_b + w_b*w_b)
-            alpha = ca.atan2(w_b, u_b)
+            alpha = ca.atan2(-w_b, u_b)
 
             #-----------------------------------
             # 1) front rotor => thrust along -body_z
@@ -268,7 +269,7 @@ class VTOL2D:
             # body velocity
             u_b, w_b = self._body_velocity(xdot, zdot, theta, casadi=False)
             V = np.sqrt(u_b**2 + w_b**2)
-            alpha = np.arctan2(w_b, u_b)
+            alpha = np.arctan2(-w_b, u_b)
 
             fx_front, fz_front, M_f = self._front_rotor(theta, casadi=False)
             fx_rear,  fz_rear,  M_r = self._rear_rotor(theta, casadi=False)
