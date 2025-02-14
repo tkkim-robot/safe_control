@@ -348,8 +348,6 @@ class BaseRobot:
             self.yaw = self.X[2, 0]
         elif self.robot_spec['model'] == 'Quad3D':
             self.yaw = self.X[8, 0]
-            print(f"z,{self.X[2,0]:+0.2f},z_dot,{self.X[5,0]:+0.2f}")
-            print("roll,pitch,yaw",self.X[6,0],self.X[7,0],self.X[8,0]) # FIXME:
         return self.X
 
     def render_plot(self):
@@ -625,7 +623,7 @@ class BaseRobot:
         '''
             point: [2, ] or [3, ] 
         '''
-        if self.robot_spec['model'] == 'Quad2D':
+        if self.robot_spec['model'] in ['Quad2D', 'VTOL2D']:
             # These dynmaics do not have a stop() method
             return True
 
@@ -671,9 +669,7 @@ if __name__ == "__main__":
     robot_spec = {
         'model': model,
         'w_max': 0.5,
-        'a_max': 0.5,
-        'fov_angle': 70.0,
-        'cam_range': 3.0
+        'a_max': 0.5
     }
 
     robot = BaseRobot(

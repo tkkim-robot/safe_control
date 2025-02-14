@@ -25,8 +25,11 @@ class Quad3D:
             X: [px, py, pz, vx, vy, vz, phi, theta, psi]
             U: [f, phi_dot, theta_dot, psi_dot]
             system parameters: m
-            cbf: h(x) = ||x(:,0:3)-x_obs||^2 - beta*d_min^2 - sigma(s)
-            relative degree: 2
+            cbf: h(x) = ||x[0:2]-x_obs||^2 - beta*d_min^2
+            relative degree: 
+                - f: 2
+                - phi_dot, theta_dot: 3
+                - psi_dot: Not defined 
 
             NOTE: Z is defined as positive downwards
             Reference: https://github.com/MIT-REALM/neural_clbf/blob/main/neural_clbf/systems/quad3d.py
@@ -34,13 +37,14 @@ class Quad3D:
         self.dt = dt
         self.robot_spec = robot_spec
         if 'phi_dot_max' not in self.robot_spec:
-            self.robot_spec['phi_dot_max'] = 5 #np.deg2rad(45.0) # FIXME: fix to reasonable value
+            self.robot_spec['phi_dot_max'] = np.deg2rad(45.0)
         if 'theta_dot_max' not in self.robot_spec:
-            self.robot_spec['theta_dot_max'] = 5#np.deg2rad(45.0)
+            self.robot_spec['theta_dot_max'] = np.deg2rad(45.0)
         if 'psi_dot_max' not in self.robot_spec:
-            self.robot_spec['psi_dot_max'] = 5#np.deg2rad(45.0)
+            self.robot_spec['psi_dot_max'] = np.deg2rad(45.0)
         if 'f_max' not in self.robot_spec:
-            self.robot_spec['f_max'] = 50.0
+            self.robot_spec['f_max'] = 100.0
+        # f_min should be 0.0
         if 'mass' not in self.robot_spec:
             self.robot_spec['mass'] = 1.0
         self.df_dx = np.vstack([np.hstack([np.zeros([3,3]), np.eye(3),np.zeros([3,3])]),np.zeros([6,9])])
@@ -117,7 +121,7 @@ class Quad3D:
         X[8,0] = angle_normalize(X[8,0])
         return X
 
-    def nominal_input(self, X, goal, k_p = 1, k_d = 2, k_ang = 5):
+    def nominal_input(self, X, goal, k_p = 1.0, k_d = 2, k_ang = 5):
         '''
         nominal input for CBF-QP
         '''
@@ -180,17 +184,7 @@ class Quad3D:
         '''obs: [x, y, r]'''
         '''obstacles are infinite cylinders at x and y with radius r, extending in z direction'''
         '''X : [x y z vx vy yz phi theta psi]'''
-        obsX = obs[0:2]
-        d_min = obs[2][0] + robot_radius  # obs radius + robot radius
-
-        h = np.linalg.norm(X[0:2] - obsX[0:2])**2 - beta*d_min**2
-        # Lgh is zero => relative degree is 2
-        h_dot = 2 * (X[0:2] - obsX[0:2]).T @ (self.f(X)[0:2])
-
-        dh_dot_dx = np.hstack([np.atleast_2d(2 * self.f(X)[0:2]).T[0,:], 0,
-                               np.atleast_2d(2 * (X[0:2] - obsX[0:2])).T[0,:],
-                               np.zeros(4)])
-        return h, h_dot, dh_dot_dx
+        raise NotImplementedError("Cannot implement with nominal distance based CBF")
         
     def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta = 1.01):
         '''Discrete Time High Order CBF'''

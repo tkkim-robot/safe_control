@@ -71,7 +71,8 @@ class CBFQP:
             self.b1 = cp.Parameter((1, 1), value=np.zeros((1, 1)))
             objective = cp.Minimize(cp.sum_squares(self.u - self.u_ref))
             constraints = [self.A1 @ self.u + self.b1 >= 0,
-                           cp.abs(self.u[0]) <= self.robot_spec['f_max'], # FIXME: fix to 0.0
+                           self.u[0] <= self.robot_spec['f_max'],
+                            self.u[0] >= 0.0,
                            cp.abs(self.u[1]) <= self.robot_spec['phi_dot_max'],
                            cp.abs(self.u[2]) <= self.robot_spec['theta_dot_max'],
                            cp.abs(self.u[3]) <= self.robot_spec['psi_dot_max']]

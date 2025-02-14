@@ -145,8 +145,12 @@ class LocalTrackingController:
             self.fig = plt.figure()
         plt.ion()
         self.ax.set_xlabel("X")
-        self.ax.set_ylabel("Y")
+        if self.robot_spec['model'] in ['Quad2D', 'VTOL2D']:
+            self.ax.set_ylabel("Z")
+        else:
+            self.ax.set_ylabel("Y")
         self.ax.set_aspect(1)
+        self.fig.tight_layout()
         self.waypoints_scatter = self.ax.scatter(
             [], [], s=10, facecolors='g', edgecolors='g', alpha=0.5)
 
@@ -425,13 +429,13 @@ class LocalTrackingController:
 
         # 5. Raise an error if the QP is infeasible, or the robot collides with the obstacle
         collide = self.is_collide_unknown()
-        if self.pos_controller.status != 'optimal' or collide or self.robot.X[1, 0 ] > 14.0 or np.abs(self.robot.X[2,0]) > np.deg2rad(45): #FIXME:
+        if self.pos_controller.status != 'optimal' or collide:
+            cause = "Collision" if collide else "Infeasible"
             self.draw_infeasible()
-            print("Infeasible or Collision")
+            print(f"{cause} detected !!")
             if self.raise_error:
-                raise InfeasibleError("Infeasible or Collision")
-            else:
-                return -2
+                raise InfeasibleError(f"{cause} detected !!")
+            return -2
 
         # 6. Step the robot
         self.robot.step(u, self.u_att)
@@ -519,7 +523,7 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    model = 'Quad3D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'KinematicBicycle2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     waypoints = [
         [2, 2, math.pi/2],
@@ -573,17 +577,16 @@ def single_agent_main(control_type):
     elif model == 'Quad3D':
         robot_spec = {
             'model': 'Quad3D',
-            'f_max': 500.0, #500
+            'f_max': 100.0,
             'radius': 0.25
         }
         # override the waypoints with z axis
         waypoints = [
             [2, 2, 0, math.pi/2],
-            [2, 12, 4.0, 0],
-            [12, 12, -4, 0],
+            [2, 12, 1, 0],
+            [12, 12, -1, 0],
             [12, 2, 0, 0]
         ]
-        known_obs = np.array([[10, 12, .1]])
     elif model == 'VTOL2D':
         # VTOL has pretty different dynacmis, so create a special test case
         robot_spec = {
@@ -738,7 +741,7 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main('cbf_qp')
+    single_agent_main('mpc_cbf')
     # multi_agent_main('mpc_cbf', save_animation=True)
     # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
