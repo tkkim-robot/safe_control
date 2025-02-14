@@ -140,6 +140,7 @@ class MPCCBF:
                 model.set_expression('u_2', _u[2])
                 model.set_expression('u_3', _u[3]*180/3.14159)
                 model.set_expression('v', ca.hypot(_x[3], _x[4]))
+                model.set_expression('alpha', (_x[2] - ca.atan2(_x[4], _x[3]))*180/3.14159)
             else:
                 for i in range(self.n_controls):
                     model.set_expression('u_' + str(i), _u[i])
@@ -215,25 +216,29 @@ class MPCCBF:
             mpc.bounds['lower', '_x', 'x', 3] = -self.robot_spec['v_max']
             mpc.bounds['upper', '_x', 'x', 3] = self.robot_spec['v_max']
             mpc.bounds['lower', '_x', 'x', 4] = -self.robot_spec['descent_speed_max']
-            mpc.bounds['upper', '_x', 'x', 1] = 14.0
+            mpc.bounds['upper', '_x', 'x', 1] = 15.0
+            mpc.bounds['lower', '_x', 'x', 2] = -15.0*3.14159/180
+            mpc.bounds['upper', '_x', 'x', 2] = 15.0*3.14159/180
 
         mpc = self.set_tvp(mpc)
         mpc = self.set_cbf_constraint(mpc)
 
         mpc.setup()
-        if self.show_mpc_traj and self.robot_spec == 'VTOL2D':
+        if self.show_mpc_traj and self.robot_spec['model'] == 'VTOL2D':
             plt.ion()
             self.graphics = do_mpc.graphics.Graphics(mpc.data)
                         
             if self.robot_spec['model'] == 'VTOL2D':
-                self.fig, ax = plt.subplots(self.n_controls + 1, sharex=True)
+                self.fig, ax = plt.subplots(self.n_controls + 2, sharex=True)
                 ax[0].set_ylabel('d_front')
                 ax[1].set_ylabel('d_rear')
                 ax[2].set_ylabel('d_pusher')
                 ax[3].set_ylabel('elevator [\u00B0]')
 
                 ax[4].set_ylabel('v [m/s]')
+                ax[5].set_ylabel('alpha [\u00B0]')
                 self.graphics.add_line(var_type='_aux', var_name='v', axis=ax[self.n_controls])
+                self.graphics.add_line(var_type='_aux', var_name='alpha', axis=ax[self.n_controls+1])
             else: 
                 raise NotImplementedError('Model not implemented for MPC traj plot')
             
