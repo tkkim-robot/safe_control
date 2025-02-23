@@ -488,6 +488,7 @@ class LocalTrackingController:
 
         # 8. Step the robot
         self.robot.step(u, self.u_att)
+        self.u_pos = u
     
         if self.show_animation:
             self.robot.render_plot()
@@ -508,6 +509,9 @@ class LocalTrackingController:
             return -1  # all waypoints reached
         return beyond_flag
 
+    def get_control_input(self):
+        return self.u_pos
+    
     def draw_infeasible(self):
         if self.show_animation:
             self.robot.render_plot()
