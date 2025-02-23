@@ -32,7 +32,7 @@ class InfeasibleError(Exception):
 
 class LocalTrackingController:
     def __init__(self, X0, robot_spec, control_type='cbf_qp', dt=0.05,
-                 show_animation=False, save_animation=False, show_mpc_traj=False, raise_error=True, ax=None, fig=None, env=None):
+                 show_animation=False, save_animation=False, show_mpc_traj=False, raise_error=False, ax=None, fig=None, env=None):
 
         self.robot_spec = robot_spec
         self.control_type = control_type  # 'cbf_qp' or 'mpc_cbf'
@@ -556,7 +556,7 @@ class LocalTrackingController:
             ret = self.control_step()
             self.draw_plot()
             unexpected_beh += ret
-            if ret == -1:  # all waypoints reached
+            if ret == -1 or ret == -2:  # all waypoints reached
                 break
 
         self.export_video()

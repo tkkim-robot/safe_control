@@ -78,7 +78,7 @@ class MPCCBF:
             self.n_controls = 4 # override n_controls for Quad3D
             self.goal = np.array([0, 0, 0]) # override goal with z placeholder
         elif self.robot_spec['model'] == 'VTOL2D':
-            self.cbf_param['alpha1'] = 0.05
+            self.cbf_param['alpha1'] = 0.05 # 0.35
             self.cbf_param['alpha2'] = 0.05
             self.n_states = 6
             self.n_controls = 4 # override n_controls for VTOL2D
