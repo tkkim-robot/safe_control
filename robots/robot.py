@@ -214,6 +214,18 @@ class BaseRobot:
             self.yaw = self.X[2, 0]
         return self.X
 
+    def pseudo_step(self, U, U_att=None):
+        # wrap step function
+        self.U = U.reshape(-1, 1)
+        self.X = self.robot.pseudo_step(self.X, self.U)
+        self.U_att = U_att
+        if self.robot_spec['model'] == 'DoubleIntegrator2D' and self.U_att is not None:
+            self.U_att = U_att.reshape(-1, 1)
+            self.yaw = self.robot.step_rotate(self.yaw, self.U_att)
+        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D']:
+            self.yaw = self.X[2, 0]
+        return self.X
+
     def render_plot(self):
         self.body.set_offsets([self.X[0, 0], self.X[1, 0]])
 
