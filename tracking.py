@@ -397,7 +397,7 @@ class LocalTrackingController:
         # 6. Step the robot
         self.robot.step(u, self.u_att)
         # Generate the pseudo state for the next step for hardware implementation
-        self.next_x_according_to_dynamics = self.robot.pseudo_step(u, self.u_att)
+        self.next_x_according_to_dynamics, self.yaw_pseudo = self.robot.pseudo_step(u, self.u_att)
         # print("step", x)
         self.control_input = u
         if self.show_animation:
@@ -420,7 +420,7 @@ class LocalTrackingController:
         return self.control_input
 
     def get_full_state(self):
-        return self.next_x_according_to_dynamics
+        return self.next_x_according_to_dynamics, self.yaw_pseudo # TODO: yaw pseudo is a temporary fix
 
     def draw_infeasible(self):
         if self.show_animation:

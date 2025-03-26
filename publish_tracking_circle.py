@@ -66,8 +66,8 @@ class TrackingControllerNode(Node):
 
         # Square trajectory of length 1m centered at origin
         self.waypoints = np.array([[0.5, 0.5, 0.0, 0.0, 0.0], [0.5, -0.5, 0.0, 0.0, 0.0], [-0.5, -0.5, 0.0, 0.0, 0.0], [-0.5, 0.5, 0.0, 0.0, 0.0]], dtype=np.float32)
-        # Repeating waypoints 10 times
-        self.waypoints = np.tile(self.waypoints, (4, 1))
+        # Repeating waypoints 2 times
+        self.waypoints = np.tile(self.waypoints, (2, 1))
 
         # Generate waypoints for infinity
         # self.waypoints = np.array([
@@ -192,18 +192,23 @@ class TrackingControllerNode(Node):
 
         ret = self.tracking_controller.control_step()
         u = self.tracking_controller.get_control_input()
-        x_next = self.tracking_controller.get_full_state()
+        x_next, yaw_pseudo = self.tracking_controller.get_full_state()
         # print("x_next: ", x_next)
 
         # concatenating x_next and u
-        full_state_u = np.concatenate((x_next, u), axis=0)
-        # TODO: @TK, append yaw state and ctrl to full_state_u and send on msg (Not implemented)
+        yaw_rate_pseudo = 0.2
+        print("x_next: ", x_next)
+        print("u: ", u)
+        print("yaw_pseudo: ", yaw_pseudo)
+        print("yaw_rate_pseudo: ", yaw_rate_pseudo)
+        full_state_u = np.concatenate((x_next, u, [[yaw_pseudo]], [[yaw_rate_pseudo]], [[pose.z]]), axis=0)
+        # TODO: Append yaw state and ctrl to full_state_u and send on msg (Not implemented) 
         print("full_state_u: ", full_state_u)
 
         if ret == -2 or self.infeasible_flag == True:
             print("Infeasible!!!!")
             self.infeasible_flag = True
-            u = np.array([0.2, 0.0, 0.0, 0.0, 0.0, 0.0])
+            u = np.array([0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         # Convert control input to Float32MultiArray and publish
         msg = Float32MultiArray()
         msg.data = [float(val) for val in full_state_u.flatten()]
@@ -214,7 +219,7 @@ class TrackingControllerNode(Node):
             # Infeasible
             print("Reached all the waypoints")
             msg = Float32MultiArray()
-            msg.data = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            msg.data = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
             self.publisher_.publish(msg)
             self.get_logger().info(f'Publishing: {msg.data}')
 
