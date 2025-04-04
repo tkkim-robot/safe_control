@@ -409,6 +409,14 @@ class LocalTrackingController:
 
             self.fig.canvas.draw_idle()
             self.fig.canvas.flush_events()
+
+            # move the square frame of the plot based on robot's x position
+            # if self.robot_spec['model'] in ['VTOL2D']:
+            #     x = np.clip(self.robot.X[0, 0], 7.5, 67.5)
+            #     self.ax.set_xlim(x-7.5, x+7.5)
+            #     self.ax.set_ylim(0, 15)
+            #     self.fig.tight_layout()
+                
             plt.pause(pause)
             if self.save_animation:
                 self.ani_idx += 1
