@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 import matplotlib.patches as patches
 
 from shapely.geometry import Polygon, Point, LineString
@@ -224,6 +225,36 @@ class BaseRobot:
                             linewidth=1, edgecolor='black', facecolor='brown', alpha=0.9)
             )
 
+            # Define velocity indicator 
+            self.max_indicator_width = 1.5    # Maximum length corresponding to full speed
+            self.indicator_height = 0.15    
+
+            # Create the velocity indicator (a left-aligned rectangle starting at 0 width)
+            self.velocity_indicator = patches.Rectangle(
+                (0, 0),           
+                width=0.0,       
+                height=self.indicator_height,
+                color='green',   
+                zorder=5
+            )
+            ax.add_patch(self.velocity_indicator)
+
+            # Create the frame for the velocity indicator using two black lines.
+            self.velocity_frame_h, = ax.plot([0, self.max_indicator_width], [0, 0],
+                                            color='black', linewidth=2, zorder=4)
+            self.velocity_frame_v, = ax.plot([0, 0], [0, self.indicator_height],
+                                            color='black', linewidth=2, zorder=4)
+
+            # Create a text label to display the velocity in m/s.
+            self.velocity_text = ax.text(
+                0, 0, "0.0 m/s",
+                fontsize=14,
+                ha='center',
+                va='bottom',
+                zorder=6
+            )
+
+
         else:
             # Robot's body represented as a scatter plot
             # self.body = ax.scatter(
@@ -385,6 +416,38 @@ class BaseRobot:
             self.rear_rect.set_transform(transform_rear)
             self.thrust_rect.set_transform(transform_thrust)
             self.elevator_rect.set_transform(transform_elev)
+
+            # Update the velocity indicator and text
+            vtol_x = self.X[0, 0]
+            vtol_z = self.X[1, 0]
+            vtol_vx = self.X[3, 0]
+            vtol_vz = self.X[4, 0]
+            speed = np.linalg.norm([vtol_vx, vtol_vz])
+
+            # Calculate ratio (0 to 1) for full speed mapping (20 m/s = full bar)
+            ratio = min(speed / self.robot_spec['v_max'], 1.0)
+            cmap = cm.get_cmap('rainbow')
+            color = cmap(ratio)
+
+            # Compute bar length proportional to speed (from 0 to maximum indicator width)
+            width = self.max_indicator_width * ratio
+            base_x = vtol_x - self.max_indicator_width / 2.0
+            base_y = vtol_z + 0.8  # Adjust vertical offset as needed
+
+            # Update the velocity indicator
+            self.velocity_indicator.set_xy((base_x+0.05, base_y+0.05))
+            self.velocity_indicator.set_width(width)
+            self.velocity_indicator.set_height(self.indicator_height)
+            self.velocity_indicator.set_color(color)
+
+            self.velocity_frame_h.set_data([base_x, base_x + self.max_indicator_width+0.05],
+                                        [base_y, base_y])
+            self.velocity_frame_v.set_data([base_x, base_x],
+                                        [base_y, base_y + self.indicator_height+0.05])
+
+            self.velocity_text.set_position((base_x + self.max_indicator_width / 2,
+                                            base_y + self.indicator_height + 0.2))
+            self.velocity_text.set_text(f"{speed:.1f} m/s")
         else:
             # self.body.set_offsets([self.X[0, 0], self.X[1, 0]])
             self.body.center = self.X[0, 0], self.X[1, 0]
