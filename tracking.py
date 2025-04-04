@@ -142,7 +142,7 @@ class LocalTrackingController:
         self.current_directory_path = os.getcwd()
         if not os.path.exists(self.current_directory_path + "/output/animations"):
             os.makedirs(self.current_directory_path + "/output/animations")
-        self.save_per_frame = 2
+        self.save_per_frame = 1
         self.ani_idx = 0
 
     def setup_animation_plot(self):
@@ -152,11 +152,11 @@ class LocalTrackingController:
         if self.fig is None:
             self.fig = plt.figure()
         plt.ion()
-        self.ax.set_xlabel("X")
+        self.ax.set_xlabel("X [m]")
         if self.robot_spec['model'] in ['Quad2D', 'VTOL2D']:
-            self.ax.set_ylabel("Z")
+            self.ax.set_ylabel("Z [m]")
         else:
-            self.ax.set_ylabel("Y")
+            self.ax.set_ylabel("Y [m]")
         self.ax.set_aspect(1)
         self.fig.tight_layout()
         self.waypoints_scatter = self.ax.scatter(
@@ -414,7 +414,9 @@ class LocalTrackingController:
                 self.ani_idx += 1
                 if force_save or self.ani_idx % self.save_per_frame == 0:
                     plt.savefig(self.current_directory_path +
-                                "/output/animations/" + "t_step_" + str(self.ani_idx//self.save_per_frame).zfill(4) + ".png")
+                                "/output/animations/" + "t_step_" + str(self.ani_idx//self.save_per_frame).zfill(4) + ".png", dpi=300)
+                    # plt.savefig(self.current_directory_path +
+                    #             "/output/animations/" + "t_step_" + str(self.ani_idx//self.save_per_frame).zfill(4) + ".svg")
 
     def control_step(self):
         '''
@@ -556,10 +558,29 @@ class LocalTrackingController:
         print("Start following the generated path.")
         unexpected_beh = 0
 
+        import csv
+        # create a csv file to record the states, control inputs, and CBF parameters
+        with open('output.csv', 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(['states', 'control_inputs', 'alpha1', 'alpha2'])
+
         for _ in range(int(tf / self.dt)):
             ret = self.control_step()
             self.draw_plot()
             unexpected_beh += ret
+
+            # get states of the robot
+            robot_state = self.robot.X[:,0].flatten()
+            control_input = self.get_control_input().flatten()
+            print(f"Robot state: {robot_state}")
+            print(f"Control input: {control_input}")
+
+            # append the states, control inputs, and CBF parameters by appending to csv
+            with open('output.csv', 'a', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(np.append(robot_state, np.append(control_input, [self.pos_controller.cbf_param['alpha1'], self.pos_controller.cbf_param['alpha2']])))
+
+
             if ret == -1 or ret == -2:  # all waypoints reached
                 break
 
@@ -702,10 +723,8 @@ def single_agent_main(control_type):
         ])
 
         env_width = 75.0
-        env_height = 15.0
-        plt.rcParams['figure.figsize'] = [12, 8]
-
-
+        env_height = 20.0
+        plt.rcParams['figure.figsize'] = [12, 5]
 
     waypoints = np.array(waypoints, dtype=np.float64)
 
@@ -728,8 +747,8 @@ def single_agent_main(control_type):
                                                   control_type=control_type,
                                                   dt=dt,
                                                   show_animation=True,
-                                                  save_animation=True,
-                                                  show_mpc_traj=True,
+                                                  save_animation=False,
+                                                  show_mpc_traj=False,
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
 
