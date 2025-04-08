@@ -333,13 +333,24 @@ class MPCCBF:
             self.obs = np.tile(np.array([1000, 1000, 0, 0, 0]), (5, 1))
         else:
             num_obstacles = len(obs)
+            padded_obs = []
+            for ob in obs:
+                ob = np.array(ob)
+                if ob.shape[0] == 3:
+                    # Pad missing velocity fields with zeros
+                    ob = np.concatenate([ob, [0.0, 0.0]])
+                elif ob.shape[0] != 5:
+                    raise ValueError(f"Invalid obstacle format: {ob}")
+                padded_obs.append(ob)
+            padded_obs = np.array(padded_obs)
+
             if num_obstacles < 5:
                 # Add dummy obstacles for missing ones
                 dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0]), (5 - num_obstacles, 1))
-                self.obs = np.vstack([obs, dummy_obstacles])
+                self.obs = np.vstack([padded_obs, dummy_obstacles])
             else:
                 # Use the detected obstacles directly (up to 5)
-                self.obs = np.array(obs[:5])
+                self.obs = padded_obs[:5]
 
     def solve_control_problem(self, robot_state, control_ref, nearest_obs):
         # Set initial state and reference
