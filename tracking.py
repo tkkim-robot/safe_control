@@ -32,7 +32,7 @@ class InfeasibleError(Exception):
 
 class LocalTrackingController:
     def __init__(self, X0, robot_spec, control_type='cbf_qp', dt=0.05,
-                 show_animation=False, save_animation=False, show_mpc_traj=False, raise_error=False, ax=None, fig=None, env=None):
+                 show_animation=False, save_animation=False, show_mpc_traj=False, enable_rotation=True, raise_error=False, ax=None, fig=None, env=None):
 
         self.robot_spec = robot_spec
         self.control_type = control_type  # 'cbf_qp' or 'mpc_cbf'
@@ -95,6 +95,7 @@ class LocalTrackingController:
         self.show_animation = show_animation
         self.save_animation = save_animation
         self.show_mpc_traj = show_mpc_traj
+        self.enable_rotation = enable_rotation
         self.raise_error = raise_error
         if self.save_animation:
             self.setup_animation_saving()
@@ -375,6 +376,8 @@ class LocalTrackingController:
                                     self.waypoints[0][0] - self.robot.X[0, 0])
             if self.robot_spec['model'] in ['Quad2D', 'VTOL2D']: # These skip 'rotate' state since there is no yaw angle
                 self.state_machine = 'track'
+            if not self.enable_rotation:
+                self.state_machine = 'track'
             if abs(current_angle - goal_angle) > self.rotation_threshold:
                 return self.waypoints[0][:n_pos]
             else:
@@ -438,7 +441,10 @@ class LocalTrackingController:
         # update state machine
         if self.state_machine == 'stop':
             if self.robot.has_stopped():
-                self.state_machine = 'rotate'
+                if self.enable_rotation:
+                    self.state_machine = 'rotate'
+                else:
+                    self.state_machine = 'track'
                 self.goal = self.update_goal()
         else:
             self.goal = self.update_goal()
