@@ -109,6 +109,7 @@ class SetpointAssignerNode(Node):
         # print("Setpoint: ", self.msg)
         self.publisher.publish(self.msg)
         self.print_rate()  # Call function to print publishing rate
+        self.print_delta_u()  # Call function to print delta u full state
 
     def print_rate(self):
         current_publish_time = time.time()
@@ -135,6 +136,30 @@ class SetpointAssignerNode(Node):
             print("Holding position")
         else:
             self.stopped_receiving = False
+
+    def print_delta_u(self):
+        # Compute the delta using higher precision (float64)
+        current_state = np.array(self.full_state_u, dtype=np.float64)
+        previous_state = np.array(self.prev_state, dtype=np.float64)
+        delta = current_state - previous_state
+        print("Delta u full state array:", np.round(delta, decimals=6))
+
+        # Set thresholds for each control signal locally
+        # Order: [x, y, z_des, vx, vy, unused, acc_x, acc_y, unused, yaw, yaw_rate]
+        thresholds = np.array([0.05, 0.05, 0.05, 0.1, 0.1, 0.0, 0.2, 0.2, 0.0, 0.1, 0.1], dtype=np.float64)
+
+        # Check if the absolute delta for any control signal exceeds its threshold
+        if np.any(np.abs(delta) > thresholds):
+            print("Delta exceeds threshold for one or more control signals. Executing hold logic: Holding position.")
+            # Execute hold logic: zero out velocity and acceleration components
+            self.full_state_u[3:6] = 0.0  # Zero velocities (vx, vy, unused index)
+            self.full_state_u[6:9] = 0.0  # Zero accelerations (acc_x, acc_y, unused index)
+        else:
+            print("Delta within acceptable limits.")
+
+        # Update the stored previous state for the next comparison
+        self.prev_state = current_state.copy()
+
 
 def main(args=None):
     rclpy.init(args=args)
