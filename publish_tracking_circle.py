@@ -65,7 +65,7 @@ class TrackingControllerNode(Node):
         #     for theta in np.linspace(0, 2 * np.pi, num_waypoints, endpoint=False)], dtype=np.float32)
 
         # Square trajectory of length 1m centered at origin
-        self.waypoints = np.array([[0.5, 0.5, 0.0, 0.0, 0.0], [0.5, -0.5, 0.0, 0.0, 0.0], [-0.5, -0.5, 0.0, 0.0, 0.0], [-0.5, 0.5, 0.0, 0.0, 0.0]], dtype=np.float32)
+        self.waypoints = np.array([[0.5, 0.5, 0.0, 0.0, 0.0], [0.5, -0.5, 0.0, 0.0, 0.0], [-0.5, -0.5, 0.0, 0.0, 0.0], [-0.5, 0.5, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0]], dtype=np.float32)
         # Repeating waypoints 2 times
         self.waypoints = np.tile(self.waypoints, (2, 1))
 
@@ -104,7 +104,7 @@ class TrackingControllerNode(Node):
             'model': 'DoubleIntegrator2D',
             'w_max': 1.5,
             'a_max': 0.5,
-            'v_max': 1.1,
+            'v_max': 1.0,
             'fov_angle': 70.0,
             'cam_range': 3.0
         }
@@ -191,12 +191,12 @@ class TrackingControllerNode(Node):
         #print(self.tracking_controller.robot.X)
 
         ret = self.tracking_controller.control_step()
-        u = self.tracking_controller.get_control_input()
-        x_next, yaw_pseudo = self.tracking_controller.get_full_state()
+        u = self.tracking_controller.get_control_input() # ax, ay
+        x_next, yaw_pseudo = self.tracking_controller.get_full_state() 
         # print("x_next: ", x_next)
 
         # concatenating x_next and u
-        yaw_rate_pseudo = 0.2
+        yaw_rate_pseudo = -0.2
         print("x_next: ", x_next)
         print("u: ", u)
         print("yaw_pseudo: ", yaw_pseudo)
