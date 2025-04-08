@@ -56,12 +56,6 @@ class SetpointAssignerNode(Node):
         # print(msg.data)
         self.control_flag = True
 
-        # This flag might have been set by the periodic check
-        if self.stopped_receiving:
-            print("SHOULD STOP MOVING")
-        else:
-            print("Safe to continue moving")
-
         # Update last received time since we just received a message
         self.last_received_time = time.time()
 
@@ -133,9 +127,12 @@ class SetpointAssignerNode(Node):
             rate = 1.0 / dt
         else:
             rate = float('inf')
-        # print("Receiving rate: {:.2f} Hz".format(rate))
+        print("Receiving rate: {:.2f} Hz".format(rate))
         if rate < 3.0:
             self.stopped_receiving = True
+            print("should stop moving")
+            self.full_state_u = np.array([self.x, self.y, self.z_des, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+            print("Holding position")
         else:
             self.stopped_receiving = False
 
