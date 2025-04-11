@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
 import matplotlib.patches as patches
 
 from shapely.geometry import Polygon, Point, LineString
@@ -41,7 +40,8 @@ class BaseRobot:
         if 'robot_id' not in robot_spec:
             self.robot_spec['robot_id'] = 0
 
-        colors = plt.get_cmap('Pastel1').colors  # color palette
+        colors = plt.colormaps.get_cmap('Pastel1').colors  # color palette
+
         color = colors[self.robot_spec['robot_id'] % len(colors) + 1]
 
         if 'radius' not in self.robot_spec:
@@ -426,7 +426,7 @@ class BaseRobot:
 
             # Calculate ratio (0 to 1) for full speed mapping (20 m/s = full bar)
             ratio = min(speed / self.robot_spec['v_max'], 1.0)
-            cmap = cm.get_cmap('rainbow')
+            cmap = plt.colormaps.get_cmap('rainbow')
             color = cmap(ratio)
 
             # Compute bar length proportional to speed (from 0 to maximum indicator width)
@@ -518,7 +518,7 @@ class BaseRobot:
         v = X[3, 0]
 
         # Get colors for Collision Cone edges
-        colors = plt.get_cmap('viridis')(np.linspace(0, 1, len(obs_list)))
+        colors = plt.colormaps.get_cmap('viridis')(np.linspace(0, 1, len(obs_list)))
 
         for i, obs in enumerate(obs_list):
             obs = np.array(obs).flatten()
