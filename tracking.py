@@ -32,11 +32,16 @@ class InfeasibleError(Exception):
 
 
 class LocalTrackingController:
-    def __init__(self, X0, robot_spec, controller_type='cbf_qp', dt=0.05,
-                 show_animation=False, save_animation=False, show_mpc_traj=False, enable_rotation=True, raise_error=False, ax=None, fig=None, env=None):
+    def __init__(self, X0, robot_spec,
+                 controller_type={'pos': 'mpc_cbf', 'att': 'velocity_tracking_yaw'},
+                 dt=0.05,
+                 show_animation=False, save_animation=False, show_mpc_traj=False,
+                 enable_rotation=True, raise_error=False,
+                 ax=None, fig=None, env=None):
 
         self.robot_spec = robot_spec
-        self.controller_type = controller_type  # 'cbf_qp' or 'mpc_cbf'
+        self.pos_controller_type = controller_type['pos']  # 'cbf_qp' or 'mpc_cbf'
+        self.att_controller_type = controller_type['att']
         self.dt = dt
 
         self.state_machine = 'idle'  # Can be 'idle', 'track', 'stop', 'rotate'
@@ -120,25 +125,33 @@ class LocalTrackingController:
 
         # Setup control problem
         self.setup_robot(X0)
-        self.controller_type = controller_type
         self.num_constraints = 5 # number of max obstacle constraints to consider in the controller
-        if controller_type == 'cbf_qp':
+        if self.pos_controller_type == 'cbf_qp':
             from position_control.cbf_qp import CBFQP
             self.pos_controller = CBFQP(self.robot, self.robot_spec)
-        elif controller_type == 'mpc_cbf':
+        elif self.pos_controller_type == 'mpc_cbf':
             from position_control.mpc_cbf import MPCCBF
             self.pos_controller = MPCCBF(self.robot, self.robot_spec, show_mpc_traj=self.show_mpc_traj)
-        elif controller_type == 'optimal_decay_cbf_qp':
+        elif self.pos_controller_type == 'optimal_decay_cbf_qp':
             from position_control.optimal_decay_cbf_qp import OptimalDecayCBFQP
             self.pos_controller = OptimalDecayCBFQP(self.robot, self.robot_spec)
-        elif controller_type == 'optimal_decay_mpc_cbf':
+        elif self.pos_controller_type == 'optimal_decay_mpc_cbf':
             from position_control.optimal_decay_mpc_cbf import OptimalDecayMPCCBF
             self.pos_controller = OptimalDecayMPCCBF(self.robot, self.robot_spec)
+        else:
+            raise ValueError(
+                f"Unknown controller type: {self.pos_controller_type}")
             
         if self.enable_rotation:
-            if 
-            from attitude_control.simple_attitude import SimpleAttitude
-            self.att_controller = SimpleAttitude(self.robot, self.robot_spec)
+            if self.att_controller_type == 'simple':
+                from attitude_control.simple_attitude import SimpleAttitude
+                self.att_controller = SimpleAttitude(self.robot, self.robot_spec)
+            elif self.att_controller_type == 'velocity_tracking_yaw':
+                from attitude_control.velocity_tracking_yaw import VelocityTrackingYaw
+                self.att_controller = VelocityTrackingYaw(self.robot, self.robot_spec)
+            else:
+                raise ValueError(
+                    f"Unknown attitude controller type: {self.att_controller_type}")
         else:
             self.att_controller = None
         self.goal = None
@@ -476,18 +489,20 @@ class LocalTrackingController:
             u_ref = self.robot.stop()
         else:
             # Normal waypoint tracking
-            if self.controller_type == 'optimal_decay_cbf_qp':
+            if self.pos_controller_type == 'optimal_decay_cbf_qp':
                 u_ref = self.robot.nominal_input(self.goal, k_omega=3.0, k_a=0.5, k_v=0.5)
             else:
                 u_ref = self.robot.nominal_input(self.goal)
-            self.u_att = self.att_controller.solve_control_problem(
-                    self.robot.X)
+            if self.att_controller is not None:
+                # att_controller is only defined for integrators
+                self.u_att = self.att_controller.solve_control_problem(
+                        self.robot.X)
 
         # 4. Update the CBF constraints & 5. Solve the control problem & 6. Draw Collision Cones for C3BF
         control_ref = {'state_machine': self.state_machine,
                        'u_ref': u_ref,
                        'goal': self.goal}
-        if self.controller_type == 'optimal_decay_cbf_qp' or self.controller_type == 'cbf_qp':
+        if self.pos_controller_type in ['optimal_decay_cbf_qp', 'cbf_qp']:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_obs)
             self.robot.draw_collision_cone(self.robot.X, [self.nearest_obs], self.ax)
@@ -859,7 +874,8 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main('mpc_cbf')
+    #single_agent_main(controller_type={'pos': 'mpc_cbf'})
+    single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'simple'})
     # multi_agent_main('mpc_cbf', save_animation=True)
     # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
