@@ -32,11 +32,11 @@ class InfeasibleError(Exception):
 
 
 class LocalTrackingController:
-    def __init__(self, X0, robot_spec, control_type='cbf_qp', dt=0.05,
+    def __init__(self, X0, robot_spec, controller_type='cbf_qp', dt=0.05,
                  show_animation=False, save_animation=False, show_mpc_traj=False, enable_rotation=True, raise_error=False, ax=None, fig=None, env=None):
 
         self.robot_spec = robot_spec
-        self.control_type = control_type  # 'cbf_qp' or 'mpc_cbf'
+        self.controller_type = controller_type  # 'cbf_qp' or 'mpc_cbf'
         self.dt = dt
 
         self.state_machine = 'idle'  # Can be 'idle', 'track', 'stop', 'rotate'
@@ -120,24 +120,27 @@ class LocalTrackingController:
 
         # Setup control problem
         self.setup_robot(X0)
-        self.control_type = control_type
+        self.controller_type = controller_type
         self.num_constraints = 5 # number of max obstacle constraints to consider in the controller
-        if control_type == 'cbf_qp':
+        if controller_type == 'cbf_qp':
             from position_control.cbf_qp import CBFQP
             self.pos_controller = CBFQP(self.robot, self.robot_spec)
-        elif control_type == 'mpc_cbf':
+        elif controller_type == 'mpc_cbf':
             from position_control.mpc_cbf import MPCCBF
             self.pos_controller = MPCCBF(self.robot, self.robot_spec, show_mpc_traj=self.show_mpc_traj)
-        elif control_type == 'optimal_decay_cbf_qp':
+        elif controller_type == 'optimal_decay_cbf_qp':
             from position_control.optimal_decay_cbf_qp import OptimalDecayCBFQP
             self.pos_controller = OptimalDecayCBFQP(self.robot, self.robot_spec)
-        elif control_type == 'optimal_decay_mpc_cbf':
+        elif controller_type == 'optimal_decay_mpc_cbf':
             from position_control.optimal_decay_mpc_cbf import OptimalDecayMPCCBF
             self.pos_controller = OptimalDecayMPCCBF(self.robot, self.robot_spec)
             
-        if True:  # TODO: currently only have one attitude controller
+        if self.enable_rotation:
+            if 
             from attitude_control.simple_attitude import SimpleAttitude
             self.att_controller = SimpleAttitude(self.robot, self.robot_spec)
+        else:
+            self.att_controller = None
         self.goal = None
 
     def setup_animation_saving(self):
@@ -440,7 +443,6 @@ class LocalTrackingController:
             - 1: visibility violation
         '''
         # update state machine
-        print(self.state_machine)
         if self.state_machine == 'stop':
             if self.robot.has_stopped():
                 if self.enable_rotation:
@@ -473,7 +475,8 @@ class LocalTrackingController:
         elif self.goal is None:
             u_ref = self.robot.stop()
         else:
-            if self.control_type == 'optimal_decay_cbf_qp':
+            # Normal waypoint tracking
+            if self.controller_type == 'optimal_decay_cbf_qp':
                 u_ref = self.robot.nominal_input(self.goal, k_omega=3.0, k_a=0.5, k_v=0.5)
             else:
                 u_ref = self.robot.nominal_input(self.goal)
@@ -484,7 +487,7 @@ class LocalTrackingController:
         control_ref = {'state_machine': self.state_machine,
                        'u_ref': u_ref,
                        'goal': self.goal}
-        if self.control_type == 'optimal_decay_cbf_qp' or self.control_type == 'cbf_qp':
+        if self.controller_type == 'optimal_decay_cbf_qp' or self.controller_type == 'cbf_qp':
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_obs)
             self.robot.draw_collision_cone(self.robot.X, [self.nearest_obs], self.ax)
@@ -612,7 +615,7 @@ class LocalTrackingController:
         return unexpected_beh
 
 
-def single_agent_main(control_type):
+def single_agent_main(controller_type):
     dt = 0.05
     model = 'DoubleIntegrator2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
@@ -761,7 +764,7 @@ def single_agent_main(control_type):
     env_handler = env.Env()
 
     tracking_controller = LocalTrackingController(x_init, robot_spec,
-                                                  control_type=control_type,
+                                                  controller_type=controller_type,
                                                   dt=dt,
                                                   show_animation=True,
                                                   save_animation=False,
@@ -775,7 +778,7 @@ def single_agent_main(control_type):
     tracking_controller.set_waypoints(waypoints)
     unexpected_beh = tracking_controller.run_all_steps(tf=100)
 
-def multi_agent_main(control_type, save_animation=False):
+def multi_agent_main(controller_type, save_animation=False):
     dt = 0.05
 
     # temporal
@@ -806,7 +809,7 @@ def multi_agent_main(control_type, save_animation=False):
 
     robot_spec['robot_id'] = 0
     controller_0 = LocalTrackingController(x_init, robot_spec,
-                                           control_type=control_type,
+                                           controller_type=controller_type,
                                            dt=dt,
                                            show_animation=True,
                                            save_animation=save_animation,
@@ -826,7 +829,7 @@ def multi_agent_main(control_type, save_animation=False):
 
     robot_spec['robot_id'] = 1
     controller_1 = LocalTrackingController(x_goal, robot_spec,
-                                           control_type=control_type,
+                                           controller_type=controller_type,
                                            dt=dt,
                                            show_animation=True,
                                            save_animation=False,
