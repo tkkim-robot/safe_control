@@ -33,15 +33,15 @@ class InfeasibleError(Exception):
 
 class LocalTrackingController:
     def __init__(self, X0, robot_spec,
-                 controller_type={'pos': 'mpc_cbf', 'att': 'velocity_tracking_yaw'},
+                 controller_type=None,
                  dt=0.05,
                  show_animation=False, save_animation=False, show_mpc_traj=False,
                  enable_rotation=True, raise_error=False,
                  ax=None, fig=None, env=None):
 
         self.robot_spec = robot_spec
-        self.pos_controller_type = controller_type['pos']  # 'cbf_qp' or 'mpc_cbf'
-        self.att_controller_type = controller_type['att']
+        self.pos_controller_type = controller_type.get('pos', 'cbf_qp')  # 'cbf_qp' or 'mpc_cbf'
+        self.att_controller_type = controller_type.get('att', 'velocity_tracking_yaw')  # 'simple' or 'velocity_tracking_yaw'
         self.dt = dt
 
         self.state_machine = 'idle'  # Can be 'idle', 'track', 'stop', 'rotate'
@@ -493,10 +493,6 @@ class LocalTrackingController:
                 u_ref = self.robot.nominal_input(self.goal, k_omega=3.0, k_a=0.5, k_v=0.5)
             else:
                 u_ref = self.robot.nominal_input(self.goal)
-            if self.att_controller is not None:
-                # att_controller is only defined for integrators
-                self.u_att = self.att_controller.solve_control_problem(
-                        self.robot.X)
 
         # 4. Update the CBF constraints & 5. Solve the control problem & 6. Draw Collision Cones for C3BF
         control_ref = {'state_machine': self.state_machine,
@@ -512,7 +508,13 @@ class LocalTrackingController:
             self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)
         plt.figure(self.fig.number)
 
-        # 7. Raise an error if the QP is infeasible, or the robot collides with the obstacle
+        # 7. Update the attitude controller
+        if self.att_controller is not None:
+            # att_controller is only defined for integrators
+            self.u_att = self.att_controller.solve_control_problem(
+                    self.robot.X, self.robot.yaw, u)
+
+        # 8. Raise an error if the QP is infeasible, or the robot collides with the obstacle
         collide = self.is_collide_unknown()
         if self.pos_controller.status != 'optimal' or collide:
             cause = "Collision" if collide else "Infeasible"
@@ -522,14 +524,14 @@ class LocalTrackingController:
                 raise InfeasibleError(f"{cause} detected !!")
             return -2
 
-        # 8. Step the robot
+        # 9. Step the robot
         self.robot.step(u, self.u_att)
         self.u_pos = u
     
         if self.show_animation:
             self.robot.render_plot()
 
-        # 9. Update sensing information
+        # 10. Update sensing information
         if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
             self.robot.update_sensing_footprints()
             self.robot.update_safety_area()
@@ -874,8 +876,8 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    #single_agent_main(controller_type={'pos': 'mpc_cbf'})
-    single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'simple'})
+    single_agent_main(controller_type={'pos': 'mpc_cbf'})
+    #single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'simple'})
     # multi_agent_main('mpc_cbf', save_animation=True)
     # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')

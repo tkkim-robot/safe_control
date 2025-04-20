@@ -13,5 +13,8 @@ class SimpleAttitude:
     def setup_control_problem(self):
         pass
 
-    def solve_control_problem(self, robot_state):
+    def solve_control_problem(self,
+                              robot_state: np.ndarray,
+                              current_yaw: float,
+                              u: np.ndarray) -> float:
         return np.array([self.yaw_rate_const]).reshape(-1, 1)

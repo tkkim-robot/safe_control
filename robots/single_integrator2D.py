@@ -38,6 +38,8 @@ class SingleIntegrator2D:
 
         if 'v_max' not in self.robot_spec:
             self.robot_spec['v_max'] = 1.0
+        if 'w_max' not in self.robot_spec:
+            self.robot_spec['w_max'] = 0.5
 
     def f(self, X, casadi=False):
         if casadi:

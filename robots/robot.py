@@ -70,6 +70,15 @@ class BaseRobot:
             # X0: [x, y]
             self.set_orientation(self.X[2, 0])
             self.X = self.X[0:2]
+        elif self.robot_spec['model'] == 'DoubleIntegrator2D':
+            try:
+                from double_integrator2D import DoubleIntegrator2D
+            except ImportError:
+                from robots.double_integrator2D import DoubleIntegrator2D
+            self.robot = DoubleIntegrator2D(dt, robot_spec)
+            # X0: [x, y, vx, vy, theta]
+            self.set_orientation(self.X[4, 0])
+            self.X = self.X[0:4]  # Remove the yaw angle from the state
         elif self.robot_spec['model'] == 'Unicycle2D':
             try:
                 from unicycle2D import Unicycle2D
@@ -84,15 +93,6 @@ class BaseRobot:
                 from robots.dynamic_unicycle2D import DynamicUnicycle2D
             self.robot = DynamicUnicycle2D(dt, robot_spec)
             self.yaw = self.X[2, 0]
-        elif self.robot_spec['model'] == 'DoubleIntegrator2D':
-            try:
-                from double_integrator2D import DoubleIntegrator2D
-            except ImportError:
-                from robots.double_integrator2D import DoubleIntegrator2D
-            self.robot = DoubleIntegrator2D(dt, robot_spec)
-            # X0: [x, y, vx, vy, theta]
-            self.set_orientation(self.X[4, 0])
-            self.X = self.X[0:4]  # Remove the yaw angle from the state
         elif self.robot_spec['model'] == 'KinematicBicycle2D':
             try:
                 from kinematic_bicycle2D import KinematicBicycle2D
