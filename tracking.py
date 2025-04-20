@@ -4,6 +4,7 @@ import matplotlib.patches as patches
 import os
 import glob
 import subprocess
+import csv
 
 """
 Created on June 20th, 2024
@@ -239,9 +240,9 @@ class LocalTrackingController:
         Get the nearest 5 obstacles that haven't been passed by (i.e., they're still in front of the robot or the robot should still consider the obstacle).
         '''
         
-        if self.robot_spec['model'] == 'Quad2D':
+        if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'Quad2D']:
             angle_unpassed=np.pi*2
-        elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad3D', 'VTOL2D']:
+        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad3D', 'VTOL2D']:
             angle_unpassed=np.pi*1.2
         
         if len(detected_obs) != 0:
@@ -439,6 +440,7 @@ class LocalTrackingController:
             - 1: visibility violation
         '''
         # update state machine
+        print(self.state_machine)
         if self.state_machine == 'stop':
             if self.robot.has_stopped():
                 if self.enable_rotation:
@@ -566,17 +568,17 @@ class LocalTrackingController:
     #                                    "/output/animations/*.png"):
     #             os.remove(file_name)
     
-    def run_all_steps(self, tf=30):
+    def run_all_steps(self, tf=30, write_csv=False):
         print("===================================")
         print("============ Tracking =============")
         print("Start following the generated path.")
         unexpected_beh = 0
 
-        import csv
-        # create a csv file to record the states, control inputs, and CBF parameters
-        with open('output.csv', 'w', newline='') as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerow(['states', 'control_inputs', 'alpha1', 'alpha2'])
+        if write_csv:
+            # create a csv file to record the states, control inputs, and CBF parameters
+            with open('output.csv', 'w', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(['states', 'control_inputs', 'alpha1', 'alpha2'])
 
         for _ in range(int(tf / self.dt)):
             ret = self.control_step()
@@ -586,13 +588,14 @@ class LocalTrackingController:
             # get states of the robot
             robot_state = self.robot.X[:,0].flatten()
             control_input = self.get_control_input().flatten()
-            print(f"Robot state: {robot_state}")
-            print(f"Control input: {control_input}")
+            # print(f"Robot state: {robot_state}")
+            # print(f"Control input: {control_input}")
 
-            # append the states, control inputs, and CBF parameters by appending to csv
-            with open('output.csv', 'a', newline='') as csvfile:
-                writer = csv.writer(csvfile)
-                writer.writerow(np.append(robot_state, np.append(control_input, [self.pos_controller.cbf_param['alpha1'], self.pos_controller.cbf_param['alpha2']])))
+            if write_csv:
+                # append the states, control inputs, and CBF parameters by appending to csv
+                with open('output.csv', 'a', newline='') as csvfile:
+                    writer = csv.writer(csvfile)
+                    writer.writerow(np.append(robot_state, np.append(control_input, [self.pos_controller.cbf_param['alpha1'], self.pos_controller.cbf_param['alpha2']])))
 
 
             if ret == -1 or ret == -2:  # all waypoints reached
@@ -611,7 +614,7 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    model = 'DynamicUnicycle2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'DoubleIntegrator2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     waypoints = [
         [2, 2, math.pi/2],
