@@ -144,11 +144,15 @@ class LocalTrackingController:
             
         if self.enable_rotation:
             if self.att_controller_type == 'simple':
-                from attitude_control.simple_attitude import SimpleAttitude
-                self.att_controller = SimpleAttitude(self.robot, self.robot_spec)
+                from attitude_control.simple_attitude import SimpleAtt
+                self.att_controller = SimpleAtt(self.robot, self.robot_spec)
             elif self.att_controller_type == 'velocity_tracking_yaw':
                 from attitude_control.velocity_tracking_yaw import VelocityTrackingYaw
                 self.att_controller = VelocityTrackingYaw(self.robot, self.robot_spec)
+            elif self.att_controller_type == 'gatekeeper':
+                from attitude_control.gatekeeper_attitude import GatekeeperAtt
+                self.att_controller = GatekeeperAtt(self.robot, self.robot_spec)
+                self.att_controller.setup_pos_controller(self.pos_controller)
             else:
                 raise ValueError(
                     f"Unknown attitude controller type: {self.att_controller_type}")
@@ -509,7 +513,7 @@ class LocalTrackingController:
         plt.figure(self.fig.number)
 
         # 7. Update the attitude controller
-        if self.att_controller is not None:
+        if self.state_machine == 'track' and self.att_controller is not None:
             # att_controller is only defined for integrators
             self.u_att = self.att_controller.solve_control_problem(
                     self.robot.X, self.robot.yaw, u)
@@ -876,8 +880,9 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main(controller_type={'pos': 'mpc_cbf'})
+    #single_agent_main(controller_type={'pos': 'mpc_cbf'})
     #single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'simple'})
+    single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'gatekeeper'})
     # multi_agent_main('mpc_cbf', save_animation=True)
     # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
