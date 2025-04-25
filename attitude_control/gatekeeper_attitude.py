@@ -93,13 +93,20 @@ class GatekeeperAtt:
     def setup_pos_controller(self, pos_controller):
         self.pos_controller = pos_controller
 
+    def _dynamics(self, x, u):
+        x_col = np.array(x)
+        u_col = np.array(u)
+        # f and g live under self.robot.robot
+        dx = self.robot.robot.f(x_col) + self.robot.robot.g(x_col) @ u_col
+        return dx
+    
     def _update_pos_committed_trajectory(self):
         """
         Update the positional committed trajectory.
         """
 
-
         x_traj_casadi = self.pos_controller.mpc.opt_x_num['_x', :, 0, 0]
+        x_traj_casadi = x_traj_casadi[:-1] # remove the last step to make it same length as u_traj_casadi
         u_traj_casadi = self.pos_controller.mpc.opt_x_num['_u', :, 0]
         
         # Convert to numpy arrays - initialization
@@ -121,6 +128,33 @@ class GatekeeperAtt:
         # Update the class attributes
         self.pos_committed_x_traj = pos_x_traj
         self.pos_committed_u_traj = pos_u_traj
+
+        # --- now extend if too short ---
+        required_steps = int((self.nominal_horizon + self.backup_horizon) / self.dt) + 1
+        curr_len = self.pos_committed_x_traj.shape[0]
+        if curr_len < required_steps:
+            missing = required_steps - curr_len
+
+            x_ext = np.zeros((missing, state_dim))
+            u_ext = np.zeros((missing, control_dim))
+
+            last_x = self.pos_committed_x_traj[-1].reshape(-1, 1)
+            last_u = self.pos_committed_u_traj[-1].reshape(-1, 1)
+
+            for k in range(missing):
+                dx = self._dynamics(last_x, last_u)
+                last_x = last_x + dx * self.dt
+
+                x_ext[k, :] = last_x.flatten()
+                u_ext[k, :] = last_u.flatten()
+
+            # Concatenate in NumPy
+            self.pos_committed_x_traj = np.concatenate(
+                [self.pos_committed_x_traj, x_ext], axis=0
+            )
+            self.pos_committed_u_traj = np.concatenate(
+                [self.pos_committed_u_traj, u_ext], axis=0
+            )
 
     def _generate_trajectory(self, initial_yaw, horizon, controller):
         """
@@ -210,7 +244,6 @@ class GatekeeperAtt:
 
         if self.committed_x_traj is None and self.committed_u_traj is None:
             # initialize the committed trajectory
-            current_yaw = self.robot.get_orientation()
             init_x_traj, init_u_traj = self._generate_trajectory(current_yaw, self.backup_horizon, self.backup_controller)   
             self.committed_x_traj = init_x_traj
             self.committed_u_traj = init_u_traj 
@@ -234,7 +267,7 @@ class GatekeeperAtt:
             # Use the committed trajectory for the next control input
             #print("in nominal: control input", self.committed_u_traj[self.current_time_idx])
             #print("in nominal: control input", self.nominal_controller(self.robot.X, goal))
-            return self.committed_u_traj[self.current_time_idx] if self.nominal_controller is None else self.nominal_controller(self.robot.X)
+            return self.committed_u_traj[self.current_time_idx] if self.nominal_controller is None else self.nominal_controller(robot_state, current_yaw, u)
         else:
             #print("backup: control input", self.backup_controller(self.robot.X))
-            return self.committed_u_traj[self.current_time_idx] if self.backup_controller is None else self.backup_controller(self.robot.X)
+            return self.committed_u_traj[self.current_time_idx] if self.backup_controller is None else self.backup_controller(robot_state, current_yaw, u)
