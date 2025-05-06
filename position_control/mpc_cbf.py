@@ -255,6 +255,10 @@ class MPCCBF:
             # Set goal
             tvp_template['_tvp', :, 'goal'] = np.concatenate([self.goal, [0] * (self.n_states - self.goal.shape[0])])
 
+            for k in range(self.horizon):
+                traj_point = self.trajectory(t_now + k*self.dt)
+                tvp_template['_tvp', k, 'goal'] = np.concatenate([traj_point, [0] * (self.n_states - traj_point.shape[0])])
+
             # Handle up to 5 obstacles (if fewer than 5, substitute dummy obstacles)
             if self.obs is None:
                 # Before detecting any obstacle, set 5 dummy obstacles far away

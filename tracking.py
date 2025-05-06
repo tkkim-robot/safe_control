@@ -118,6 +118,7 @@ class LocalTrackingController:
             self.ax = plt.axes()  # dummy placeholder
 
         # Setup control problem
+        self.trajectory = None
         self.setup_robot(X0)
         self.control_type = control_type
         self.num_constraints = 5 # number of max obstacle constraints to consider in the controller
@@ -162,6 +163,8 @@ class LocalTrackingController:
         self.fig.tight_layout()
         self.waypoints_scatter = self.ax.scatter(
             [], [], s=10, facecolors='g', edgecolors='g', alpha=0.5)
+        self.trajectory_plot = self.ax.plot(
+            [], [], s=10, linestyle='dashed', alpha=0.5)
 
     def setup_robot(self, X0):
         from robots.robot import BaseRobot
@@ -197,6 +200,10 @@ class LocalTrackingController:
             n_pos = 3
             robot_pos = np.hstack([robot_pos, self.robot.get_z()])
             aug_waypoints = np.vstack((robot_pos, waypoints[:, :n_pos]))
+        elif self.robot_spec['model'] in ['VTOL2D']:
+            n_pos = 4
+            robot_pos = np.hstack([robot_pos, self.robot.X[2], self.robot.X[3]])
+            aug_waypoints = np.vstack((robot_pos, waypoints[:, :n_pos]))
         else:
             n_pos = 2
             aug_waypoints = np.vstack((robot_pos, waypoints[:, :n_pos]))
@@ -213,6 +220,11 @@ class LocalTrackingController:
         if self.state_machine in ['stop']:
             return False
         return self.goal is None
+    
+    def set_trajectory(self, trajectory):
+        self.trajectory = trajectory
+        if self.show_animation:
+            time = np.arange(0, )
 
     def set_unknown_obs(self, unknown_obs):
         unknown_obs = np.array(unknown_obs)
@@ -366,6 +378,8 @@ class LocalTrackingController:
         '''
         if self.robot_spec['model'] in ['Quad3D']:
             n_pos = 3
+        elif self.robot_spec['model'] in ['VTOL2D']:
+            n_pos = 4
         else:
             n_pos = 2
 
