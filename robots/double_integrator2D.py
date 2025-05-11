@@ -43,6 +43,8 @@ class DoubleIntegrator2D:
             self.robot_spec['ax_max'] = self.robot_spec['a_max']
         if 'ay_max' not in self.robot_spec:
             self.robot_spec['ay_max'] = self.robot_spec['a_max']
+        if 'w_max' not in self.robot_spec:
+            self.robot_spec['w_max'] = 0.5
 
     def f(self, X, casadi=False):
         if casadi:

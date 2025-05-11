@@ -1,5 +1,5 @@
 # Ignore pycache directories
-*/__pycache__/
+**/__pycache__/
 __pycache__/
 
 # Ignore misc. files

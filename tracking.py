@@ -4,6 +4,7 @@ import matplotlib.patches as patches
 import os
 import glob
 import subprocess
+import csv
 
 """
 Created on June 20th, 2024
@@ -31,11 +32,16 @@ class InfeasibleError(Exception):
 
 
 class LocalTrackingController:
-    def __init__(self, X0, robot_spec, control_type='cbf_qp', dt=0.05,
-                 show_animation=False, save_animation=False, show_mpc_traj=False, enable_rotation=True, raise_error=False, ax=None, fig=None, env=None):
+    def __init__(self, X0, robot_spec,
+                 controller_type=None,
+                 dt=0.05,
+                 show_animation=False, save_animation=False, show_mpc_traj=False,
+                 enable_rotation=True, raise_error=False,
+                 ax=None, fig=None, env=None):
 
         self.robot_spec = robot_spec
-        self.control_type = control_type  # 'cbf_qp' or 'mpc_cbf'
+        self.pos_controller_type = controller_type.get('pos', 'cbf_qp')  # 'cbf_qp' or 'mpc_cbf'
+        self.att_controller_type = controller_type.get('att', 'velocity_tracking_yaw')  # 'simple' or 'velocity_tracking_yaw'
         self.dt = dt
 
         self.state_machine = 'idle'  # Can be 'idle', 'track', 'stop', 'rotate'
@@ -119,24 +125,39 @@ class LocalTrackingController:
 
         # Setup control problem
         self.setup_robot(X0)
-        self.control_type = control_type
         self.num_constraints = 5 # number of max obstacle constraints to consider in the controller
-        if control_type == 'cbf_qp':
+        if self.pos_controller_type == 'cbf_qp':
             from position_control.cbf_qp import CBFQP
             self.pos_controller = CBFQP(self.robot, self.robot_spec)
-        elif control_type == 'mpc_cbf':
+        elif self.pos_controller_type == 'mpc_cbf':
             from position_control.mpc_cbf import MPCCBF
             self.pos_controller = MPCCBF(self.robot, self.robot_spec, show_mpc_traj=self.show_mpc_traj)
-        elif control_type == 'optimal_decay_cbf_qp':
+        elif self.pos_controller_type == 'optimal_decay_cbf_qp':
             from position_control.optimal_decay_cbf_qp import OptimalDecayCBFQP
             self.pos_controller = OptimalDecayCBFQP(self.robot, self.robot_spec)
-        elif control_type == 'optimal_decay_mpc_cbf':
+        elif self.pos_controller_type == 'optimal_decay_mpc_cbf':
             from position_control.optimal_decay_mpc_cbf import OptimalDecayMPCCBF
             self.pos_controller = OptimalDecayMPCCBF(self.robot, self.robot_spec)
+        else:
+            raise ValueError(
+                f"Unknown controller type: {self.pos_controller_type}")
             
-        if True:  # TODO: currently only have one attitude controller
-            from attitude_control.simple_attitude import SimpleAttitude
-            self.att_controller = SimpleAttitude(self.robot, self.robot_spec)
+        if self.enable_rotation:
+            if self.att_controller_type == 'simple':
+                from attitude_control.simple_attitude import SimpleAtt
+                self.att_controller = SimpleAtt(self.robot, self.robot_spec)
+            elif self.att_controller_type == 'velocity_tracking_yaw':
+                from attitude_control.velocity_tracking_yaw import VelocityTrackingYaw
+                self.att_controller = VelocityTrackingYaw(self.robot, self.robot_spec)
+            elif self.att_controller_type == 'gatekeeper':
+                from attitude_control.gatekeeper_attitude import GatekeeperAtt
+                self.att_controller = GatekeeperAtt(self.robot, self.robot_spec)
+                self.att_controller.setup_pos_controller(self.pos_controller)
+            else:
+                raise ValueError(
+                    f"Unknown attitude controller type: {self.att_controller_type}")
+        else:
+            self.att_controller = None
         self.goal = None
 
     def setup_animation_saving(self):
@@ -239,9 +260,9 @@ class LocalTrackingController:
         Get the nearest 5 obstacles that haven't been passed by (i.e., they're still in front of the robot or the robot should still consider the obstacle).
         '''
         
-        if self.robot_spec['model'] == 'Quad2D':
+        if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'Quad2D']:
             angle_unpassed=np.pi*2
-        elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad3D', 'VTOL2D']:
+        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad3D', 'VTOL2D']:
             angle_unpassed=np.pi*1.2
         
         if len(detected_obs) != 0:
@@ -471,18 +492,17 @@ class LocalTrackingController:
         elif self.goal is None:
             u_ref = self.robot.stop()
         else:
-            if self.control_type == 'optimal_decay_cbf_qp':
+            # Normal waypoint tracking
+            if self.pos_controller_type == 'optimal_decay_cbf_qp':
                 u_ref = self.robot.nominal_input(self.goal, k_omega=3.0, k_a=0.5, k_v=0.5)
             else:
                 u_ref = self.robot.nominal_input(self.goal)
-            self.u_att = self.att_controller.solve_control_problem(
-                    self.robot.X)
 
         # 4. Update the CBF constraints & 5. Solve the control problem & 6. Draw Collision Cones for C3BF
         control_ref = {'state_machine': self.state_machine,
                        'u_ref': u_ref,
                        'goal': self.goal}
-        if self.control_type == 'optimal_decay_cbf_qp' or self.control_type == 'cbf_qp':
+        if self.pos_controller_type in ['optimal_decay_cbf_qp', 'cbf_qp']:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_obs)
             self.robot.draw_collision_cone(self.robot.X, [self.nearest_obs], self.ax)
@@ -492,7 +512,13 @@ class LocalTrackingController:
             self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)
         plt.figure(self.fig.number)
 
-        # 7. Raise an error if the QP is infeasible, or the robot collides with the obstacle
+        # 7. Update the attitude controller
+        if self.state_machine == 'track' and self.att_controller is not None:
+            # att_controller is only defined for integrators
+            self.u_att = self.att_controller.solve_control_problem(
+                    self.robot.X, self.robot.yaw, u)
+
+        # 8. Raise an error if the QP is infeasible, or the robot collides with the obstacle
         collide = self.is_collide_unknown()
         if self.pos_controller.status != 'optimal' or collide:
             cause = "Collision" if collide else "Infeasible"
@@ -502,14 +528,14 @@ class LocalTrackingController:
                 raise InfeasibleError(f"{cause} detected !!")
             return -2
 
-        # 8. Step the robot
+        # 9. Step the robot
         self.robot.step(u, self.u_att)
         self.u_pos = u
     
         if self.show_animation:
             self.robot.render_plot()
 
-        # 9. Update sensing information
+        # 10. Update sensing information
         if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
             self.robot.update_sensing_footprints()
             self.robot.update_safety_area()
@@ -566,17 +592,17 @@ class LocalTrackingController:
     #                                    "/output/animations/*.png"):
     #             os.remove(file_name)
     
-    def run_all_steps(self, tf=30):
+    def run_all_steps(self, tf=30, write_csv=False):
         print("===================================")
         print("============ Tracking =============")
         print("Start following the generated path.")
         unexpected_beh = 0
 
-        import csv
-        # create a csv file to record the states, control inputs, and CBF parameters
-        with open('output.csv', 'w', newline='') as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerow(['states', 'control_inputs', 'alpha1', 'alpha2'])
+        if write_csv:
+            # create a csv file to record the states, control inputs, and CBF parameters
+            with open('output.csv', 'w', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(['states', 'control_inputs', 'alpha1', 'alpha2'])
 
         for _ in range(int(tf / self.dt)):
             ret = self.control_step()
@@ -586,13 +612,14 @@ class LocalTrackingController:
             # get states of the robot
             robot_state = self.robot.X[:,0].flatten()
             control_input = self.get_control_input().flatten()
-            print(f"Robot state: {robot_state}")
-            print(f"Control input: {control_input}")
+            # print(f"Robot state: {robot_state}")
+            # print(f"Control input: {control_input}")
 
-            # append the states, control inputs, and CBF parameters by appending to csv
-            with open('output.csv', 'a', newline='') as csvfile:
-                writer = csv.writer(csvfile)
-                writer.writerow(np.append(robot_state, np.append(control_input, [self.pos_controller.cbf_param['alpha1'], self.pos_controller.cbf_param['alpha2']])))
+            if write_csv:
+                # append the states, control inputs, and CBF parameters by appending to csv
+                with open('output.csv', 'a', newline='') as csvfile:
+                    writer = csv.writer(csvfile)
+                    writer.writerow(np.append(robot_state, np.append(control_input, [self.pos_controller.cbf_param['alpha1'], self.pos_controller.cbf_param['alpha2']])))
 
 
             if ret == -1 or ret == -2:  # all waypoints reached
@@ -609,9 +636,9 @@ class LocalTrackingController:
         return unexpected_beh
 
 
-def single_agent_main(control_type):
+def single_agent_main(controller_type):
     dt = 0.05
-    model = 'DynamicUnicycle2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'DoubleIntegrator2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     waypoints = [
         [2, 2, math.pi/2],
@@ -758,7 +785,7 @@ def single_agent_main(control_type):
     env_handler = env.Env()
 
     tracking_controller = LocalTrackingController(x_init, robot_spec,
-                                                  control_type=control_type,
+                                                  controller_type=controller_type,
                                                   dt=dt,
                                                   show_animation=True,
                                                   save_animation=False,
@@ -772,7 +799,7 @@ def single_agent_main(control_type):
     tracking_controller.set_waypoints(waypoints)
     unexpected_beh = tracking_controller.run_all_steps(tf=100)
 
-def multi_agent_main(control_type, save_animation=False):
+def multi_agent_main(controller_type, save_animation=False):
     dt = 0.05
 
     # temporal
@@ -803,7 +830,7 @@ def multi_agent_main(control_type, save_animation=False):
 
     robot_spec['robot_id'] = 0
     controller_0 = LocalTrackingController(x_init, robot_spec,
-                                           control_type=control_type,
+                                           controller_type=controller_type,
                                            dt=dt,
                                            show_animation=True,
                                            save_animation=save_animation,
@@ -823,7 +850,7 @@ def multi_agent_main(control_type, save_animation=False):
 
     robot_spec['robot_id'] = 1
     controller_1 = LocalTrackingController(x_goal, robot_spec,
-                                           control_type=control_type,
+                                           controller_type=controller_type,
                                            dt=dt,
                                            show_animation=True,
                                            save_animation=False,
@@ -853,7 +880,9 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main('mpc_cbf')
+    #single_agent_main(controller_type={'pos': 'mpc_cbf'})
+    #single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'simple'})
+    single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'gatekeeper'})
     # multi_agent_main('mpc_cbf', save_animation=True)
     # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')

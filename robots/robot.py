@@ -70,6 +70,15 @@ class BaseRobot:
             # X0: [x, y]
             self.set_orientation(self.X[2, 0])
             self.X = self.X[0:2]
+        elif self.robot_spec['model'] == 'DoubleIntegrator2D':
+            try:
+                from double_integrator2D import DoubleIntegrator2D
+            except ImportError:
+                from robots.double_integrator2D import DoubleIntegrator2D
+            self.robot = DoubleIntegrator2D(dt, robot_spec)
+            # X0: [x, y, vx, vy, theta]
+            self.set_orientation(self.X[4, 0])
+            self.X = self.X[0:4]  # Remove the yaw angle from the state
         elif self.robot_spec['model'] == 'Unicycle2D':
             try:
                 from unicycle2D import Unicycle2D
@@ -84,15 +93,6 @@ class BaseRobot:
                 from robots.dynamic_unicycle2D import DynamicUnicycle2D
             self.robot = DynamicUnicycle2D(dt, robot_spec)
             self.yaw = self.X[2, 0]
-        elif self.robot_spec['model'] == 'DoubleIntegrator2D':
-            try:
-                from double_integrator2D import DoubleIntegrator2D
-            except ImportError:
-                from robots.double_integrator2D import DoubleIntegrator2D
-            self.robot = DoubleIntegrator2D(dt, robot_spec)
-            # X0: [x, y, vx, vy, theta]
-            self.set_orientation(self.X[4, 0])
-            self.X = self.X[0:4]  # Remove the yaw angle from the state
         elif self.robot_spec['model'] == 'KinematicBicycle2D':
             try:
                 from kinematic_bicycle2D import KinematicBicycle2D
@@ -293,6 +293,9 @@ class BaseRobot:
         init_robot_position = Point(self.X[0, 0], self.X[1, 0]).buffer(self.robot_radius*2)
         self.sensing_footprints = self.sensing_footprints.union(
             init_robot_position)
+        
+        if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
+            self.update_sensing_footprints()
 
     def get_position(self):
         return self.X[0:2].reshape(-1)
@@ -674,8 +677,11 @@ class BaseRobot:
             self.safety_area = LineString([Point(self.X[0, 0], self.X[1, 0]), Point(
                 front_center)]).buffer(self.robot_radius)
 
-    def is_beyond_sensing_footprints(self):
-        flag = not self.sensing_footprints.contains(self.safety_area)
+    def is_beyond_sensing_footprints(self, mode='point_mass'):
+        if mode == 'safety_area':
+            flag = not self.sensing_footprints.contains(self.safety_area)
+        elif mode == 'point_mass':
+            flag = not self.sensing_footprints.contains(Point(self.X[0, 0], self.X[1, 0]))
         if flag:
             self.unsafe_points.append((self.X[0, 0], self.X[1, 0]))
         return flag
