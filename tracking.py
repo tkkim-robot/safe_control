@@ -142,7 +142,7 @@ class LocalTrackingController:
             raise ValueError(
                 f"Unknown controller type: {self.pos_controller_type}")
             
-        if self.enable_rotation:
+        if self.enable_rotation and self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
             if self.att_controller_type == 'simple':
                 from attitude_control.simple_attitude import SimpleAtt
                 self.att_controller = SimpleAtt(self.robot, self.robot_spec)
@@ -638,7 +638,7 @@ class LocalTrackingController:
 
 def single_agent_main(controller_type):
     dt = 0.05
-    model = 'DoubleIntegrator2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'DynamicUnicycle2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     waypoints = [
         [2, 2, math.pi/2],
@@ -665,7 +665,8 @@ def single_agent_main(controller_type):
             'model': 'DoubleIntegrator2D',
             'v_max': 1.0,
             'a_max': 1.0,
-            'radius': 0.25
+            'radius': 0.25,
+            'sensor': 'rgbd'
         }
     elif model == 'DynamicUnicycle2D':
         robot_spec = {
