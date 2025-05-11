@@ -16,13 +16,8 @@ To install `safe_control`, follow these steps:
 
 1. Clone the repository:
    ```bash
-   git clone --recurse-submodules https://github.com/tkkim-robot/safe_control.git
+   git clone https://github.com/tkkim-robot/safe_control.git
    cd safe_control
-   ```
-
-   or after cloning:
-   ```bash
-   git submodule update --init --recursive
    ```
 
 2. (Optional) Create and activate a virtual environment:
