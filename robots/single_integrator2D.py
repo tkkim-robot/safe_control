@@ -108,6 +108,7 @@ class SingleIntegrator2D:
     def rotate_to(self, theta, theta_des, k_omega=2.0):
         error_theta = angle_normalize(theta_des - theta)
         yaw_rate = k_omega * error_theta
+        yaw_rate = np.clip(yaw_rate, -self.robot_spec['w_max'], self.robot_spec['w_max'])
         return np.array([yaw_rate]).reshape(-1, 1)
 
     def agent_barrier(self, X, obs, robot_radius, beta=1.01):
