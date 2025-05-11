@@ -1,6 +1,7 @@
 import numpy as np
 from .simple_attitude import SimpleAtt
 from .velocity_tracking_yaw import VelocityTrackingYaw
+from shapely.geometry import LineString, Polygon
 
 """
 Created on April 21th, 2025
@@ -25,8 +26,8 @@ class GatekeeperAtt:
                  robot,
                  robot_spec: dict,
                  dt: float = 0.05,
-                ctrl_config: dict = {},
-                 nominal_horizon: float = 2.0,
+                 ctrl_config: dict = {},
+                 nominal_horizon: float = 1.0,
                  backup_horizon: float = 2.0,
                  event_offset: float = 1.0):
         """
@@ -140,6 +141,7 @@ class GatekeeperAtt:
 
             last_x = self.pos_committed_x_traj[-1].reshape(-1, 1)
             last_u = self.pos_committed_u_traj[-1].reshape(-1, 1)
+            last_u = np.zeros_like(last_u) # TODO: maintain zero control input
 
             for k in range(missing):
                 dx = self._dynamics(last_x, last_u)
@@ -187,7 +189,8 @@ class GatekeeperAtt:
             else:
                 # Use last available state/control if beyond pos trajectory
                 pos_x = self.pos_committed_x_traj[-1]
-                pos_u = self.pos_committed_u_traj[-1]
+                #pos_u = self.pos_committed_u_traj[-1]
+                pos_u = np.zeros_like(self.pos_committed_u_traj[-1]) # TODO: maintain zero control input
 
             # Compute yaw control input
             u = controller(pos_x.reshape(-1, 1), current_yaw, pos_u.reshape(-1, 1))
@@ -215,12 +218,155 @@ class GatekeeperAtt:
         self.candidate_u_traj = np.hstack((nominal_u_traj, backup_u_traj))
         return self.candidate_x_traj
     
-    def _is_candidate_valid(self, candidate_x_traj):
+    def _is_candidate_valid(self, critical_point, candidate_x_traj, discounted_nominal_horizon):
         """
         Check if the candidate trajectory is valid by evaluating the safety condition.
+        The trajectory is valid if the critical point becomes visible before the robot reaches it.
+        
+        Parameters
+        ----------
+        candidate_x_traj : numpy.ndarray
+            The candidate yaw trajectory to evaluate
+            
+        Returns
+        -------
+        bool
+            True if the trajectory is valid (critical point becomes visible in time), False otherwise
         """
-        return True
-    
+        if critical_point is None:
+            return True  # No critical point found, trajectory is valid
+            
+        # Check if critical point becomes visible before robot reaches it
+        for i in range(len(candidate_x_traj)):
+            # Get position and yaw at this timestep
+            
+            pos = self.pos_committed_x_traj[i]
+            yaw = candidate_x_traj[i]
+            
+            # Check if critical point is in FOV at this state
+            # Consider the discounted nominal horizon, only check during the backup phase
+            if i > discounted_nominal_horizon/self.dt:
+                if self._is_point_in_fov(pos, yaw, critical_point, is_in_cam_range=True):
+                    # print("In FOV at time step", i, "at position", pos, "with yaw", yaw)
+                    # print("critical point", critical_point)
+                    return True
+                    
+            # Check if we've reached the stopping point before critical point
+            if self.robot_spec['model'] == 'DoubleIntegrator2D':
+                # Get current velocity
+                # vx = pos[2]
+                # vy = pos[3]
+                # v = np.sqrt(vx**2 + vy**2)
+                v = self.robot.robot_spec['v_max'] # TODO:
+                
+                # Calculate maximum braking distance
+                a_max = self.robot_spec['a_max']
+                braking_distance = v**2 / (2 * a_max)
+                
+                # Calculate distance to critical point
+                dist_to_critical = np.linalg.norm(pos[:2] - critical_point)
+                
+                # If we're within braking distance of critical point, trajectory is invalid
+                if dist_to_critical <= braking_distance:
+                    return False
+            elif self.robot_spec['model'] == 'SingleIntegrator2D':
+                # If we've passed the critical point, trajectory is invalid
+                if np.linalg.norm(pos[:2] - critical_point) < self.robot.robot_radius:
+                    return False
+            else:
+                raise ValueError(f"Not implemented for robot model: {self.robot_spec['model']}")
+                
+        return False  # Critical point never became visible
+        
+    def _is_point_in_fov(self, robot_state, robot_yaw, point, is_in_cam_range=False):
+        """
+        Check if a point is within the robot's field of view at a given state and yaw.
+        
+        Parameters
+        ----------
+        robot_state : numpy.ndarray
+            Robot state [x, y, ...]
+        robot_yaw : float
+            Robot yaw angle
+        point : numpy.ndarray
+            Point to check [x, y]
+        is_in_cam_range : bool
+            Whether to also check if point is within camera range
+            
+        Returns
+        -------
+        bool
+            True if point is in FOV, False otherwise
+        """
+        robot_pos = robot_state[:2]
+        to_point = point - robot_pos
+        
+        angle_to_point = np.arctan2(to_point[1], to_point[0])
+        angle_diff = abs(angle_normalize(angle_to_point - robot_yaw))
+        
+        in_fov = angle_diff <= self.robot.fov_angle / 2
+        
+        if is_in_cam_range:
+            dist_to_point = np.linalg.norm(to_point)
+            return in_fov and dist_to_point <= self.robot.cam_range
+            
+        return in_fov
+
+    def _compute_critical_point(self):
+        """
+        Compute the critical point where the planned trajectory intersects with the map boundary.
+        
+        Returns
+        -------
+        critical_point : numpy.ndarray or None
+            The critical point where trajectory intersects map boundary, or None if no intersection
+        """
+        if self.robot.sensing_footprints.is_empty:
+            print("No sensing footprints found")
+            return None
+            
+        # Get the planned trajectory
+        trajectory = self.pos_committed_x_traj
+        
+        # Convert trajectory points to LineString
+        trajectory_line = LineString([(x[0], x[1]) for x in trajectory])
+        
+        # Find intersection with sensing footprints
+        intersection = trajectory_line.intersection(self.robot.sensing_footprints)
+
+        if intersection.is_empty:
+            return None
+            
+        # Get the first intersection point
+        if intersection.geom_type == 'Point':
+            critical_point = np.array([intersection.x, intersection.y])
+        elif intersection.geom_type == 'LineString':
+            # For LineString intersection, get the furthest point
+            # This is the point where we exit the explored area
+            robot_pos = self.robot.get_position()
+            coords = list(intersection.coords)
+            distances = [np.linalg.norm(np.array(p) - robot_pos) for p in coords]
+            furthest_idx = np.argmax(distances)
+            critical_point = np.array(coords[furthest_idx])
+        elif intersection.geom_type in ['GeometryCollection', 'MultiLineString', 'MultiPoint']:
+            #print("GeometryCollection intersection")
+            robot_pos = self.robot.get_position()
+            multi_geom = list(intersection.geoms)
+            coords = []
+            for geom in multi_geom:
+                if geom.geom_type == 'LineString':
+                    coords.extend(list(geom.coords))
+                elif geom.geom_type == 'Point':
+                    coords.append((geom.x, geom.y))
+            distances = [np.linalg.norm(np.array(p) - robot_pos) for p in coords]
+            furthest_idx = np.argmax(distances)
+            critical_point = np.array(coords[furthest_idx])
+        else:
+            print(f"Unexpected intersection type: {intersection.geom_type}")
+            return None
+            
+        return critical_point
+
     def _update_committed_trajectory(self, discounted_nominal_horizon):
         """
         Update the committed trajectory with the candidate trajectory.
@@ -251,6 +397,7 @@ class GatekeeperAtt:
         # try updating the committed trajectory
         if self.current_time_idx > self.next_event_time/self.dt:
             #print("Event triggered, generating new candidate trajectory")
+            critical_point = self._compute_critical_point()
 
             for i in range(int(self.nominal_horizon//self.horizon_discount)):
                 # discount the nominal horizon
@@ -258,7 +405,7 @@ class GatekeeperAtt:
                 # Generate the candidate trajectory
                 candidate_x_traj = self._generate_candidate_trajectory(discounted_nominal_horizon)
                 # Check if the candidate trajectory is valid
-                if self._is_candidate_valid(candidate_x_traj):
+                if self._is_candidate_valid(critical_point, candidate_x_traj, discounted_nominal_horizon):
                     #print("Candidate trajectory is valid")
                     self._update_committed_trajectory(discounted_nominal_horizon)
                     break
@@ -267,7 +414,9 @@ class GatekeeperAtt:
             # Use the committed trajectory for the next control input
             #print("in nominal: control input", self.committed_u_traj[self.current_time_idx])
             #print("in nominal: control input", self.nominal_controller(self.robot.X, goal))
+            #print("nominal")
             return self.committed_u_traj[self.current_time_idx] if self.nominal_controller is None else self.nominal_controller(robot_state, current_yaw, u)
         else:
+            #print("backup")
             #print("backup: control input", self.backup_controller(self.robot.X))
             return self.committed_u_traj[self.current_time_idx] if self.backup_controller is None else self.backup_controller(robot_state, current_yaw, u)
