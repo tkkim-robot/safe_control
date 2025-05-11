@@ -4,7 +4,8 @@
 
 ## Features
 
-- Implementation of various safety-critical controllers, including `CBF-QP` and `MPC-CBF`
+- Implementation of various positional safety-critical controllers, including [`CBF-QP`](https://ieeexplore.ieee.org/document/8796030) and [`MPC-CBF`](https://ieeexplore.ieee.org/document/9483029)
+- Implementation of safety-critical attitude controller using [`gatekeeper`](https://ieeexplore.ieee.org/document/10341790)
 - Support for different robot dynamics models (e.g., unicycle, double integrator)
 - Support sensing and mapping simulation for RGB-D type camera sensors (limited FOV)
 - Support both single and multi agents navigation
@@ -136,10 +137,11 @@ Supported robot dynamics can be found in the [`robots/`](https://github.com/tkki
 
 - `single_integrator2D`
 - `double_integrator2D`
-- `double_integrator2D with camera angle`: under development
+- `single_integrator2D with camera angle`: allow to rotate
+- `double_integrator2D with camera angle`
 - `unicycle2D`
 - `dynamic_unicycle2D`: A unicycle model that uses velocity as state and acceleration as input.
-- `kinematic_bicycle2D`
+- `kinematic_bicycle2D`: need to use [`C3BF`](https://arxiv.org/abs/2403.07043) for valid CBF. See [`robots/kinematic_bicycle2D_c3bf.py](https://github.com/tkkim-robot/safe_control/blob/main/robots/kinematic_bicycle2D_c3bf.py) for more details.
 - `quad2d`: x - forward, z - vertical
 - `quad3d`: (* dynamics are implemented, work in progress for a valid CBF)
 - `vtol2d`: x - forward, z - vertical
@@ -163,7 +165,9 @@ controller = LocalTrackingController(..., control_type='cbf_qp', ...)
 
 Supported attitude controllers can be found in the [`attitude_control/`](https://github.com/tkkim-robot/safe_control/tree/main/attitude_control) directory:
 
-- `gatekeeper`: under development (ref: [[5]](https://ieeexplore.ieee.org/document/10665919))
+- `gatekeeper`: A safety filter between pre-defined nominal and backup controller, designed to guarantee safety for infinite time (ref: [[5]](https://ieeexplore.ieee.org/document/10665919))
+- `velocity tracking yaw`
+- `visibility promoting yaw`: A simple visibility promoting attitude controller based on the accumulated map
 
 ### Customizing Environments
 
