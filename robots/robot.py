@@ -293,6 +293,9 @@ class BaseRobot:
         init_robot_position = Point(self.X[0, 0], self.X[1, 0]).buffer(self.robot_radius*2)
         self.sensing_footprints = self.sensing_footprints.union(
             init_robot_position)
+        
+        if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
+            self.update_sensing_footprints()
 
     def get_position(self):
         return self.X[0:2].reshape(-1)
@@ -674,8 +677,11 @@ class BaseRobot:
             self.safety_area = LineString([Point(self.X[0, 0], self.X[1, 0]), Point(
                 front_center)]).buffer(self.robot_radius)
 
-    def is_beyond_sensing_footprints(self):
-        flag = not self.sensing_footprints.contains(self.safety_area)
+    def is_beyond_sensing_footprints(self, mode='point_mass'):
+        if mode == 'safety_area':
+            flag = not self.sensing_footprints.contains(self.safety_area)
+        elif mode == 'point_mass':
+            flag = not self.sensing_footprints.contains(Point(self.X[0, 0], self.X[1, 0]))
         if flag:
             self.unsafe_points.append((self.X[0, 0], self.X[1, 0]))
         return flag
