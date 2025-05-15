@@ -57,7 +57,7 @@ class TrackingControllerNode(Node):
 
         # Initialize waypoints and tracking controller
         # Parameters
-        radius = 0.5
+        radius = 0.3
         num_waypoints = 8
 
         # # Generate waypoints for circle
@@ -65,9 +65,10 @@ class TrackingControllerNode(Node):
         #     for theta in np.linspace(0, 2 * np.pi, num_waypoints, endpoint=False)], dtype=np.float32)
 
         # Square trajectory of length 1m centered at origin
-        self.waypoints = np.array([[0.5, 0.5, 0.0, 0.0, 0.0], [0.5, -0.5, 0.0, 0.0, 0.0], [-0.5, -0.5, 0.0, 0.0, 0.0], [-0.5, 0.5, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0]], dtype=np.float32)
+        # self.waypoints = np.array([[0.5, 0.5, 0.0, 0.0, 0.0], [0.5, -0.5, 0.0, 0.0, 0.0], [-0.5, -0.5, 0.0, 0.0, 0.0], [-0.5, 0.5, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0]], dtype=np.float32)
+        self.waypoints = np.array([[0.0, 0.0, 0.0, 0.0, 0.0], [-4.0, 1.8, 0.0, 0.0, 0.0], [-4.0, -2.3, 0.0, 0.0, 0.0], [1.0, -2.3, 0.0, 0.0, 0.0], [1.0, 1.8, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0]], dtype=np.float32)
         # Repeating waypoints 2 times
-        self.waypoints = np.tile(self.waypoints, (2, 1))
+        # self.waypoints = np.tile(self.waypoints, (2, 1))
 
         # Generate waypoints for infinity
         # self.waypoints = np.array([
@@ -104,7 +105,7 @@ class TrackingControllerNode(Node):
             'model': 'DoubleIntegrator2D',
             'w_max': 1.5,
             'a_max': 0.5,
-            'v_max': 1.0,
+            'v_max': 0.5,
             'fov_angle': 70.0,
             'cam_range': 3.0
         }
@@ -124,7 +125,7 @@ class TrackingControllerNode(Node):
         else:
             pass
 
-        self.tracking_controller.obs = np.array([[50, 50, 0.001]])
+        self.tracking_controller.obs = np.array([[-1.75, -0.5, 0.75]])
         # np.array([[-0.3, 0.3, 0.35]])
         # np.array([[1.5, 0.3, 0.4],
         #                                         [0.3, -2.1, 0.4]])
@@ -196,7 +197,7 @@ class TrackingControllerNode(Node):
         # print("x_next: ", x_next)
 
         # concatenating x_next and u
-        yaw_rate_pseudo = -0.2
+        yaw_rate_pseudo = -0.4
         print("x_next: ", x_next)
         print("u: ", u)
         print("yaw_pseudo: ", yaw_pseudo)
