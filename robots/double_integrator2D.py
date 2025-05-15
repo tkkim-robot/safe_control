@@ -76,6 +76,15 @@ class DoubleIntegrator2D:
         X = X + (self.f(X) + self.g(X) @ U) * self.dt
         return X
 
+    def pseudo_step(self, X, yaw, U):
+        yaw_rate = 0.2 #TODO: this is a temporary fix
+        dt_pseudo = 0.12 # in order to run hardware expt, full state is required
+        X = X + (self.f(X) + self.g(X) @ U) * dt_pseudo
+        yaw = yaw + yaw_rate * dt_pseudo
+        if yaw >= np.pi:
+            yaw = -np.pi
+        return X, yaw
+
     def step_rotate(self, theta, U_attitude):
         theta = angle_normalize(theta + U_attitude[0, 0] * self.dt)
         return theta
