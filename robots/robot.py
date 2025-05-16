@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 from shapely.geometry import Polygon, Point, LineString
 from shapely import is_valid_reason
@@ -39,10 +40,48 @@ class BaseRobot:
         if 'robot_id' not in robot_spec:
             self.robot_spec['robot_id'] = 0
 
-        colors = plt.get_cmap('Pastel1').colors  # color palette
+        colors = plt.colormaps.get_cmap('Pastel1').colors  # color palette
+
         color = colors[self.robot_spec['robot_id'] % len(colors) + 1]
 
-        if self.robot_spec['model'] == 'Unicycle2D':
+        if 'radius' not in self.robot_spec:
+            self.robot_spec['radius'] = 0.25
+        self.robot_radius = self.robot_spec['radius']  # including padding
+
+        # FOV parameters
+        if 'fov_angle' not in self.robot_spec:
+            self.robot_spec['fov_angle'] = 70.0
+        self.fov_angle = np.deg2rad(float(self.robot_spec['fov_angle']))  # [rad]
+        if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
+            if 'cam_range' not in self.robot_spec:
+                self.robot_spec['cam_range'] = 3.0
+            self.cam_range = self.robot_spec['cam_range']  # [m]
+
+        # Visibility parameters
+        self.max_decel = 3.0  # 0.5 # [m/s^2]
+        self.max_ang_decel = 3.0  # 0.25  # [rad/s^2]
+
+        if self.robot_spec['model'] == 'SingleIntegrator2D':
+            try:
+                from single_integrator2D import SingleIntegrator2D
+            except ImportError:
+                from robots.single_integrator2D import SingleIntegrator2D
+            self.robot = SingleIntegrator2D(dt, robot_spec)
+            # X0: [x, y]
+            self.set_orientation(self.X[2, 0])
+            self.X = self.X[0:2]
+        elif self.robot_spec['model'] == 'DoubleIntegrator2D':
+            try:
+                from double_integrator2D import DoubleIntegrator2D
+            except ImportError:
+                from robots.double_integrator2D import DoubleIntegrator2D
+            self.robot = DoubleIntegrator2D(dt, robot_spec)
+            # X0: [x, y, vx, vy, theta]
+            self.set_orientation(self.X[4, 0])
+            self.X = self.X[0:4]  # Remove the yaw angle from the state
+            # self.yaw_pseudo = 0.0
+            self.yaw_input = 0.0 # TODO: Ask TK if logic is right
+        elif self.robot_spec['model'] == 'Unicycle2D':
             try:
                 from unicycle2D import Unicycle2D
             except ImportError:
@@ -56,43 +95,182 @@ class BaseRobot:
                 from robots.dynamic_unicycle2D import DynamicUnicycle2D
             self.robot = DynamicUnicycle2D(dt, robot_spec)
             self.yaw = self.X[2, 0]
-        elif self.robot_spec['model'] == 'DoubleIntegrator2D':
+        elif self.robot_spec['model'] == 'KinematicBicycle2D':
             try:
-                from double_integrator2D import DoubleIntegrator2D
+                from kinematic_bicycle2D import KinematicBicycle2D
             except ImportError:
-                from robots.double_integrator2D import DoubleIntegrator2D
-            self.robot = DoubleIntegrator2D(dt, robot_spec)
-            # X0: [x, y, vx, vy, theta]
-            self.set_orientation(self.X[4, 0])
-            self.X = self.X[0:4]  # Remove the yaw angle from the state
-            self.yaw_pseudo = 0.0  # Initial pseudo yaw angle
+                from robots.kinematic_bicycle2D import KinematicBicycle2D
+            self.robot = KinematicBicycle2D(dt, robot_spec)
+            self.yaw = self.X[2, 0]
+        elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
+            try:
+                from kinematic_bicycle2D_c3bf import KinematicBicycle2D_C3BF
+            except ImportError:
+                from robots.kinematic_bicycle2D_c3bf import KinematicBicycle2D_C3BF
+            self.robot = KinematicBicycle2D_C3BF(dt, robot_spec)
+            self.yaw = self.X[2, 0]
+        elif self.robot_spec['model'] == 'Quad2D':
+            try:
+                from quad2D import Quad2D
+            except ImportError:
+                from robots.quad2D import Quad2D
+            self.robot = Quad2D(dt, robot_spec)
+            self.yaw = self.X[2, 0] # it's pitch in this case
+        elif self.robot_spec['model'] == 'Quad3D':
+            try:
+                from quad3D import Quad3D
+            except ImportError:
+                from robots.quad3D import Quad3D
+            self.robot = Quad3D(dt, robot_spec)
+            self.yaw = self.X[8, 0]
+        elif self.robot_spec['model'] == 'VTOL2D':
+            try:
+                from vtol2D import VTOL2D
+            except ImportError:
+                from robots.vtol2D import VTOL2D
+            self.robot = VTOL2D(dt, robot_spec)
+            self.yaw = self.X[2, 0] # it's pitch in this case
+
         else:
             raise ValueError("Invalid robot model")
-
-        # FOV parameters
-        self.fov_angle = np.deg2rad(
-            float(self.robot_spec['fov_angle']))  # [rad]
-        self.cam_range = self.robot_spec['cam_range']  # [m]
-
-        self.robot_radius = 0.25  # including padding
-        self.max_decel = 3.0  # 0.5 # [m/s^2]
-        self.max_ang_decel = 3.0  # 0.25  # [rad/s^2]
 
         self.U = np.array([0, 0]).reshape(-1, 1)
         self.U_att = np.array([0]).reshape(-1, 1)
 
+        self.collision_cone_patches = []
+        self.collision_cone_patch = None
+
         # Plot handles
-        self.vis_orient_len = 0.3
-        # Robot's body represented as a scatter plot
-        self.body = ax.scatter(
-            [], [], s=200, facecolors=color, edgecolors=color)  # facecolors='none'
+        self.vis_orient_len = 0.5
+        if self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
+            # Define robot dimensions
+            self.robot_spec['body_length'] = self.robot_spec['front_ax_dist'] + self.robot_spec['rear_ax_dist']
+            # Add vehicle body as a rectangle
+            self.vehicle_body = ax.add_patch(
+                plt.Rectangle((-self.robot_spec['rear_ax_dist'], -self.robot_spec['body_width'] / 2),
+                          self.robot_spec['body_length'], self.robot_spec['body_width'],
+                          linewidth=1, edgecolor='black', facecolor=color, alpha=0.5)
+            )
+            # Add front and rear wheels as small rectangles
+            wheel_width = self.robot_spec['body_width'] / 3
+            wheel_length = self.robot_spec['body_width'] / 1.5
+            self.front_wheel = ax.add_patch(
+                plt.Rectangle((-wheel_length / 2, -wheel_width / 2),
+                          wheel_length, wheel_width,
+                          edgecolor='black', facecolor=color, alpha=0.7)
+            )
+            self.rear_wheel = ax.add_patch(
+                plt.Rectangle((-wheel_length / 2, -wheel_width / 2),
+                          wheel_length, wheel_width,
+                          edgecolor='black', facecolor=color, alpha=0.7)
+            )
+        elif self.robot_spec['model'] == 'Quad2D':
+            # Circle for the robot's position
+            self.body_circle = ax.add_patch(plt.Circle(
+                (0, 0), self.robot_radius/4, edgecolor='black', facecolor=color, fill=True))
+            # Rectangle for the robot's orientation
+            rect_width = 2 * self.robot_radius
+            rect_height = self.robot_radius/6
+            self.orientation_rectangle = ax.add_patch(plt.Rectangle(
+                (-rect_width / 2, -rect_height / 2), rect_width, rect_height,
+                linewidth=1, edgecolor='black', facecolor=color, alpha=0.5))
+        elif self.robot_spec['model'] == 'VTOL2D':
+            # Choose some nominal geometry
+            # Main body rectangle
+            self.vis_orient_len = 0.0
+            plane_width = self.robot_spec['plane_width']
+            plane_height  = self.robot_spec['plane_height']
+            self.body_plane = ax.add_patch(
+                plt.Rectangle((-plane_width/2, -plane_height/2),
+                            plane_width,
+                            plane_height,
+                            linewidth=1, edgecolor='black', facecolor=color, alpha=0.6)
+            )
+
+            # Front rotor rectangle
+            front_width  = self.robot_spec['front_width']
+            front_height = self.robot_spec['front_height']
+            self.front_rect = ax.add_patch(
+                plt.Rectangle((-front_width/2, -front_height/2),
+                            front_width,
+                            front_height,
+                            linewidth=1, edgecolor='black', facecolor=color, alpha=0.8)
+            )
+
+            # Rear rotor rectangle
+            rear_width  = self.robot_spec['rear_width']
+            rear_height = self.robot_spec['rear_height']
+            self.rear_rect = ax.add_patch(
+                plt.Rectangle((-rear_width/2, -rear_height/2),
+                            rear_width,
+                            rear_height,
+                            linewidth=1, edgecolor='black', facecolor=color, alpha=0.8)
+            )
+
+            # Forward (pusher) throttle rectangle (vertical shape)
+            pusher_width  = self.robot_spec['pusher_width']
+            pusher_height = self.robot_spec['pusher_height']
+            self.thrust_rect = ax.add_patch(
+                plt.Rectangle((-pusher_width/2, -pusher_height/2),
+                            pusher_width,
+                            pusher_height,
+                            linewidth=1, edgecolor='black', facecolor=color, alpha=0.8)
+            )
+
+            # Elevator rectangle (hinged at tail, to rotate with elevator deflection)
+            elev_width  = self.robot_spec['elev_width']
+            elev_height = self.robot_spec['elev_height']
+            self.elevator_rect = ax.add_patch(
+                plt.Rectangle((-elev_width/2, -elev_height/2),
+                            elev_width,
+                            elev_height,
+                            linewidth=1, edgecolor='black', facecolor='brown', alpha=0.9)
+            )
+
+            # Define velocity indicator 
+            self.max_indicator_width = 1.5    # Maximum length corresponding to full speed
+            self.indicator_height = 0.15    
+
+            # Create the velocity indicator (a left-aligned rectangle starting at 0 width)
+            self.velocity_indicator = patches.Rectangle(
+                (0, 0),           
+                width=0.0,       
+                height=self.indicator_height,
+                color='green',   
+                zorder=5
+            )
+            ax.add_patch(self.velocity_indicator)
+
+            # Create the frame for the velocity indicator using two black lines.
+            self.velocity_frame_h, = ax.plot([0, self.max_indicator_width], [0, 0],
+                                            color='black', linewidth=2, zorder=4)
+            self.velocity_frame_v, = ax.plot([0, 0], [0, self.indicator_height],
+                                            color='black', linewidth=2, zorder=4)
+
+            # Create a text label to display the velocity in m/s.
+            self.velocity_text = ax.text(
+                0, 0, "0.0 m/s",
+                fontsize=14,
+                ha='center',
+                va='bottom',
+                zorder=6
+            )
+
+
+        else:
+            # Robot's body represented as a scatter plot
+            # self.body = ax.scatter(
+            #     [], [], s=200, facecolors=color, edgecolors=color)  this is unitless
+            self.body = ax.add_patch(plt.Circle(
+                (0, 0), self.robot_radius, edgecolor='black', facecolor=color, fill=True))
+        
         # Store the unsafe points and scatter plot
         self.unsafe_points = []
         self.unsafe_points_handle = ax.scatter(
             [], [], s=40, facecolors='r', edgecolors='r')
         # Robot's orientation axis represented as a line
         self.axis,  = ax.plot([self.X[0, 0], self.X[0, 0]+self.vis_orient_len*np.cos(self.yaw)], [
-                              self.X[1, 0], self.X[1, 0]+self.vis_orient_len*np.sin(self.yaw)], color='r')
+                      self.X[1, 0], self.X[1, 0]+self.vis_orient_len*np.sin(self.yaw)], color='r', linewidth=2)
         # Initialize FOV line handle with placeholder data
         self.fov, = ax.plot([], [], 'k--')  # Unpack the tuple returned by plot
         # Initialize FOV fill handle with placeholder data
@@ -114,9 +292,12 @@ class BaseRobot:
         self.positions = []  # List to store the positions for plotting
 
         # initialize the sensing_footprints with the initial robot location with radius 1
-        init_robot_position = Point(self.X[0, 0], self.X[1, 0]).buffer(0.1)
+        init_robot_position = Point(self.X[0, 0], self.X[1, 0]).buffer(self.robot_radius*2)
         self.sensing_footprints = self.sensing_footprints.union(
             init_robot_position)
+        
+        if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
+            self.update_sensing_footprints()
 
     def set_robot_state(self, pose, orientation, velocity):
         if self.robot_spec['model'] == 'Unicycle2D':
@@ -137,14 +318,24 @@ class BaseRobot:
             
     def get_position(self):
         return self.X[0:2].reshape(-1)
+    
+    def get_z(self):
+        if self.robot_spec['model'] == 'Quad3D':
+            return self.X[3, 0]
+        else:
+            raise NotImplementedError("get_z is not implemented for this model")
 
     def get_orientation(self):
         return self.yaw
 
     def get_yaw_rate(self):
-        if self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D']:
+        if self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
             return self.U[1, 0]
-        elif self.robot_spec['model'] == 'DoubleIntegrator2D':
+        elif self.robot_spec['model'] in ['Quad2D', 'VTOL2D']:
+            return self.X[5, 0]
+        elif self.robot_spec['model'] == 'Quad3D':
+            return self.U[3, 0]
+        elif self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
             if self.U_att is not None:
                 return self.U_att[0, 0]
             else:
@@ -172,15 +363,21 @@ class BaseRobot:
         return self.robot.g(X, casadi=True)
 
     def nominal_input(self, goal, d_min=0.05, k_omega = 2.0, k_a = 1.0, k_v = 1.0):
-        if self.robot_spec['model'] == 'Unicycle2D':
+        if self.robot_spec['model'] == 'SingleIntegrator2D':
+            return self.robot.nominal_input(self.X, goal, d_min, k_v)
+        elif self.robot_spec['model'] in ['Unicycle2D']:
             return self.robot.nominal_input(self.X, goal, d_min, k_omega, k_v)
-        elif self.robot_spec['model'] == 'DynamicUnicycle2D':
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
             return self.robot.nominal_input(self.X, goal, d_min, k_omega, k_a, k_v)
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
             return self.robot.nominal_input(self.X, goal, d_min, k_v, k_a)
+        elif self.robot_spec['model'] in ['Quad2D', 'Quad3D', 'VTOL2D']:
+            # these three have quite complex nominal input
+            # so recommend to tune gains inside of each script
+            return self.robot.nominal_input(self.X, goal)
 
     def nominal_attitude_input(self, theta_des):
-        if self.robot_spec['model'] == 'DoubleIntegrator2D':
+        if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
             return self.robot.nominal_attitude_input(self.yaw, theta_des)
         else:
             raise NotImplementedError(
@@ -193,7 +390,7 @@ class BaseRobot:
         return self.robot.has_stopped(self.X)
 
     def rotate_to(self, theta):
-        if self.robot_spec['model'] == 'DoubleIntegrator2D':
+        if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
             return self.robot.rotate_to(self.yaw, theta)
         return self.robot.rotate_to(self.X, theta)
 
@@ -208,70 +405,206 @@ class BaseRobot:
         self.U = U.reshape(-1, 1)
         self.X = self.robot.step(self.X, self.U)
         self.U_att = U_att
-        if self.robot_spec['model'] == 'DoubleIntegrator2D' and self.U_att is not None:
+        if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D'] and self.U_att is not None:
             self.U_att = U_att.reshape(-1, 1)
             self.yaw = self.robot.step_rotate(self.yaw, self.U_att)
-        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D']:
+        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad2D', 'VTOL2D']:
             self.yaw = self.X[2, 0]
+        elif self.robot_spec['model'] == 'Quad3D':
+            self.yaw = self.X[8, 0]
         return self.X
 
     def pseudo_step(self, U, U_att=None):
         # wrap step function
         self.U = U.reshape(-1, 1)
-        self.X, self.yaw_pseudo = self.robot.pseudo_step(self.X, self.yaw_pseudo, self.U)
+        self.X = self.robot.pseudo_step(self.X, self.U)
         self.U_att = U_att
         if self.robot_spec['model'] == 'DoubleIntegrator2D' and self.U_att is not None:
             self.U_att = U_att.reshape(-1, 1)
-            self.yaw = self.robot.step_rotate(self.yaw, self.U_att)
+            self.yaw_input = self.robot.pseudo_step_rotate(self.yaw_input, self.U_att)
         elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D']:
             self.yaw = self.X[2, 0]
-        return self.X, self.yaw_pseudo
+        return self.X, self.yaw_input
 
     def render_plot(self):
-        self.body.set_offsets([self.X[0, 0], self.X[1, 0]])
+        if self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
+            '''
+            Kinematic Bicycle renders the full rigid body
+            '''
+            trans_body, trans_rear, trans_front = self.robot.render_rigid_body(self.X, self.U)
+            self.vehicle_body.set_transform(trans_body)
+            self.rear_wheel.set_transform(trans_rear)
+            self.front_wheel.set_transform(trans_front)
+        elif self.robot_spec['model'] == 'Quad2D':
+            self.body_circle.center = self.X[0, 0], self.X[1, 0]
+            trans_rect = self.robot.render_rigid_body(self.X)
+            self.orientation_rectangle.set_transform(trans_rect)
+        elif self.robot_spec['model'] == 'VTOL2D':
+            # retrieve the transforms
+            transform_body, transform_front, transform_rear, transform_thrust, transform_elev = \
+                self.robot.render_rigid_body(self.X, self.U)
 
-        if len(self.unsafe_points) > 0:
-            self.unsafe_points_handle.set_offsets(np.array(self.unsafe_points))
+            # apply them to each patch
+            self.body_plane.set_transform(transform_body)
+            self.front_rect.set_transform(transform_front)
+            self.rear_rect.set_transform(transform_rear)
+            self.thrust_rect.set_transform(transform_thrust)
+            self.elevator_rect.set_transform(transform_elev)
+
+            # Update the velocity indicator and text
+            vtol_x = self.X[0, 0]
+            vtol_z = self.X[1, 0]
+            vtol_vx = self.X[3, 0]
+            vtol_vz = self.X[4, 0]
+            speed = np.linalg.norm([vtol_vx, vtol_vz])
+
+            # Calculate ratio (0 to 1) for full speed mapping (20 m/s = full bar)
+            ratio = min(speed / self.robot_spec['v_max'], 1.0)
+            cmap = plt.colormaps.get_cmap('rainbow')
+            color = cmap(ratio)
+
+            # Compute bar length proportional to speed (from 0 to maximum indicator width)
+            width = self.max_indicator_width * ratio
+            base_x = vtol_x - self.max_indicator_width / 2.0
+            base_y = vtol_z + 0.8  # Adjust vertical offset as needed
+
+            # Update the velocity indicator
+            self.velocity_indicator.set_xy((base_x+0.05, base_y+0.05))
+            self.velocity_indicator.set_width(width)
+            self.velocity_indicator.set_height(self.indicator_height)
+            self.velocity_indicator.set_color(color)
+
+            self.velocity_frame_h.set_data([base_x, base_x + self.max_indicator_width+0.05],
+                                        [base_y, base_y])
+            self.velocity_frame_v.set_data([base_x, base_x],
+                                        [base_y, base_y + self.indicator_height+0.05])
+
+            self.velocity_text.set_position((base_x + self.max_indicator_width / 2,
+                                            base_y + self.indicator_height + 0.2))
+            self.velocity_text.set_text(f"{speed:.1f} m/s")
+        else:
+            # self.body.set_offsets([self.X[0, 0], self.X[1, 0]])
+            self.body.center = self.X[0, 0], self.X[1, 0]
 
         self.axis.set_ydata([self.X[1, 0], self.X[1, 0] +
                             self.vis_orient_len*np.sin(self.yaw)])
         self.axis.set_xdata([self.X[0, 0], self.X[0, 0] +
                             self.vis_orient_len*np.cos(self.yaw)])
 
-        # Calculate FOV points
-        fov_left, fov_right = self.calculate_fov_points()
+        if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
+            if len(self.unsafe_points) > 0:
+                self.unsafe_points_handle.set_offsets(np.array(self.unsafe_points))
+            # Calculate FOV points
+            fov_left, fov_right = self.calculate_fov_points()
 
-        # Define the points of the FOV triangle (including robot's robot_position)
-        fov_x_points = [self.X[0, 0], fov_left[0],
-                        fov_right[0], self.X[0, 0]]  # Close the loop
-        fov_y_points = [self.X[1, 0], fov_left[1], fov_right[1], self.X[1, 0]]
+            # Define the points of the FOV triangle (including robot's robot_position)
+            fov_x_points = [self.X[0, 0], fov_left[0],
+                            fov_right[0], self.X[0, 0]]  # Close the loop
+            fov_y_points = [self.X[1, 0], fov_left[1], fov_right[1], self.X[1, 0]]
 
-        # Update FOV line handle
-        self.fov.set_data(fov_x_points, fov_y_points)  # Update with new data
+            # Update FOV line handle
+            self.fov.set_data(fov_x_points, fov_y_points)  # Update with new data
 
-        # Update FOV fill handle
-        # Update the vertices of the polygon
-        self.fov_fill.set_xy(np.array([fov_x_points, fov_y_points]).T)
-
-        if not self.sensing_footprints.is_empty:
-            xs, ys = self.process_sensing_footprints_visualization()
+            # Update FOV fill handle
             # Update the vertices of the polygon
-            self.sensing_footprints_fill.set_xy(np.array([xs, ys]).T)
-        if not self.safety_area.is_empty:
-            if self.safety_area.geom_type == 'Polygon':
-                safety_x, safety_y = self.safety_area.exterior.xy
-            elif self.safety_area.geom_type == 'MultiPolygon':
-                safety_x = [
-                    x for poly in self.safety_area.geoms for x in poly.exterior.xy[0]]
-                safety_y = [
-                    y for poly in self.safety_area.geoms for y in poly.exterior.xy[1]]
-            self.safety_area_fill.set_xy(np.array([safety_x, safety_y]).T)
-        if self.detected_obs is not None:
-            self.detected_obs_patch.center = self.detected_obs[0], self.detected_obs[1]
-            self.detected_obs_patch.set_radius(self.detected_obs[2])
-        if len(self.detected_points) > 0:
-            self.detected_points_scatter.set_offsets(
-                np.array(self.detected_points))
+            self.fov_fill.set_xy(np.array([fov_x_points, fov_y_points]).T)
+
+            if not self.sensing_footprints.is_empty:
+                xs, ys = self.process_sensing_footprints_visualization()
+                # Update the vertices of the polygon
+                self.sensing_footprints_fill.set_xy(np.array([xs, ys]).T)
+            if not self.safety_area.is_empty:
+                if self.safety_area.geom_type == 'Polygon':
+                    safety_x, safety_y = self.safety_area.exterior.xy
+                elif self.safety_area.geom_type == 'MultiPolygon':
+                    safety_x = [
+                        x for poly in self.safety_area.geoms for x in poly.exterior.xy[0]]
+                    safety_y = [
+                        y for poly in self.safety_area.geoms for y in poly.exterior.xy[1]]
+                self.safety_area_fill.set_xy(np.array([safety_x, safety_y]).T)
+            if self.detected_obs is not None:
+                self.detected_obs_patch.center = self.detected_obs[0], self.detected_obs[1]
+                self.detected_obs_patch.set_radius(self.detected_obs[2])
+            if len(self.detected_points) > 0:
+                self.detected_points_scatter.set_offsets(
+                    np.array(self.detected_points))
+                
+    def draw_collision_cone(self, X, obs_list, ax):
+        '''
+        Render the collision cone based on phi
+        obs: [obs_x, obs_y, obs_r]
+        '''
+        if self.robot_spec['model'] != 'KinematicBicycle2D_C3BF':
+            return
+        
+        # Remove previous collision cones safely
+        if not hasattr(self, 'collision_cone_patches'):
+            self.collision_cone_patches = [] # Initialize attribute
+
+        for patch in list(self.collision_cone_patches):
+            if patch in ax.patches:
+                patch.remove()
+        self.collision_cone_patches.clear()
+
+        # Robot and obstacle positions
+        robot_pos = self.get_position()
+        theta = X[2, 0]
+        v = X[3, 0]
+
+        # Get colors for Collision Cone edges
+        colors = plt.colormaps.get_cmap('viridis')(np.linspace(0, 1, len(obs_list)))
+
+        for i, obs in enumerate(obs_list):
+            obs = np.array(obs).flatten()
+            obs_pos = np.array([obs[0], obs[1]])
+            obs_radius = obs[2]
+            obs_vel_x = obs[3]
+            obs_vel_y = obs[4]
+
+            # Combine radius R
+            ego_dim = obs_radius + self.robot_spec['body_width'] # max(c1,c2) + robot_width/2
+
+            p_rel = obs_pos - robot_pos
+            v_rel = np.array([[obs_vel_x - v * np.cos(theta)], 
+                            [obs_vel_y - v * np.sin(theta)]])
+
+            p_rel_mag = np.linalg.norm(p_rel)
+
+            # Calculate Collision cone angle
+            phi = np.arcsin(ego_dim / p_rel_mag)
+
+            cone_dir = -p_rel / p_rel_mag
+            rot_matrix_left = np.array([[np.cos(phi), -np.sin(phi)],
+                                        [np.sin(phi),  np.cos(phi)]])
+            rot_matrix_right = np.array([[np.cos(-phi), -np.sin(-phi)],
+                                        [np.sin(-phi),  np.cos(-phi)]])
+            cone_left = (rot_matrix_left @ cone_dir).flatten()
+            cone_right = (rot_matrix_right @ cone_dir).flatten()
+
+            # Extend cone boundaries
+            cone_left = (robot_pos + 2 * cone_left).tolist()
+            cone_right = (robot_pos + 2 * cone_right).tolist()
+
+            # Draw the cone
+            cone_points = np.array ([robot_pos.tolist(), cone_left, cone_right])
+            collision_cone_patch = patches.Polygon( # only edgecolors different
+                cone_points, closed = True,
+                edgecolor=colors[i], linestyle='--', alpha=0.5, label=f"Obstacle {i}"
+            )
+            ax.add_patch(collision_cone_patch)
+            self.collision_cone_patches.append(collision_cone_patch)
+
+        # Plot the relative velocity vector for nearest obs
+        v_rel_start = robot_pos
+
+        if hasattr(self, 'v_rel_arrow') and self.v_rel_arrow is not None: # Remove previous velocity vector if exists
+            self.v_rel_arrow.remove()
+
+        self.v_rel_arrow = ax.arrow(
+            v_rel_start[0], v_rel_start[1],
+            v_rel[0, 0], v_rel[1, 0],
+            color = 'red', width = 0.02, label = 'Relative Velocity'
+        )
 
     def process_sensing_footprints_visualization(self):
         '''
@@ -319,14 +652,20 @@ class BaseRobot:
         # self.sensing_footprints = self.sensing_footprints.simplify(0.1)
 
     def update_safety_area(self):
-        if self.robot_spec['model'] == 'Unicycle2D':
+        if self.robot_spec['model'] == 'SingleIntegrator2D':
+            v = np.linalg.norm(self.U)
+        elif self.robot_spec['model'] == 'Unicycle2D':
             v = self.U[0, 0]  # Linear velocity
-        elif self.robot_spec['model'] == 'DynamicUnicycle2D':
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
             v = self.X[3, 0]
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
             vx = self.X[2, 0]
             vy = self.X[3, 0]
             v = np.linalg.norm([vx, vy])
+        elif self.robot_spec['model'] in ['Quad2D', 'VTOL2D']:
+            vx = self.X[3, 0]
+            vz = self.X[4, 0]
+            v = np.linalg.norm([vx, vz])
         yaw_rate = self.get_yaw_rate()
 
         if yaw_rate != 0.0:
@@ -369,8 +708,11 @@ class BaseRobot:
             self.safety_area = LineString([Point(self.X[0, 0], self.X[1, 0]), Point(
                 front_center)]).buffer(self.robot_radius)
 
-    def is_beyond_sensing_footprints(self):
-        flag = not self.sensing_footprints.contains(self.safety_area)
+    def is_beyond_sensing_footprints(self, mode='point_mass'):
+        if mode == 'safety_area':
+            flag = not self.sensing_footprints.contains(self.safety_area)
+        elif mode == 'point_mass':
+            flag = not self.sensing_footprints.contains(Point(self.X[0, 0], self.X[1, 0]))
         if flag:
             self.unsafe_points.append((self.X[0, 0], self.X[1, 0]))
         return flag
@@ -466,10 +808,17 @@ class BaseRobot:
         return fov_left, fov_right
 
     def is_in_fov(self, point, is_in_cam_range=False):
+        '''
+            point: [2, ] or [3, ] 
+        '''
+        if self.robot_spec['model'] in ['Quad2D', 'VTOL2D']:
+            # These dynmaics do not have a stop() method
+            return True
+
         robot_pos = self.get_position()
         robot_yaw = self.get_orientation()
 
-        to_point = point - robot_pos
+        to_point = point[:2] - robot_pos
 
         angle_to_point = np.arctan2(to_point[1], to_point[0])
         angle_diff = abs(angle_normalize(angle_to_point - robot_yaw))
@@ -499,16 +848,16 @@ if __name__ == "__main__":
     tf = 20
     num_steps = int(tf/dt)
 
-    model = 'DoubleIntegrator2D'
-    # model = 'DynamicUnicycle2D'
+    # model = 'SingleIntegrator2D'
+    # model = 'KinematicBicycle2D'
+    # model = 'DoubleIntegrator2D' #TODO: double integrator with yaw angle is not supported for this example
+    model = 'DynamicUnicycle2D'
     # model = 'Unicycle2D'
 
     robot_spec = {
         'model': model,
         'w_max': 0.5,
-        'a_max': 0.5,
-        'fov_angle': 70.0,
-        'cam_range': 3.0
+        'a_max': 0.5
     }
 
     robot = BaseRobot(
@@ -532,11 +881,11 @@ if __name__ == "__main__":
     const = [A1 @ u + b1 >= 0]
     const += [cp.abs(u[0, 0]) <= 0.5]
     const += [cp.abs(u[1, 0]) <= 0.5]
-    cbf_controller = cp.Problem(objective, const)
+    cbf_controller = cp.Problem(objective, const) 
 
     for i in range(num_steps):
         u_ref.value = robot.nominal_input(goal)
-        if robot_spec['model'] == 'Unicycle2D':
+        if robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
             alpha = 1.0  # 10.0
             h, dh_dx = robot.agent_barrier(obs)
             A1.value[0, :] = dh_dx @ robot.g()
@@ -548,7 +897,8 @@ if __name__ == "__main__":
             A1.value[0, :] = dh_dot_dx @ robot.g()
             b1.value[0, :] = dh_dot_dx @ robot.f() + (alpha1+alpha2) * \
                 h_dot + alpha1*alpha2*h
-        cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
+        # cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
+        cbf_controller.solve(solver=cp.GUROBI)
 
         if cbf_controller.status != 'optimal':
             print("ERROR in QP")
