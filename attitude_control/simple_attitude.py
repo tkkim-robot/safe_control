@@ -1,7 +1,7 @@
 import numpy as np
 
 
-class SimpleAttitude:
+class SimpleAtt:
     def __init__(self, robot, robot_spec):
         self.robot = robot
         self.robot_spec = robot_spec
@@ -13,5 +13,5 @@ class SimpleAttitude:
     def setup_control_problem(self):
         pass
 
-    def solve_control_problem(self, robot_state):
-        return np.array([self.yaw_rate_const]).reshape(-1, 1)
+    def solve_control_problem(self, *args, **kwargs) -> np.ndarray:
+        return np.array([[self.yaw_rate_const]])

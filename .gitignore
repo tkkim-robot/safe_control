@@ -1,5 +1,5 @@
 # Ignore pycache directories
-*/__pycache__/
+**/__pycache__/
 __pycache__/
 
 # Ignore misc. files
@@ -9,3 +9,5 @@ __pycache__/
 
 # Ignore directories and files with "images" in their name
 output/
+
+venv/

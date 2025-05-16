@@ -46,14 +46,17 @@ def angle_normalize(x):
     return (((x + np.pi) % (2 * np.pi)) - np.pi)
 
 class TrackingControllerNode(Node):
-    def __init__(self, control_type):
+    def __init__(self, controller_type):
         super().__init__('tracking_controller_node')
         #self.subscriber_obs = self.create_subscription(Float32MultiArray, '/control/obstacle_circles', self.obs_circles_callback, QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT))
         # self.subscriber_odom = self.create_subscription(Odometry, '/visual_slam/tracking/odometry', self.vslam_odom_callback, QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT))
         self.subscriber_odom = self.create_subscription(VehicleLocalPosition, '/px4_3/fmu/out/vehicle_local_position', self.odom_callback, QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT))
         self.publisher_ = self.create_publisher(Float32MultiArray, 'ctrl_vel', 10)
         
-        self.control_type = control_type
+        # self.control_type = control_type
+        self.controller_type = controller_type
+        self.pos_controller_type = controller_type.get('pos', 'mpc_cbf')  # 'cbf_qp' or 'mpc_cbf'
+        self.att_controller_type = controller_type.get('att', 'gatekeeper')  # 'simple' or 'velocity_tracking_yaw'
 
         # Initialize waypoints and tracking controller
         # Parameters
@@ -65,8 +68,8 @@ class TrackingControllerNode(Node):
         #     for theta in np.linspace(0, 2 * np.pi, num_waypoints, endpoint=False)], dtype=np.float32)
 
         # Square trajectory of length 1m centered at origin
-        # self.waypoints = np.array([[0.5, 0.5, 0.0, 0.0, 0.0], [0.5, -0.5, 0.0, 0.0, 0.0], [-0.5, -0.5, 0.0, 0.0, 0.0], [-0.5, 0.5, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0]], dtype=np.float32)
-        self.waypoints = np.array([[0.0, 0.0, 0.0, 0.0, 0.0], [-4.0, 1.8, 0.0, 0.0, 0.0], [-4.0, -2.3, 0.0, 0.0, 0.0], [1.0, -2.3, 0.0, 0.0, 0.0], [1.0, 1.8, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0]], dtype=np.float32)
+        self.waypoints = np.array([[0.5, 0.5, 0.0, 0.0, 0.0], [0.5, -0.5, 0.0, 0.0, 0.0], [-0.5, -0.5, 0.0, 0.0, 0.0], [-0.5, 0.5, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0]], dtype=np.float32)
+        # self.waypoints = np.array([[0.0, 0.0, 0.0, 0.0, 0.0], [-4.0, 1.8, 0.0, 0.0, 0.0], [-4.0, -2.3, 0.0, 0.0, 0.0], [1.0, -2.3, 0.0, 0.0, 0.0], [1.0, 1.8, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0]], dtype=np.float32)
         # Repeating waypoints 2 times
         # self.waypoints = np.tile(self.waypoints, (2, 1))
 
@@ -110,7 +113,7 @@ class TrackingControllerNode(Node):
             'cam_range': 3.0
         }
         self.tracking_controller = LocalTrackingController(
-            x_init, robot_spec, control_type=self.control_type, dt=0.05,
+            x_init, robot_spec, controller_type=self.controller_type, dt=0.05,
             show_animation=False, save_animation=False, ax=self.ax, fig=self.fig,
             env=self.env_handler
         )
@@ -180,29 +183,35 @@ class TrackingControllerNode(Node):
         pose.y = msg.y
         pose.z = msg.z
         orientation = [0, 0, angle_normalize(msg.heading+np.pi/2)]
+        # orientation = [0, 0, angle_normalize(msg.heading)]
         velocity = Odometry().twist.twist.linear
         velocity.x = msg.vx # in earth-fixed frame
         velocity.y = msg.vy # in earth-fixed frame
-        print("theta robot: ", angle_normalize(msg.heading+np.pi/2))
+        # print("theta robot: ", angle_normalize(msg.heading+np.pi/2))
         # Convert quaternion to euler angles
         #orientation = euler_from_quaternion(orientation) # roll, pitch, yaw order
 
         self.tracking_controller.set_robot_state(pose, orientation, velocity)
-        print("velocity: ", velocity.x, velocity.y)
+        # print("velocity: ", velocity.x, velocity.y)
         #print(self.tracking_controller.robot.X)
 
         ret = self.tracking_controller.control_step()
         u = self.tracking_controller.get_control_input() # ax, ay
-        x_next, yaw_pseudo = self.tracking_controller.get_full_state() 
+
+        yaw_rate_input = self.tracking_controller.get_att_input()
+
+        x_next, yaw_input = self.tracking_controller.get_full_state() 
         # print("x_next: ", x_next)
 
         # concatenating x_next and u
         yaw_rate_pseudo = -0.4
         print("x_next: ", x_next)
+        print("yaw: ", yaw_input)
         print("u: ", u)
-        print("yaw_pseudo: ", yaw_pseudo)
-        print("yaw_rate_pseudo: ", yaw_rate_pseudo)
-        full_state_u = np.concatenate((x_next, u, [[yaw_pseudo]], [[yaw_rate_pseudo]], [[pose.z]]), axis=0)
+        print("u_att: ", yaw_rate_input)
+        # print("yaw_pseudo: ", yaw_pseudo)
+        # print("yaw_rate_pseudo: ", yaw_rate_pseudo)
+        full_state_u = np.concatenate((x_next, u, [[yaw_input]], yaw_rate_input, [[pose.z]]), axis=0)
         # TODO: Append yaw state and ctrl to full_state_u and send on msg (Not implemented) 
         print("full_state_u: ", full_state_u)
 
@@ -236,11 +245,12 @@ class TrackingControllerNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    control_type = 'mpc_cbf'
+    # control_type = 'mpc_cbf'
     # control_type = 'optimal_decay_mpc_cbf'
     #control_type = 'optimal_decay_cbf_qp'
     #control_type = 'mpc_iccbf'
-    node = TrackingControllerNode(control_type)
+    controller_type={'pos': 'mpc_cbf', 'att': 'gatekeeper'}
+    node = TrackingControllerNode(controller_type)
     rclpy.spin(node)
     node.shutdown()
     node.destroy_node()

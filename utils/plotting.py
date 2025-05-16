@@ -6,7 +6,7 @@ import math
 import numpy as np
 
 class Plotting:
-    def __init__(self, width=20.0, height=20.0, known_obs = []):
+    def __init__(self, width=14.0, height=14.0, known_obs = []):
         self.env = env.Env(width=width, height=height, known_obs = known_obs)
         self.obs_bound = self.env.obs_boundary
         self.obs_circle = self.env.obs_circle
@@ -60,7 +60,11 @@ class Plotting:
                 )
             )
 
-        for (ox, oy, r) in self.obs_circle:
+        for obs_info in self.obs_circle:
+            if obs_info.shape[0] == 3:
+                ox, oy, r = obs_info
+            elif obs_info.shape[0] == 5:
+                continue
             main_ax.add_patch(
                 patches.Circle(
                     (ox, oy), r,
@@ -71,9 +75,11 @@ class Plotting:
             )
 
         main_ax.set_title(name)
-        eps = 0.2
-        main_ax.set_xlim(self.env.x_range[0] - eps, self.env.x_range[1] + eps)
-        main_ax.set_ylim(self.env.y_range[0] - eps, self.env.y_range[1] + eps)
+        eps = 0.015
+        eps_x = (self.env.x_range[1] - self.env.x_range[0])  * eps
+        eps_y = (self.env.y_range[1] - self.env.y_range[0]) * eps
+        main_ax.set_xlim(self.env.x_range[0] - eps_x, self.env.x_range[1] + eps_x)
+        main_ax.set_ylim(self.env.y_range[0] - eps_y, self.env.y_range[1] + eps_y)
         main_ax.set_aspect('equal', adjustable='box')
         plt.tight_layout()
 
