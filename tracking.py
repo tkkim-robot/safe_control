@@ -48,7 +48,7 @@ class LocalTrackingController:
         self.rotation_threshold = 0.1  # Radians
 
         self.current_goal_index = 0  # Index of the current goal in the path
-        self.reached_threshold = 0.5 
+        self.reached_threshold = 0.3 
         # if robot_spec specifies a different reached_threshold, use that (ex. VTOL)
         if 'reached_threshold' in robot_spec:
             self.reached_threshold = robot_spec['reached_threshold']
@@ -415,8 +415,8 @@ class LocalTrackingController:
             else:
                 self.state_machine = 'track'
                 #self.u_att = None
-                self.u_att = 0.0
-                print("set u_att to none")
+                self.u_att = np.array([[0.0]])
+                #print("set u_att to none")
 
         # Check if all waypoints are reached;
         if self.current_goal_index >= len(self.waypoints):
