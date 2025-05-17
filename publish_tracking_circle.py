@@ -68,6 +68,7 @@ class TrackingControllerNode(Node):
         #     for theta in np.linspace(0, 2 * np.pi, num_waypoints, endpoint=False)], dtype=np.float32)
 
         # Square trajectory of length 1m centered at origin
+        # waypoiunts: x, y
         self.waypoints = np.array([[0.5, 0.5, 0.0, 0.0, 0.0], [0.5, -0.5, 0.0, 0.0, 0.0], [-0.5, -0.5, 0.0, 0.0, 0.0], [-0.5, 0.5, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0]], dtype=np.float32)
         # self.waypoints = np.array([[0.0, 0.0, 0.0, 0.0, 0.0], [-4.0, 1.8, 0.0, 0.0, 0.0], [-4.0, -2.3, 0.0, 0.0, 0.0], [1.0, -2.3, 0.0, 0.0, 0.0], [1.0, 1.8, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0]], dtype=np.float32)
         # Repeating waypoints 2 times

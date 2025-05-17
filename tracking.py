@@ -48,7 +48,7 @@ class LocalTrackingController:
         self.rotation_threshold = 0.1  # Radians
 
         self.current_goal_index = 0  # Index of the current goal in the path
-        self.reached_threshold = 0.07 
+        self.reached_threshold = 0.5 
         # if robot_spec specifies a different reached_threshold, use that (ex. VTOL)
         if 'reached_threshold' in robot_spec:
             self.reached_threshold = robot_spec['reached_threshold']
@@ -96,7 +96,9 @@ class LocalTrackingController:
                 raise ValueError("Invalid initial state dimension for VTOL2D")
     
             
-        self.u_att = None
+        self.u_att = np.array([[0.0]])
+        self.u_pos = np.array([[0.0], [0.0]]) # TODO: only for double integrator
+        self.next_x_according_to_dynamics = np.array([[0.0], [0.0], [0.0], [0.0]])
         # self.u_att = 0.0
 
         self.show_animation = show_animation
@@ -206,8 +208,8 @@ class LocalTrackingController:
         self.goal = self.update_goal()
         if self.goal is not None:
             if not self.robot.is_in_fov(self.goal):
-                self.state_machine = 'stop'
-                self.goal = None  # let the robot stop then rotate
+                self.state_machine = 'rotate'
+                #self.goal = None  # let the robot stop then rotate
             else:
                 self.state_machine = 'track'
 
@@ -412,8 +414,8 @@ class LocalTrackingController:
                 return self.waypoints[0][:n_pos]
             else:
                 self.state_machine = 'track'
-                self.u_att = None
-                # self.u_att = 0.0
+                #self.u_att = None
+                self.u_att = 0.0
                 print("set u_att to none")
 
         # Check if all waypoints are reached;
@@ -495,7 +497,7 @@ class LocalTrackingController:
             goal_angle = np.arctan2(self.goal[1] - self.robot.X[1, 0],
                                     self.goal[0] - self.robot.X[0, 0])
             if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
-                print("goal angle***", goal_angle)
+                #print("goal angle***", goal_angle)
                 self.u_att = self.robot.rotate_to(goal_angle)
                 u_ref = self.robot.stop()
             elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad2D', 'Quad3D', 'VTOL2D']:

@@ -25,8 +25,8 @@ class MPCCBF:
             self.Q = np.diag([50, 50, 0.01, 30])  # State cost matrix
             self.R = np.array([0.5, 0.5])  # Input cost matrix
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
-            self.Q = np.diag([50, 50, 20, 20])  # State cost matrix
-            self.R = np.array([0.5, 0.5])  # Input cost matrix
+            self.Q = np.diag([50, 50, 10, 10])  # State cost matrix # 250517 changed from previous experiments
+            self.R = np.array([1.0, 1.0])  # Input cost matrix
         elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
             self.Q = np.diag([50, 50, 1, 1])  # State cost matrix
             self.R = np.array([0.5, 50.0])  # Input cost matrix
@@ -191,6 +191,10 @@ class MPCCBF:
                 [-self.robot_spec['ax_max'], -self.robot_spec['ay_max']])
             mpc.bounds['upper', '_u', 'u'] = np.array(
                 [self.robot_spec['ax_max'], self.robot_spec['ay_max']])
+            mpc.bounds['lower', '_x', 'x', 0] = -3.5 # space config for flylab umich
+            mpc.bounds['upper', '_x', 'x', 0] = 1.0
+            mpc.bounds['lower', '_x', 'x', 1] = -2.3
+            mpc.bounds['upper', '_x', 'x', 1] = 1.8
         elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
             mpc.bounds['lower', '_x', 'x', 3] = -self.robot_spec['v_max']
             mpc.bounds['upper', '_x', 'x', 3] = self.robot_spec['v_max']

@@ -1,13 +1,13 @@
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-import utils.env as env
-from utils.utils import calculate_fov_points, linewidth_from_data_units
+import seamlis.safe_control.utils.env as env
+from seamlis.safe_control.utils.utils import calculate_fov_points, linewidth_from_data_units
 import math
 import numpy as np
 
 class Plotting:
     def __init__(self, width=14.0, height=14.0, known_obs = []):
-        self.env = env.Env(width=width, height=height, known_obs = known_obs)
+        self.env = env.Env(width=width, height=height, resolution=0.1, known_obs=known_obs)
         self.obs_bound = self.env.obs_boundary
         self.obs_circle = self.env.obs_circle
         self.obs_rectangle = self.env.obs_rectangle

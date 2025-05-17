@@ -1,8 +1,9 @@
 import numpy as np
 class Env:
-    def __init__(self, width=20.0, height=20.0, known_obs = [], resolution=0.1):
+    def __init__(self, width=20.0, height=20.0, resolution=0.1, known_obs=[]):
         self.width = width
         self.height = height
+        # print("asdfasdf"*100)
         self.resolution = resolution  # meters per cell
         self.x_range = (0, width)
         self.y_range = (0, height)

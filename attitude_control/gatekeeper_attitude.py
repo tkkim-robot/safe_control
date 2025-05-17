@@ -307,7 +307,7 @@ class GatekeeperAtt:
         angle_diff = abs(angle_normalize(angle_to_point - robot_yaw))
         
         in_fov = angle_diff <= self.robot.fov_angle / 2
-        print("robot spec", self.robot_spec)
+        #print("robot spec", self.robot_spec)
         
         if is_in_cam_range:
             dist_to_point = np.linalg.norm(to_point)

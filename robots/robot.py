@@ -315,6 +315,7 @@ class BaseRobot:
             self.X[1, 0] = pose.y
             self.X[2, 0] = velocity.x
             self.X[3, 0] = velocity.y
+            self.yaw_input = orientation[2] # yaw
             
     def get_position(self):
         return self.X[0:2].reshape(-1)
