@@ -191,10 +191,10 @@ class MPCCBF:
                 [-self.robot_spec['ax_max'], -self.robot_spec['ay_max']])
             mpc.bounds['upper', '_u', 'u'] = np.array(
                 [self.robot_spec['ax_max'], self.robot_spec['ay_max']])
-            mpc.bounds['lower', '_x', 'x', 0] = -3.5 # space config for flylab umich
-            mpc.bounds['upper', '_x', 'x', 0] = 1.0
-            mpc.bounds['lower', '_x', 'x', 1] = -2.3
-            mpc.bounds['upper', '_x', 'x', 1] = 1.8
+            mpc.bounds['lower', '_x', 'x', 0] = -1.25 # space config for flylab umich
+            mpc.bounds['upper', '_x', 'x', 0] = 1.25
+            mpc.bounds['lower', '_x', 'x', 1] = -1.25
+            mpc.bounds['upper', '_x', 'x', 1] = 1.25
         elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
             mpc.bounds['lower', '_x', 'x', 3] = -self.robot_spec['v_max']
             mpc.bounds['upper', '_x', 'x', 3] = self.robot_spec['v_max']
