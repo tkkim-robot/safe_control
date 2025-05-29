@@ -48,7 +48,7 @@ class LocalTrackingController:
         self.rotation_threshold = 0.1  # Radians
 
         self.current_goal_index = 0  # Index of the current goal in the path
-        self.reached_threshold = 0.2 
+        self.reached_threshold = 0.2
         # if robot_spec specifies a different reached_threshold, use that (ex. VTOL)
         if 'reached_threshold' in robot_spec:
             self.reached_threshold = robot_spec['reached_threshold']
@@ -202,8 +202,15 @@ class LocalTrackingController:
         self.goal = self.update_goal()
         if self.goal is not None:
             if not self.robot.is_in_fov(self.goal):
-                self.state_machine = 'stop'
-                self.goal = None  # let the robot stop then rotate
+                if self.robot_spec['exploration']:
+                    # when tracking class used in exploration scenario,
+                    # the goal is updated usually when the robot is far away from the unsafe area (considering sensing range)
+                    self.state_machine = 'rotate'
+                else:
+                    # normal tracking mode
+                    self.state_machine = 'stop'
+                    self.goal = None  # let the robot stop then rotate
+
             else:
                 self.state_machine = 'track'
 
