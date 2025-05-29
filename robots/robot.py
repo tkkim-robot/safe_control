@@ -527,8 +527,12 @@ class BaseRobot:
             obs = np.array(obs).flatten()
             obs_pos = np.array([obs[0], obs[1]])
             obs_radius = obs[2]
-            obs_vel_x = obs[3]
-            obs_vel_y = obs[4]
+            if len(obs) >= 5:
+                obs_vel_x = obs[3]
+                obs_vel_y = obs[4]
+            else:
+                obs_vel_x = 0.0
+                obs_vel_y = 0.0
 
             # Combine radius R
             ego_dim = obs_radius + self.robot_spec['body_width'] # max(c1,c2) + robot_width/2
