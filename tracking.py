@@ -71,7 +71,7 @@ class LocalTrackingController:
             elif X0.shape[0] != 5:
                 raise ValueError(
                     "Invalid initial state dimension for DoubleIntegrator2D")
-        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
+        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_relaxedC3BF']:
             if X0.shape[0] == 3:  # set initial velocity to 0.0
                 X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
         elif self.robot_spec['model'] in ['Quad2D']:
@@ -262,7 +262,7 @@ class LocalTrackingController:
         
         if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'Quad2D']:
             angle_unpassed=np.pi*2
-        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad3D', 'VTOL2D']:
+        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_relaxedC3BF', 'Quad3D', 'VTOL2D']:
             angle_unpassed=np.pi*1.2
         
         if len(detected_obs) != 0:
@@ -487,7 +487,7 @@ class LocalTrackingController:
             if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
                 self.u_att = self.robot.rotate_to(goal_angle)
                 u_ref = self.robot.stop()
-            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad2D', 'Quad3D', 'VTOL2D']:
+            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_relaxedC3BF', 'Quad2D', 'Quad3D', 'VTOL2D']:
                 u_ref = self.robot.rotate_to(goal_angle)
         elif self.goal is None:
             u_ref = self.robot.stop()
@@ -638,7 +638,7 @@ class LocalTrackingController:
 
 def single_agent_main(controller_type):
     dt = 0.05
-    model = 'DynamicUnicycle2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'KinematicBicycle2D_relaxedC3BF' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, KinematicBicycle2D_relaxedC3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     waypoints = [
         [2, 2, math.pi/2],
@@ -686,6 +686,21 @@ def single_agent_main(controller_type):
     elif model == 'KinematicBicycle2D_C3BF':
         robot_spec = {
             'model': 'KinematicBicycle2D_C3BF',
+            'a_max': 0.5,
+            'radius': 0.5
+        }
+        dynamic_obs = []  
+        for i, obs_info in enumerate(known_obs):
+            ox, oy, r = obs_info[:3]
+            if i % 2 == 0:
+                vx, vy = 0.1, 0.05
+            else:
+                vx, vy = -0.1, 0.05
+            dynamic_obs.append([ox, oy, r, vx, vy])
+        known_obs = np.array(dynamic_obs)
+    elif model == 'KinematicBicycle2D_relaxedC3BF':
+        robot_spec = {
+            'model': 'KinematicBicycle2D_relaxedC3BF',
             'a_max': 0.5,
             'radius': 0.5
         }
@@ -881,9 +896,9 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    #single_agent_main(controller_type={'pos': 'mpc_cbf'})
+    single_agent_main(controller_type={'pos': 'mpc_cbf'})
     #single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'simple'})
-    single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'gatekeeper'})
+    # single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'gatekeeper'})
     # multi_agent_main('mpc_cbf', save_animation=True)
     # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')

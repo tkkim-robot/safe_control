@@ -116,6 +116,8 @@ class KinematicBicycle2D:
             ])
 
     def step(self, X, U, casadi=False):
+        if U.shape[0] > 2:          # For relaxed C3BF
+            U = U[:2, :]          
         X = X + (self.f(X, casadi) + self.g(X, casadi) @ U) * self.dt
         X[2, 0] = angle_normalize(X[2, 0])
         return X

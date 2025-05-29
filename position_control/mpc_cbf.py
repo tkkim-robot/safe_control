@@ -30,6 +30,11 @@ class MPCCBF:
         elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
             self.Q = np.diag([50, 50, 1, 1])  # State cost matrix
             self.R = np.array([0.5, 50.0])  # Input cost matrix
+        elif self.robot_spec['model'] in ['KinematicBicycle2D_relaxedC3BF']:
+            self.Q = np.diag([50, 50, 1, 1])  # State cost matrix
+            self.R = np.array([0.5, 50.0])  # Input cost matrix
+            self.slack_penalty = 0.1  # λ in cost
+            self.slack_ub      = 10.0  # δ_max
         elif self.robot_spec['model'] == 'Quad2D':
             self.Q = np.diag([25, 25, 50, 10, 10, 50])
             self.R = np.array([0.5, 0.5])
@@ -65,6 +70,9 @@ class MPCCBF:
             self.cbf_param['alpha2'] = 0.15
             self.n_states = 4
         elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
+            self.cbf_param['alpha'] = 0.15
+            self.n_states = 4
+        elif self.robot_spec['model'] == 'KinematicBicycle2D_relaxedC3BF':
             self.cbf_param['alpha'] = 0.15
             self.n_states = 4
         elif self.robot_spec['model'] == 'Quad2D':
@@ -111,7 +119,7 @@ class MPCCBF:
         _obs = model.set_variable(
             var_type='_tvp', var_name='obs', shape=(5, 5)) # (num_obs, obs_info), where [x, y, r, vx, vy]
 
-        if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
+        if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_relaxedC3BF']:
             _alpha = model.set_variable(
                 var_type='_tvp', var_name='alpha', shape=(1, 1))
         elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'Quad3D', 'VTOL2D']:
@@ -119,7 +127,10 @@ class MPCCBF:
                 var_type='_tvp', var_name='alpha1', shape=(1, 1))
             _alpha2 = model.set_variable(
                 var_type='_tvp', var_name='alpha2', shape=(1, 1))
-
+            
+        if self.robot_spec['model'] == 'KinematicBicycle2D_relaxedC3BF':
+            _delta = model.set_variable(var_type='_u', var_name='delta_cbf', shape=(1, 1))
+            
         # System dynamics
         f_x = self.robot.f_casadi(_x)
         g_x = self.robot.g_casadi(_x)
@@ -166,8 +177,13 @@ class MPCCBF:
         lterm = self.model.aux['cost']  # Stage cost
         mpc.set_objective(mterm=mterm, lterm=lterm)
         # Input penalty (R diagonal matrix in objective fun)
-        mpc.set_rterm(u=self.R)
-
+        if self.robot_spec['model'] == 'KinematicBicycle2D_relaxedC3BF':
+            mpc.set_rterm(u=self.R, delta_cbf=self.slack_penalty)
+            mpc.bounds['lower', '_u', 'delta_cbf'] = 0.0
+            mpc.bounds['upper', '_u', 'delta_cbf'] = self.slack_ub            
+        else:
+            mpc.set_rterm(u=self.R)
+            
         # State and input bounds
         if self.robot_spec['model'] == 'SingleIntegrator2D':
             mpc.bounds['lower', '_u', 'u'] = np.array(
@@ -191,7 +207,7 @@ class MPCCBF:
                 [-self.robot_spec['ax_max'], -self.robot_spec['ay_max']])
             mpc.bounds['upper', '_u', 'u'] = np.array(
                 [self.robot_spec['ax_max'], self.robot_spec['ay_max']])
-        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
+        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_relaxedC3BF']:
             mpc.bounds['lower', '_x', 'x', 3] = -self.robot_spec['v_max']
             mpc.bounds['upper', '_x', 'x', 3] = self.robot_spec['v_max']
             mpc.bounds['lower', '_u', 'u'] = np.array(
@@ -270,7 +286,7 @@ class MPCCBF:
                     # Use the detected obstacles directly
                     tvp_template['_tvp', :, 'obs'] = self.obs[:5, :]  # Limit to 5 obstacles
 
-            if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
+            if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_relaxedC3BF']:
                 tvp_template['_tvp', :, 'alpha'] = self.cbf_param['alpha']
             elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'Quad3D', 'VTOL2D']:
                 tvp_template['_tvp', :, 'alpha1'] = self.cbf_param['alpha1']
@@ -290,7 +306,12 @@ class MPCCBF:
         for i in range(5):
             obs_i = _obs[i, :]  # Select the i-th obstacle
             cbf_constraint = self.compute_cbf_constraint(_x, _u, obs_i)
-            mpc.set_nl_cons(f'cbf_{i}', -cbf_constraint, ub=0)
+
+            if self.robot_spec['model'] == 'KinematicBicycle2D_relaxedC3BF':
+                delta = self.model.u['delta_cbf']          
+                mpc.set_nl_cons(f'cbf_{i}', -cbf_constraint + delta, ub=0)
+            else:
+                mpc.set_nl_cons(f'cbf_{i}', -cbf_constraint,         ub=0)
 
         return mpc
 
@@ -298,7 +319,7 @@ class MPCCBF:
         '''compute cbf constraint value
         We reuse this function to print the CBF constraint'''
 
-        if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
+        if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_relaxedC3BF']:
             _alpha = self.model.tvp['alpha']
             h_k, d_h = self.robot.agent_barrier_dt(_x, _u, _obs)
             cbf_constraint = d_h + _alpha * h_k
@@ -312,7 +333,7 @@ class MPCCBF:
             raise NotImplementedError('Model not implemented')
 
         return cbf_constraint
-
+ 
     def create_simulator(self):
         simulator = do_mpc.simulator.Simulator(self.model)
         simulator.set_param(t_step=self.dt)
