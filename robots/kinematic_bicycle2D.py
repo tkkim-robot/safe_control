@@ -39,24 +39,15 @@ class KinematicBicycle2D:
         self.dt = dt
         self.robot_spec = robot_spec
 
-        if 'wheel_base' not in self.robot_spec:
-            self.robot_spec['wheel_base'] = 0.5
-        if 'body_width' not in self.robot_spec:
-            self.robot_spec['body_width'] = 0.3
-        if 'radius' not in self.robot_spec:
-            self.robot_spec['radius'] = 0.5
-        if 'front_ax_dist' not in self.robot_spec:
-            self.robot_spec['front_ax_dist'] = 0.2
-        if 'rear_ax_distance' not in self.robot_spec:
-            self.robot_spec['rear_ax_dist'] = 0.3
-        if 'v_max' not in self.robot_spec:
-            self.robot_spec['v_max'] = 1.0
-        if 'a_max' not in self.robot_spec:
-            self.robot_spec['a_max'] = 0.5
-        if 'delta_max' not in self.robot_spec:
-            self.robot_spec['delta_max'] = np.deg2rad(30)
-        if 'beta_max' not in self.robot_spec:
-            self.robot_spec['beta_max'] = self.beta(self.robot_spec['delta_max'])
+        self.robot_spec.setdefault('wheel_base', 0.5)
+        self.robot_spec.setdefault('body_width', 0.3)
+        self.robot_spec.setdefault('radius', 0.5)
+        self.robot_spec.setdefault('front_ax_dist', 0.2)
+        self.robot_spec.setdefault('rear_ax_dist', 0.3)
+        self.robot_spec.setdefault('v_max', 1.0)
+        self.robot_spec.setdefault('a_max', 0.5)
+        self.robot_spec.setdefault('delta_max', np.deg2rad(30))
+        self.robot_spec.setdefault('beta_max', self.beta(self.robot_spec['delta_max']))
 
     def beta(self, delta):
         # Computes the slip angle beta

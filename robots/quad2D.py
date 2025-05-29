@@ -36,14 +36,10 @@ class Quad2D:
         self.dt = dt
         self.robot_spec = robot_spec
 
-        if 'mass' not in self.robot_spec:
-            self.robot_spec['mass'] = 1.0
-        if 'inertia' not in self.robot_spec:
-            self.robot_spec['inertia'] = 0.01
-        if 'f_min' not in self.robot_spec:
-            self.robot_spec['f_min'] = 1.0
-        if 'f_max' not in self.robot_spec:
-            self.robot_spec['f_max'] = 10.0
+        self.robot_spec.setdefault('mass', 1.0)
+        self.robot_spec.setdefault('inertia', 0.01)
+        self.robot_spec.setdefault('f_min', 1.0)
+        self.robot_spec.setdefault('f_max', 10.0)
 
     def f(self, X, casadi=False):
         m, g = self.robot_spec['mass'], 9.81
