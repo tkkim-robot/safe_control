@@ -35,16 +35,11 @@ class DoubleIntegrator2D:
         self.dt = dt
         self.robot_spec = robot_spec
 
-        if 'a_max' not in self.robot_spec:
-            self.robot_spec['a_max'] = 1.0
-        if 'v_max' not in self.robot_spec:
-            self.robot_spec['v_max'] = 1.0
-        if 'ax_max' not in self.robot_spec:
-            self.robot_spec['ax_max'] = self.robot_spec['a_max']
-        if 'ay_max' not in self.robot_spec:
-            self.robot_spec['ay_max'] = self.robot_spec['a_max']
-        if 'w_max' not in self.robot_spec:
-            self.robot_spec['w_max'] = 0.5
+        self.robot_spec.setdefault('a_max', 1.0)
+        self.robot_spec.setdefault('v_max', 1.0)
+        self.robot_spec.setdefault('ax_max', self.robot_spec['a_max'])
+        self.robot_spec.setdefault('ay_max', self.robot_spec['a_max'])
+        self.robot_spec.setdefault('w_max', 0.5)
 
     def f(self, X, casadi=False):
         if casadi:
@@ -135,6 +130,7 @@ class DoubleIntegrator2D:
     def rotate_to(self, theta, theta_des, k_omega=2.0):
         error_theta = angle_normalize(theta_des - theta)
         yaw_rate = k_omega * error_theta
+        yaw_rate = np.clip(yaw_rate, -self.robot_spec['w_max'], self.robot_spec['w_max'])
         return np.array([yaw_rate]).reshape(-1, 1)
 
     def agent_barrier(self, X, obs, robot_radius, beta=1.01):

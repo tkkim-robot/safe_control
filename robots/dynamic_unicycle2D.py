@@ -33,12 +33,9 @@ class DynamicUnicycle2D:
         self.dt = dt
         self.robot_spec = robot_spec
 
-        if 'a_max' not in self.robot_spec:
-            self.robot_spec['a_max'] = 0.5
-        if 'w_max' not in self.robot_spec:
-            self.robot_spec['w_max'] = 0.5
-        if 'v_max' not in self.robot_spec:
-            self.robot_spec['v_max'] = 1.0
+        self.robot_spec.setdefault('a_max', 0.5)
+        self.robot_spec.setdefault('w_max', 0.5)
+        self.robot_spec.setdefault('v_max', 1.0)
 
     def f(self, X, casadi=False):
         if casadi:

@@ -36,17 +36,12 @@ class Quad3D:
         '''
         self.dt = dt
         self.robot_spec = robot_spec
-        if 'phi_dot_max' not in self.robot_spec:
-            self.robot_spec['phi_dot_max'] = np.deg2rad(45.0)
-        if 'theta_dot_max' not in self.robot_spec:
-            self.robot_spec['theta_dot_max'] = np.deg2rad(45.0)
-        if 'psi_dot_max' not in self.robot_spec:
-            self.robot_spec['psi_dot_max'] = np.deg2rad(45.0)
-        if 'f_max' not in self.robot_spec:
-            self.robot_spec['f_max'] = 100.0
+        self.robot_spec.setdefault('phi_dot_max', np.deg2rad(45.0))
+        self.robot_spec.setdefault('theta_dot_max', np.deg2rad(45.0))
+        self.robot_spec.setdefault('psi_dot_max', np.deg2rad(45.0))
+        self.robot_spec.setdefault('f_max', 100.0)
         # f_min should be 0.0
-        if 'mass' not in self.robot_spec:
-            self.robot_spec['mass'] = 1.0
+        self.robot_spec.setdefault('mass', 1.0)
         self.df_dx = np.vstack([np.hstack([np.zeros([3,3]), np.eye(3),np.zeros([3,3])]),np.zeros([6,9])])
       
         self.m = self.robot_spec['mass']

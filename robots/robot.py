@@ -37,24 +37,22 @@ class BaseRobot:
         self.X = X0.reshape(-1, 1)
         self.dt = dt
         self.robot_spec = robot_spec
-        if 'robot_id' not in robot_spec:
-            self.robot_spec['robot_id'] = 0
+
+        self.robot_spec.setdefault('robot_id', 0)
+        self.robot_spec.setdefault('exploration', False)
 
         colors = plt.colormaps.get_cmap('Pastel1').colors  # color palette
 
         color = colors[self.robot_spec['robot_id'] % len(colors) + 1]
 
-        if 'radius' not in self.robot_spec:
-            self.robot_spec['radius'] = 0.25
+        self.robot_spec.setdefault('radius', 0.25)
         self.robot_radius = self.robot_spec['radius']  # including padding
 
         # FOV parameters
-        if 'fov_angle' not in self.robot_spec:
-            self.robot_spec['fov_angle'] = 70.0
+        self.robot_spec.setdefault('fov_angle', 70.0)
         self.fov_angle = np.deg2rad(float(self.robot_spec['fov_angle']))  # [rad]
         if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
-            if 'cam_range' not in self.robot_spec:
-                self.robot_spec['cam_range'] = 3.0
+            self.robot_spec.setdefault('cam_range', 3.0)
             self.cam_range = self.robot_spec['cam_range']  # [m]
 
         # Visibility parameters
@@ -291,11 +289,16 @@ class BaseRobot:
 
         # initialize the sensing_footprints with the initial robot location with radius 1
         init_robot_position = Point(self.X[0, 0], self.X[1, 0]).buffer(self.robot_radius*2)
-        self.sensing_footprints = self.sensing_footprints.union(
-            init_robot_position)
-        
-        if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
-            self.update_sensing_footprints()
+
+        if self.robot_spec['exploration']:
+            # when is in exploration mode, assume a free space is given initially around the robot
+            self.sensing_footprints = self.sensing_footprints.union(
+                init_robot_position).buffer(self.robot_radius*10)
+        else:
+            self.sensing_footprints = self.sensing_footprints.union(
+                init_robot_position)
+            if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
+                self.update_sensing_footprints()
 
     def get_position(self):
         return self.X[0:2].reshape(-1)
@@ -819,7 +822,7 @@ if __name__ == "__main__":
 
     # model = 'SingleIntegrator2D'
     # model = 'KinematicBicycle2D'
-    # model = 'DoubleIntegrator2D' #TODO: double integrator with yaw angle is not supported for this example
+    # model = 'DoubleIntegrator2D'
     model = 'DynamicUnicycle2D'
     # model = 'Unicycle2D'
 
