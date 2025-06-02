@@ -153,6 +153,10 @@ class LocalTrackingController:
                 from attitude_control.gatekeeper_attitude import GatekeeperAtt
                 self.att_controller = GatekeeperAtt(self.robot, self.robot_spec)
                 self.att_controller.setup_pos_controller(self.pos_controller)
+            elif self.att_controller_type == 'visibility':
+                from attitude_control.visibility_promoting_yaw import VisibilityAtt
+                self.att_controller = VisibilityAtt(self.robot, self.robot_spec)
+                
             else:
                 raise ValueError(
                     f"Unknown attitude controller type: {self.att_controller_type}")
