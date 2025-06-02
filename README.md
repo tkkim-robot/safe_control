@@ -143,7 +143,7 @@ Supported robot dynamics can be found in the [`robots/`](https://github.com/tkki
 - `dynamic_unicycle2D`: A unicycle model that uses velocity as state and acceleration as input.
 - `kinematic_bicycle2D`: need to use [`C3BF`](https://arxiv.org/abs/2403.07043) for valid CBF. See [`robots/kinematic_bicycle2D_c3bf.py](https://github.com/tkkim-robot/safe_control/blob/main/robots/kinematic_bicycle2D_c3bf.py) for more details.
 - `quad2d`: x - forward, z - vertical
-- `quad3d`: (* dynamics are implemented, work in progress for a valid CBF)
+- `quad3d`: 12 states, using [`RK4 Sampled Data CBF`](https://arxiv.org/pdf/2203.11470) to construct CBF for relative degree of 4 input.
 - `vtol2d`: x - forward, z - vertical
 
 ### Positional Control Algorithms
