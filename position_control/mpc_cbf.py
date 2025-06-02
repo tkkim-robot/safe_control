@@ -34,8 +34,8 @@ class MPCCBF:
             self.Q = np.diag([25, 25, 50, 10, 10, 50])
             self.R = np.array([0.5, 0.5])
         elif self.robot_spec['model'] == 'Quad3D':
-            self.Q = np.diag([50, 50, 20, 20, 20, 20, 20, 20, 20]) 
-            self.R = np.array([0.5, 0.2, 0.2, 0.2])
+            self.Q = np.diag([30, 30, 5, 20, 20, 1, 10, 10, 10, 20, 20, 1]) 
+            self.R = np.array([1, 1, 1, 1])
         elif self.robot_spec['model'] == 'VTOL2D':
             self.horizon = 30
             self.Q = np.diag([10, 10, 250, 10, 10, 50])
@@ -74,7 +74,7 @@ class MPCCBF:
         elif self.robot_spec['model'] == 'Quad3D':
             self.cbf_param['alpha1'] = 0.15
             self.cbf_param['alpha2'] = 0.15
-            self.n_states = 9
+            self.n_states = 12
             self.n_controls = 4 # override n_controls for Quad3D
             self.goal = np.array([0, 0, 0]) # override goal with z placeholder
         elif self.robot_spec['model'] == 'VTOL2D':
@@ -205,9 +205,9 @@ class MPCCBF:
                 [self.robot_spec['f_max'], self.robot_spec['f_max']])
         elif self.robot_spec['model'] == 'Quad3D':
             mpc.bounds['lower', '_u', 'u'] = np.array(
-                [0.0, -self.robot_spec['phi_dot_max'], -self.robot_spec['theta_dot_max'], -self.robot_spec['psi_dot_max']])
+                [self.robot_spec['u_min'], self.robot_spec['u_min'], self.robot_spec['u_min'], self.robot_spec['u_min']])
             mpc.bounds['upper', '_u', 'u'] = np.array(
-                [self.robot_spec['f_max'], self.robot_spec['phi_dot_max'], self.robot_spec['theta_dot_max'], self.robot_spec['psi_dot_max']])
+                [self.robot_spec['u_max'], self.robot_spec['u_max'], self.robot_spec['u_max'], self.robot_spec['u_max']])
         elif self.robot_spec['model'] == 'VTOL2D':
             mpc.bounds['lower', '_u', 'u'] = np.array(
                 [self.robot_spec['throttle_min'], self.robot_spec['throttle_min'], self.robot_spec['throttle_min'], self.robot_spec['elevator_min']])
