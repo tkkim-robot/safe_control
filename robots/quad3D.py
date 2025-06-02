@@ -23,7 +23,7 @@ class Quad3D:
     
     def __init__(self, dt, robot_spec):
         '''
-            New linearized 6-DOF quadrotor model:
+            Linearized 6-DOF quadrotor model:
             X: [x, y, z, θ, φ, ψ, vx, vy, vz, q, p, r] (12 states)
             U: [u1, u2, u3, u4] (4 control inputs - motor forces)
             
@@ -40,6 +40,8 @@ class Quad3D:
                   [0, L, 0, -L], 
                   [L, 0, -L, 0],
                   [ν, -ν, ν, -ν]]
+            
+            Relative degree: 4 with respect to (x,y), so we use RK4 CBF
         '''
         self.dt = dt
         self.robot_spec = robot_spec
@@ -116,23 +118,41 @@ class Quad3D:
         
     def step(self, X, U, casadi=False): 
         """
-        Euler integration: x_{k+1} = x_k + (Ax_k + Bu_k) * dt
+        Runge-Kutta 4th order integration: x_{k+1} = x_k + dt/6 * (k1 + 2*k2 + 2*k3 + k4)
+        where k1, k2, k3, k4 are the RK4 slopes
         """
         # print with 2 decimal places
         # print(f"roll: {float(X[3, 0]):.2f}, pitch: {float(X[4, 0]):.2f}, yaw: {float(X[5, 0]):.2f}")
         # print(f"roll rate: {float(X[9, 0]):.2f}, pitch rate: {float(X[10, 0]):.2f}, yaw rate: {float(X[11, 0]):.2f}")
+        
         if casadi:
-            X_next = X + (ca.mtimes(self.A, X) + ca.mtimes(self.B, U)) * self.dt
+            # RK4 integration with CasADi
+            k1 = ca.mtimes(self.A, X) + ca.mtimes(self.B, U)
+            k2 = ca.mtimes(self.A, X + self.dt/2 * k1) + ca.mtimes(self.B, U)
+            k3 = ca.mtimes(self.A, X + self.dt/2 * k2) + ca.mtimes(self.B, U)
+            k4 = ca.mtimes(self.A, X + self.dt * k3) + ca.mtimes(self.B, U)
+            
+            # RK4 update
+            X_next = X + self.dt/6 * (k1 + 2*k2 + 2*k3 + k4)
+            
             # Normalize angles
             X_next[3, 0] = angle_normalize(X_next[3, 0])  # θ
             X_next[4, 0] = angle_normalize(X_next[4, 0])  # φ  
             X_next[5, 0] = angle_normalize(X_next[5, 0])  # ψ
         else:
-            X_next = X + (self.A @ X + self.B @ U) * self.dt
+            # RK4 integration with NumPy
+            k1 = self.A @ X + self.B @ U
+            k2 = self.A @ (X + self.dt/2 * k1) + self.B @ U
+            k3 = self.A @ (X + self.dt/2 * k2) + self.B @ U
+            k4 = self.A @ (X + self.dt * k3) + self.B @ U
+            # RK4 update
+            X_next = X + self.dt/6 * (k1 + 2*k2 + 2*k3 + k4)
+            
             # Normalize angles
             X_next[3, 0] = angle_normalize(X_next[3, 0])  # θ
             X_next[4, 0] = angle_normalize(X_next[4, 0])  # φ
             X_next[5, 0] = angle_normalize(X_next[5, 0])  # ψ
+            
         return X_next
 
     def nominal_input(self, X, goal, k_p=1.0, k_d=2.0, k_ang=5.0):
@@ -251,10 +271,12 @@ class Quad3D:
         raise NotImplementedError("Cannot implement with nominal distance based CBF")
         
     def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.01):
-        '''Discrete Time High Order CBF'''
+        '''Discrete Time RK4 Sammpled Data CBF
+           reference: "Safety of Sampled-Data Systems with Control Barrier Functions via Approximate Discrete Time Models", IEEE CDC, 2022.
+        '''
+
         # Dynamics equations for the next states
         x_k1 = self.step(x_k, u_k, casadi=True)
-        x_k2 = self.step(x_k1, u_k, casadi=True)
 
         def h(x, obs, robot_radius, beta=1.01):
             '''Computes CBF h(x) = ||x-x_obs||^2 - beta*d_min^2'''
@@ -266,10 +288,8 @@ class Quad3D:
             h = (x[0, 0] - x_obs)**2 + (x[1, 0] - y_obs)**2 - beta*d_min**2
             return h
 
-        h_k2 = h(x_k2, obs, robot_radius, beta)
         h_k1 = h(x_k1, obs, robot_radius, beta)
         h_k = h(x_k, obs, robot_radius, beta)
 
         d_h = h_k1 - h_k
-        dd_h = h_k2 - 2 * h_k1 + h_k
-        return h_k, d_h, dd_h
+        return h_k, d_h

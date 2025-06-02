@@ -72,8 +72,7 @@ class MPCCBF:
             self.cbf_param['alpha2'] = 0.15
             self.n_states = 6
         elif self.robot_spec['model'] == 'Quad3D':
-            self.cbf_param['alpha1'] = 0.15
-            self.cbf_param['alpha2'] = 0.15
+            self.cbf_param['alpha'] = 0.15
             self.n_states = 12
             self.n_controls = 4 # override n_controls for Quad3D
             self.goal = np.array([0, 0, 0]) # override goal with z placeholder
@@ -111,10 +110,10 @@ class MPCCBF:
         _obs = model.set_variable(
             var_type='_tvp', var_name='obs', shape=(5, 5)) # (num_obs, obs_info), where [x, y, r, vx, vy]
 
-        if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
+        if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF', 'Quad3D']:
             _alpha = model.set_variable(
                 var_type='_tvp', var_name='alpha', shape=(1, 1))
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'Quad3D', 'VTOL2D']:
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'VTOL2D']:
             _alpha1 = model.set_variable(
                 var_type='_tvp', var_name='alpha1', shape=(1, 1))
             _alpha2 = model.set_variable(
@@ -270,9 +269,9 @@ class MPCCBF:
                     # Use the detected obstacles directly
                     tvp_template['_tvp', :, 'obs'] = self.obs[:5, :]  # Limit to 5 obstacles
 
-            if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
+            if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF', 'Quad3D']:
                 tvp_template['_tvp', :, 'alpha'] = self.cbf_param['alpha']
-            elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'Quad3D', 'VTOL2D']:
+            elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'VTOL2D']:
                 tvp_template['_tvp', :, 'alpha1'] = self.cbf_param['alpha1']
                 tvp_template['_tvp', :, 'alpha2'] = self.cbf_param['alpha2']
 
@@ -298,11 +297,11 @@ class MPCCBF:
         '''compute cbf constraint value
         We reuse this function to print the CBF constraint'''
 
-        if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
+        if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF', 'Quad3D']:
             _alpha = self.model.tvp['alpha']
             h_k, d_h = self.robot.agent_barrier_dt(_x, _u, _obs)
             cbf_constraint = d_h + _alpha * h_k
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'Quad3D', 'VTOL2D']:
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'VTOL2D']:
             _alpha1 = self.model.tvp['alpha1']
             _alpha2 = self.model.tvp['alpha2']
             h_k, d_h, dd_h = self.robot.agent_barrier_dt(_x, _u, _obs)
