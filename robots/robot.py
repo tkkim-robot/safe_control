@@ -118,7 +118,7 @@ class BaseRobot:
             except ImportError:
                 from robots.quad3D import Quad3D
             self.robot = Quad3D(dt, robot_spec)
-            self.yaw = self.X[8, 0]
+            self.yaw = self.X[5, 0]
         elif self.robot_spec['model'] == 'VTOL2D':
             try:
                 from vtol2D import VTOL2D
@@ -305,7 +305,7 @@ class BaseRobot:
     
     def get_z(self):
         if self.robot_spec['model'] == 'Quad3D':
-            return self.X[3, 0]
+            return self.X[2, 0]
         else:
             raise NotImplementedError("get_z is not implemented for this model")
 
@@ -318,7 +318,7 @@ class BaseRobot:
         elif self.robot_spec['model'] in ['Quad2D', 'VTOL2D']:
             return self.X[5, 0]
         elif self.robot_spec['model'] == 'Quad3D':
-            return self.U[3, 0]
+            return self.X[11, 0]
         elif self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
             if self.U_att is not None:
                 return self.U_att[0, 0]
@@ -395,7 +395,7 @@ class BaseRobot:
         elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad2D', 'VTOL2D']:
             self.yaw = self.X[2, 0]
         elif self.robot_spec['model'] == 'Quad3D':
-            self.yaw = self.X[8, 0]
+            self.yaw = self.X[5, 0]
         return self.X
 
     def render_plot(self):
