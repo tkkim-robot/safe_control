@@ -506,6 +506,10 @@ class LocalTrackingController:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_obs)
             self.robot.draw_collision_cone(self.robot.X, [self.nearest_obs], self.ax)
+        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_relaxedC3BF']:
+            u = self.pos_controller.solve_control_problem(
+                self.robot.X, control_ref, [self.nearest_obs.flatten()])
+            self.robot.draw_collision_cone(self.robot.X, [self.nearest_obs], self.ax)
         else:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
