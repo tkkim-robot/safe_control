@@ -41,7 +41,7 @@ class VisibilityRayCastAtt:
         # Get FOV parameters from robot
         self.fov_angle = getattr(robot, 'fov_angle', np.deg2rad(70.0))
         self.cam_range = getattr(robot, 'cam_range', 3.0)
-        self.max_ray_lenght = max(max_ray_length, self.cam_range)
+        self.max_ray_length = max(max_ray_length, self.cam_range)
 
     def cast_exploration_rays(self, robot_pos, sensing_footprints):
         """
