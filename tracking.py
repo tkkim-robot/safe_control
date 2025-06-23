@@ -81,12 +81,12 @@ class LocalTrackingController:
                 raise ValueError("Invalid initial state dimension for Quad2D")
         elif self.robot_spec['model'] == 'Quad3D':
             if X0.shape[0] == 2:
-                X0 = np.array([X0[0], X0[1], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]).reshape(-1, 1)
+                X0 = np.array([X0[0], X0[1], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]).reshape(-1, 1)
             elif X0.shape[0] == 3:
-                X0 = np.array([X0[0], X0[1], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, X0[2]]).reshape(-1, 1)
+                X0 = np.array([X0[0], X0[1], 0.0, 0.0, 0.0, X0[2], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]).reshape(-1, 1)
             elif X0.shape[0] == 4:
-                X0 = np.array([X0[0], X0[1], X0[2], 0.0, 0.0, 0.0, 0.0, 0.0, X0[3]]).reshape(-1, 1)
-            elif X0.shape[0] != 9:
+                X0 = np.array([X0[0], X0[1], X0[2], 0.0, 0.0, X0[3], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]).reshape(-1, 1)
+            elif X0.shape[0] != 12:
                 raise ValueError("Invalid initial state dimension for Quad3D")
         elif self.robot_spec['model'] in ['VTOL2D']:
             if X0.shape[0] in [2, 3]: 
@@ -159,6 +159,10 @@ class LocalTrackingController:
                 from attitude_control.gatekeeper_attitude import GatekeeperAtt
                 self.att_controller = GatekeeperAtt(self.robot, self.robot_spec)
                 self.att_controller.setup_pos_controller(self.pos_controller)
+            elif self.att_controller_type == 'visibility':
+                from attitude_control.visibility_promoting_yaw import VisibilityAtt
+                self.att_controller = VisibilityAtt(self.robot, self.robot_spec)
+                
             else:
                 raise ValueError(
                     f"Unknown attitude controller type: {self.att_controller_type}")
@@ -273,9 +277,9 @@ class LocalTrackingController:
         Get the nearest 5 obstacles that haven't been passed by (i.e., they're still in front of the robot or the robot should still consider the obstacle).
         '''
         
-        if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'Quad2D']:
+        if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'Quad2D', 'Quad3D']:
             angle_unpassed=np.pi*2
-        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad3D', 'VTOL2D']:
+        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'VTOL2D']:
             angle_unpassed=np.pi*1.2
         
         if len(detected_obs) != 0:
@@ -723,7 +727,6 @@ def single_agent_main(controller_type):
     elif model == 'Quad3D':
         robot_spec = {
             'model': 'Quad3D',
-            'f_max': 100.0,
             'radius': 0.25
         }
         # override the waypoints with z axis
@@ -791,7 +794,7 @@ def single_agent_main(controller_type):
     else:
         x_init = np.append(waypoints[0], 1.0)
     
-    if known_obs.shape[1] != 5:
+    if len(known_obs) > 0 and known_obs.shape[1] != 5:
         known_obs = np.hstack((known_obs, np.zeros((known_obs.shape[0], 2)))) # Set static obs velocity 0.0 at (5, 5)
 
     plot_handler = plotting.Plotting(width=env_width, height=env_height, known_obs=known_obs)
@@ -894,10 +897,4 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    #single_agent_main(controller_type={'pos': 'mpc_cbf'})
-    #single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'simple'})
-    single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'visibility_raycast'})
-    # multi_agent_main('mpc_cbf', save_animation=True)
-    # single_agent_main('cbf_qp')
-    # single_agent_main('optimal_decay_cbf_qp')
-    # single_agent_main('optimal_decay_mpc_cbf')
+    single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'gatekeeper'}) # only Integrators have attitude controller, otherwise ignored

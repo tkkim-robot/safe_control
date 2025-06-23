@@ -2,11 +2,12 @@ import numpy as np
 import casadi as ca
 
 """
-Created on Feb 10th, 2025
-@author: Taekyung Kim, Yichen Wang
+Created on June 2nd, 2025
+@author: Taekyung Kim
 
 @description: 
-3D Quad model for CBF-QP and MPC-CBF (casadi)
+3D Quad model for MPC-CBF (casadi)
+Linearized 6-DOF quadrotor model: "Integration of Adaptive Control and Reinforcement Learning for Real-Time Control and Learning", IEEE T-AC, 2023.
 """
 def angle_normalize(x):
     if isinstance(x, (np.ndarray, float, int)):
@@ -22,172 +23,262 @@ class Quad3D:
     
     def __init__(self, dt, robot_spec):
         '''
-            X: [px, py, pz, vx, vy, vz, phi, theta, psi]
-            U: [f, phi_dot, theta_dot, psi_dot]
-            system parameters: m
-            cbf: h(x) = ||x[0:2]-x_obs||^2 - beta*d_min^2
-            relative degree: 
-                - f: 2
-                - phi_dot, theta_dot: 3
-                - psi_dot: Not defined 
-
-            NOTE: Z is defined as positive downwards
-            Reference: https://github.com/MIT-REALM/neural_clbf/blob/main/neural_clbf/systems/quad3d.py
+            Linearized 6-DOF quadrotor model:
+            X: [x, y, z, θ, φ, ψ, vx, vy, vz, q, p, r] (12 states)
+            U: [u1, u2, u3, u4] (4 control inputs - motor forces)
+            
+            Dynamics:
+            ẋ = vx, v̇x = g*θ
+            ẏ = vy, v̇y = -g*φ  
+            ż = vz, v̇z = (1/m)*F
+            θ̇ = q, q̇ = (1/Iy)*τy
+            φ̇ = p, ṗ = (1/Ix)*τx
+            ψ̇ = r, ṙ = (1/Iz)*τz
+            
+            where [F, τy, τx, τz]^T = B2 * [u1, u2, u3, u4]^T
+            B2 = [[1, 1, 1, 1],
+                  [0, L, 0, -L], 
+                  [L, 0, -L, 0],
+                  [ν, -ν, ν, -ν]]
+            
+            Relative degree: 4 with respect to (x,y), so we use RK4 CBF
         '''
         self.dt = dt
         self.robot_spec = robot_spec
-        self.robot_spec.setdefault('phi_dot_max', np.deg2rad(45.0))
-        self.robot_spec.setdefault('theta_dot_max', np.deg2rad(45.0))
-        self.robot_spec.setdefault('psi_dot_max', np.deg2rad(45.0))
-        self.robot_spec.setdefault('f_max', 100.0)
-        # f_min should be 0.0
-        self.robot_spec.setdefault('mass', 1.0)
-        self.df_dx = np.vstack([np.hstack([np.zeros([3,3]), np.eye(3),np.zeros([3,3])]),np.zeros([6,9])])
-      
+        
+        # Default physical parameters
+        self.robot_spec.setdefault('mass', 3.0)  # m
+        self.robot_spec.setdefault('Ix', 0.5)    # Moment of inertia around x-axis
+        self.robot_spec.setdefault('Iy', 0.5)    # Moment of inertia around y-axis  
+        self.robot_spec.setdefault('Iz', 0.5)    # Moment of inertia around z-axis
+        self.robot_spec.setdefault('L', 0.3)    # Arm length
+        self.robot_spec.setdefault('nu', 0.1)   # Torque coefficient
+        
+        # Control constraints
+        self.robot_spec.setdefault('u_max', 10.0)  # Maximum motor force
+        self.robot_spec.setdefault('u_min', -10.0)   # Minimum motor force
+        
+        # Extract parameters
         self.m = self.robot_spec['mass']
+        self.Ix = self.robot_spec['Ix']
+        self.Iy = self.robot_spec['Iy']  
+        self.Iz = self.robot_spec['Iz']
+        self.L = self.robot_spec['L']
+        self.nu = self.robot_spec['nu']
         self.gravity = 9.8
-
+        
+        # B2 matrix for control allocation
+        self.B2 = np.array([
+            [1,  1,  1,  1],      # F = u1 + u2 + u3 + u4
+            [0,  self.L,  0, -self.L],   # τy = L*u2 - L*u4
+            [self.L,  0, -self.L,  0],   # τx = L*u1 - L*u3  
+            [self.nu, -self.nu, self.nu, -self.nu]  # τz = ν*u1 - ν*u2 + ν*u3 - ν*u4
+        ])
+        
+        # State space matrices
+        self.A = np.zeros((12, 12))
+        self.A[0, 6] = 1   # ẋ = vx
+        self.A[1, 7] = 1   # ẏ = vy
+        self.A[2, 8] = 1   # ż = vz
+        self.A[3, 9] = 1   # θ̇ = q
+        self.A[4, 10] = 1  # φ̇ = p
+        self.A[5, 11] = 1  # ψ̇ = r
+        self.A[6, 3] = self.gravity   # v̇x = g*θ
+        self.A[7, 4] = -self.gravity  # v̇y = -g*φ
+        
+        self.B1 = np.zeros((12, 4))
+        self.B1[8, 0] = 1/self.m      # v̇z = (1/m)*F
+        self.B1[9, 1] = 1/self.Iy     # q̇ = (1/Iy)*τy
+        self.B1[10, 2] = 1/self.Ix    # ṗ = (1/Ix)*τx
+        self.B1[11, 3] = 1/self.Iz    # ṙ = (1/Iz)*τz
+        
+        self.B = self.B1 @ self.B2
+        
+        # For derivative computation
+        self.df_dx = self.A
+      
     def f(self, X, casadi=False):
-        vx = X[3, 0]
-        vy = X[4, 0]
-        vz = X[5, 0]
+        """
+        Drift dynamics f(x) = Ax
+        X: [x, y, z, θ, φ, ψ, vx, vy, vz, q, p, r]
+        """
         if casadi:
-            return ca.vertcat(
-                vx,
-                vy,
-                vz,
-                0,
-                0,
-                self.gravity,
-                0,
-                0,
-                0,
-            )
+            return ca.mtimes(self.A, X)
         else:
-            return np.vstack([
-                vx,
-                vy,
-                vz,
-                0,
-                0,
-                self.gravity,
-                0,
-                0,
-                0,
-            ]).reshape(-1,1)
+            return self.A @ X
     
     def g(self, X, casadi=False):
-        phi = X[6, 0] # assign it to scalar symbolic to flatten (avoid error)
-        theta = X[7, 0]
-        psi = X[8, 0]
+        """
+        Control matrix g(x) = B (constant for linear system)
+        """
         if casadi:
-            # Create a 9x4 list-of-lists with symbolic entries:
-            # using block-building to do list-to-SX.
-            g_list = [[0]*4 for _ in range(9)]
-            g_list[3][0] = -ca.sin(theta) / self.m
-            g_list[4][0] = ca.cos(theta) * ca.sin(phi) / self.m
-            g_list[5][0] = -ca.cos(theta) * ca.cos(phi) / self.m
-            g_list[6][1] = 1
-            g_list[7][2] = 1
-            g_list[8][3] = 1
-
-            # Convert list-of-lists into a single CasADi SX matrix:
-            #  - first convert each row (list) to a CasADi row via horzcat
-            #  - then stack the rows via vertcat
-            g_sx_rows = []
-            for row in g_list:
-                g_sx_rows.append(ca.horzcat(*row))  # turn [expr1, expr2, ...] into one row
-            g_sx = ca.vertcat(*g_sx_rows)
-            return g_sx
+            return self.B
         else:
-            g = np.zeros([9, 4])
-            g[3, 0] = -np.sin(theta) / self.m
-            g[4, 0] = np.cos(theta) * np.sin(phi) / self.m
-            g[5, 0] = -np.cos(theta) * np.cos(phi) / self.m
-            g[6, 1] = 1
-            g[7, 2] = 1
-            g[8, 3] = 1
-            return g
+            return self.B
         
     def step(self, X, U, casadi=False): 
-        X = X + ( self.f(X, casadi) + self.g(X, casadi) @ U )*self.dt
-        X[6,0] = angle_normalize(X[6,0])
-        X[7,0] = angle_normalize(X[7,0])
-        X[8,0] = angle_normalize(X[8,0])
-        return X
-
-    def nominal_input(self, X, goal, k_p = 1.0, k_d = 2, k_ang = 5):
-        '''
-        nominal input for CBF-QP
-        '''
-        G = np.copy(goal.reshape(-1,1)) # goal state
-        phi_dot_max = self.robot_spec['phi_dot_max']
-        theta_dot_max = self.robot_spec['theta_dot_max']
-        psi_dot_max = self.robot_spec['psi_dot_max']
-        f_max = self.robot_spec['f_max']
-        f_min = 0.0
+        """
+        Runge-Kutta 4th order integration: x_{k+1} = x_k + dt/6 * (k1 + 2*k2 + 2*k3 + k4)
+        where k1, k2, k3, k4 are the RK4 slopes
+        """
+        # print with 2 decimal places
+        # print(f"roll: {float(X[3, 0]):.2f}, pitch: {float(X[4, 0]):.2f}, yaw: {float(X[5, 0]):.2f}")
+        # print(f"roll rate: {float(X[9, 0]):.2f}, pitch rate: {float(X[10, 0]):.2f}, yaw rate: {float(X[11, 0]):.2f}")
         
-        u_nom = np.zeros([4,1])
-        x_err = np.atleast_2d(goal[0:3]).T - X[0:3]
-        v_err = 0 - X[3:6]
-        F_des = x_err * k_p + v_err * k_d + np.array([0, 0, - self.gravity * self.m]).reshape(-1,1) #proportional control & gravity compensation
-        u_nom[0] = max(min(np.linalg.norm(F_des), f_max), f_min)
-        a_des = F_des / np.linalg.norm(F_des)
-        theta_des = np.arcsin(-1 * a_des[0])
-        psi_des = np.arctan2(x_err[1], x_err[0])
-        # if np.abs(theta_des) < 0.01:
-        #     phi_des = np.arccos(a_des[1] / np.cos(theta_des))
-        # else:
-        try:
-            phi_des = np.arcsin(a_des[1] / np.cos(theta_des))
-        except RuntimeWarning:
-            phi_des = np.arccos(a_des[2] / np.cos(theta_des))
-        u_nom[1] = max(min((phi_des - X[6]) * k_ang, phi_dot_max), -phi_dot_max)
-        u_nom[2] = max(min((theta_des - X[7]) * k_ang, theta_dot_max), -theta_dot_max)
-        u_nom[3] = max(min((psi_des - X[8]) * k_ang, psi_dot_max), -psi_dot_max)
+        if casadi:
+            # RK4 integration with CasADi
+            k1 = ca.mtimes(self.A, X) + ca.mtimes(self.B, U)
+            k2 = ca.mtimes(self.A, X + self.dt/2 * k1) + ca.mtimes(self.B, U)
+            k3 = ca.mtimes(self.A, X + self.dt/2 * k2) + ca.mtimes(self.B, U)
+            k4 = ca.mtimes(self.A, X + self.dt * k3) + ca.mtimes(self.B, U)
+            
+            # RK4 update
+            X_next = X + self.dt/6 * (k1 + 2*k2 + 2*k3 + k4)
+            
+            # Normalize angles
+            X_next[3, 0] = angle_normalize(X_next[3, 0])  # θ
+            X_next[4, 0] = angle_normalize(X_next[4, 0])  # φ  
+            X_next[5, 0] = angle_normalize(X_next[5, 0])  # ψ
+        else:
+            # RK4 integration with NumPy
+            k1 = self.A @ X + self.B @ U
+            k2 = self.A @ (X + self.dt/2 * k1) + self.B @ U
+            k3 = self.A @ (X + self.dt/2 * k2) + self.B @ U
+            k4 = self.A @ (X + self.dt * k3) + self.B @ U
+            # RK4 update
+            X_next = X + self.dt/6 * (k1 + 2*k2 + 2*k3 + k4)
+            
+            # Normalize angles
+            X_next[3, 0] = angle_normalize(X_next[3, 0])  # θ
+            X_next[4, 0] = angle_normalize(X_next[4, 0])  # φ
+            X_next[5, 0] = angle_normalize(X_next[5, 0])  # ψ
+            
+        return X_next
+
+    def nominal_input(self, X, goal, k_p=1.0, k_d=2.0, k_ang=5.0):
+        '''
+        Nominal input for CBF-QP
+        X: [x, y, z, θ, φ, ψ, vx, vy, vz, q, p, r]
+        goal: [x_des, y_des, z_des]
+        '''
+        u_max = self.robot_spec['u_max']
+        u_min = self.robot_spec['u_min']
+        
+        u_nom = np.zeros([4, 1])
+        
+        # Position and velocity errors
+        pos_err = goal[0:3].reshape(-1, 1) - X[0:3]  # [x, y, z] error
+        vel_err = -X[6:9]  # desired velocity is 0
+        
+        # Desired accelerations
+        ax_des = k_p * pos_err[0, 0] + k_d * vel_err[0, 0]
+        ay_des = k_p * pos_err[1, 0] + k_d * vel_err[1, 0]  
+        az_des = k_p * pos_err[2, 0] + k_d * vel_err[2, 0]
+        
+        # From linearized dynamics: v̇x = g*θ, v̇y = -g*φ, v̇z = (1/m)*F
+        theta_des = ax_des / self.gravity
+        phi_des = -ay_des / self.gravity
+        F_des = self.m * az_des
+        
+        # Angular errors and rates
+        theta_err = theta_des - X[3, 0]
+        phi_err = phi_des - X[4, 0]
+        psi_err = 0 - X[5, 0]  # Keep yaw at 0
+        
+        q_err = -X[9, 0]   # desired angular velocity is 0
+        p_err = -X[10, 0]
+        r_err = -X[11, 0]
+        
+        # Desired torques
+        tau_y_des = self.Iy * (k_ang * theta_err + k_d * q_err)
+        tau_x_des = self.Ix * (k_ang * phi_err + k_d * p_err)  
+        tau_z_des = self.Iz * (k_ang * psi_err + k_d * r_err)
+        
+        # Solve for motor forces: [F, τy, τx, τz]^T = B2 * u
+        desired_wrench = np.array([[F_des], [tau_y_des], [tau_x_des], [tau_z_des]])
+        u_nom = np.linalg.pinv(self.B2) @ desired_wrench
+        
+        # Apply constraints
+        u_nom = np.clip(u_nom, u_min, u_max)
+        
         return u_nom
     
-    def stop(self, X, k_stop = 1):
-        u_stop = np.zeros(4)
-
-        v_curr = X[3:6]
-        F_des = v_curr * k_stop + np.array([0, 0, - self.gravity * self.m]).reshape(-1,1) #proportional control & gravity compensation
-        u_stop[0] = np.linalg.norm(F_des)
-        a_des = F_des / u_stop[0]
-        theta_des = np.arcsin(-1 * a_des[0])
-        try:
-            phi_des = np.arcsin(a_des[1] / np.cos(theta_des))
-        except RuntimeWarning:
-            phi_des = np.arccos(a_des[2] / np.cos(theta_des))
-        u_stop[1] = (phi_des - X[6]) * k_stop
-        u_stop[2] = (theta_des - X[7]) * k_stop
-        u_stop[3] = -1 * X[8] * k_stop
-        return u_stop
+    def stop(self, X, k_stop=1.0):
+        """
+        Control to stop the quadrotor (minimize velocities)
+        """
+        u_max = self.robot_spec['u_max']
+        u_min = self.robot_spec['u_min']
+        
+        # Desired accelerations to reduce velocities
+        ax_des = -k_stop * X[6, 0]  # reduce vx
+        ay_des = -k_stop * X[7, 0]  # reduce vy
+        az_des = -k_stop * X[8, 0]  # reduce vz
+        
+        # Convert to desired angles and force
+        theta_des = ax_des / self.gravity
+        phi_des = -ay_des / self.gravity
+        F_des = self.m * az_des
+        
+        # Angular control to reach desired angles
+        tau_y_des = self.Iy * k_stop * (theta_des - X[3, 0] - X[9, 0]/k_stop)
+        tau_x_des = self.Ix * k_stop * (phi_des - X[4, 0] - X[10, 0]/k_stop)
+        tau_z_des = self.Iz * k_stop * (0 - X[5, 0] - X[11, 0]/k_stop)  # level yaw
+        
+        # Solve for motor forces
+        desired_wrench = np.array([[F_des], [tau_y_des], [tau_x_des], [tau_z_des]])
+        u_stop = np.linalg.pinv(self.B2) @ desired_wrench
+        
+        # Apply constraints
+        u_stop = np.clip(u_stop, u_min, u_max)
+        
+        return u_stop.flatten()
     
-    def has_stopped(self, X, tol = 0.05):
-        return np.linalg.norm(X[3:6]) < tol
+    def has_stopped(self, X, tol=0.05):
+        """Check if quadrotor has stopped (low velocities and angular rates)"""
+        linear_vel = np.linalg.norm(X[6:9])
+        angular_vel = np.linalg.norm(X[9:12])
+        return linear_vel < tol and angular_vel < tol
 
-    def rotate_to(self, X, ang_des, k_omega = 2.0):
-        u = np.zeros(4)
-        u[0] = self.gravity * self.m
-        u[1] = (0 - X[6]) * k_omega
-        u[2] = (0 - X[7]) * k_omega
-        u[3] = (ang_des - X[8]) * k_omega
-        return u
+    def rotate_to(self, X, ang_des, k_omega=2.0):
+        """
+        Rotate to desired yaw angle while maintaining position
+        """
+        u_max = self.robot_spec['u_max']
+        u_min = self.robot_spec['u_min']
+        
+        # Hover force (compensate gravity)
+        F_hover = self.m * self.gravity
+        
+        # No rotation in roll and pitch
+        tau_y_des = self.Iy * k_omega * (0 - X[3, 0] - X[9, 0]/k_omega)   # level pitch
+        tau_x_des = self.Ix * k_omega * (0 - X[4, 0] - X[10, 0]/k_omega)  # level roll
+        tau_z_des = self.Iz * k_omega * (ang_des - X[5, 0] - X[11, 0]/k_omega)  # desired yaw
+        
+        # Solve for motor forces
+        desired_wrench = np.array([[F_hover], [tau_y_des], [tau_x_des], [tau_z_des]])
+        u = np.linalg.pinv(self.B2) @ desired_wrench
+        
+        # Apply constraints
+        u = np.clip(u, u_min, u_max)
+        
+        return u.flatten()
     
     def agent_barrier(self, X, obs, robot_radius, beta=1.01):
         '''obs: [x, y, r]'''
         '''obstacles are infinite cylinders at x and y with radius r, extending in z direction'''
-        '''X : [x y z vx vy yz phi theta psi]'''
+        '''X : [x, y, z, θ, φ, ψ, vx, vy, vz, q, p, r]'''
         raise NotImplementedError("Cannot implement with nominal distance based CBF")
         
-    def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta = 1.01):
-        '''Discrete Time High Order CBF'''
+    def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.01):
+        '''Discrete Time RK4 Sammpled Data CBF
+           reference: "Safety of Sampled-Data Systems with Control Barrier Functions via Approximate Discrete Time Models", IEEE CDC, 2022.
+        '''
+
         # Dynamics equations for the next states
         x_k1 = self.step(x_k, u_k, casadi=True)
-        x_k2 = self.step(x_k1, u_k, casadi=True)
 
-        def h(x, obs, robot_radius, beta = 1.01):
+        def h(x, obs, robot_radius, beta=1.01):
             '''Computes CBF h(x) = ||x-x_obs||^2 - beta*d_min^2'''
             x_obs = obs[0]
             y_obs = obs[1]
@@ -197,10 +288,8 @@ class Quad3D:
             h = (x[0, 0] - x_obs)**2 + (x[1, 0] - y_obs)**2 - beta*d_min**2
             return h
 
-        h_k2 = h(x_k2, obs, robot_radius, beta)
         h_k1 = h(x_k1, obs, robot_radius, beta)
         h_k = h(x_k, obs, robot_radius, beta)
 
         d_h = h_k1 - h_k
-        dd_h = h_k2 - 2 * h_k1 + h_k
-        return h_k, d_h, dd_h
+        return h_k, d_h
