@@ -21,7 +21,7 @@ that maximises this metric.
 
 @note: 
 - Uses sensing footprints to determine unexplored areas
-- More computationally efficient than ray casting approaches (no ray casting, compute area as triangle)
+- More computationally efficient than ray casting approaches (no ray casting, but compute the entire sector, not just triangle)
 - Can be used as a nominal attitude controller for the gatekeeper
 """
 
