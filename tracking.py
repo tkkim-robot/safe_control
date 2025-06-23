@@ -149,6 +149,12 @@ class LocalTrackingController:
             elif self.att_controller_type == 'velocity_tracking_yaw':
                 from attitude_control.velocity_tracking_yaw import VelocityTrackingYaw
                 self.att_controller = VelocityTrackingYaw(self.robot, self.robot_spec)
+            elif self.att_controller_type == 'visibility_raycast':
+                from safe_control.attitude_control.visibility_raycast import VisibilityRayCastAtt
+                self.att_controller = VisibilityRayCastAtt(self.robot, self.robot_spec)
+            elif self.att_controller_type == 'visibility_area':
+                from attitude_control.visibility_area import VisibilityAreaAtt
+                self.att_controller = VisibilityAreaAtt(self.robot, self.robot_spec)
             elif self.att_controller_type == 'gatekeeper':
                 from attitude_control.gatekeeper_attitude import GatekeeperAtt
                 self.att_controller = GatekeeperAtt(self.robot, self.robot_spec)
