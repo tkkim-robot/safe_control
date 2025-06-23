@@ -1,6 +1,6 @@
 # safe_control
 
-`safe_control` is a Python library that provides a unified codebase for safety-critical controllers in robotic navigation. It implements various control barrier function (CBF) based controllers and other types of safety-critical controllers.
+`safe_control` is a Python library that provides a unified codebase for safety controllers in robotic navigation. It implements various control barrier function (CBF) based controllers and other types of safety-critical controllers, such as CBF-QP, MPC-CBF, Optimal-Decay CBF, gatekeeper. It supports various robot systems such as integrators, unicycles, quadrotors, autonomous vehicles (bicycle model), and VTOL. 
 
 ## Features
 
