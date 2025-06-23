@@ -651,7 +651,7 @@ class LocalTrackingController:
 
 def single_agent_main(controller_type):
     dt = 0.05
-    model = 'DoubleIntegrator2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'DynamicUnicycle2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     waypoints = [
         [2, 2, math.pi/2],
@@ -896,7 +896,7 @@ if __name__ == "__main__":
 
     #single_agent_main(controller_type={'pos': 'mpc_cbf'})
     #single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'simple'})
-    single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'gatekeeper'})
+    single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'visibility_raycast'})
     # multi_agent_main('mpc_cbf', save_animation=True)
     # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
