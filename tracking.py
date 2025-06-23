@@ -149,6 +149,12 @@ class LocalTrackingController:
             elif self.att_controller_type == 'velocity_tracking_yaw':
                 from attitude_control.velocity_tracking_yaw import VelocityTrackingYaw
                 self.att_controller = VelocityTrackingYaw(self.robot, self.robot_spec)
+            elif self.att_controller_type == 'visibility_raycast':
+                from safe_control.attitude_control.visibility_raycast import VisibilityRayCastAtt
+                self.att_controller = VisibilityRayCastAtt(self.robot, self.robot_spec)
+            elif self.att_controller_type == 'visibility_area':
+                from attitude_control.visibility_area import VisibilityAreaAtt
+                self.att_controller = VisibilityAreaAtt(self.robot, self.robot_spec)
             elif self.att_controller_type == 'gatekeeper':
                 from attitude_control.gatekeeper_attitude import GatekeeperAtt
                 self.att_controller = GatekeeperAtt(self.robot, self.robot_spec)
@@ -645,7 +651,7 @@ class LocalTrackingController:
 
 def single_agent_main(controller_type):
     dt = 0.05
-    model = 'DynamicUnicycle2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'DoubleIntegrator2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     waypoints = [
         [2, 2, math.pi/2],
