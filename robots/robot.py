@@ -643,6 +643,11 @@ class BaseRobot:
             vx = self.X[3, 0]
             vz = self.X[4, 0]
             v = np.linalg.norm([vx, vz])
+        elif self.robot_spec['model'] == 'Quad3D':
+            vx = self.X[6, 0]
+            vy = self.X[7, 0]
+            vz = self.X[8, 0]
+            v = np.linalg.norm([vx, vy, vz])
         yaw_rate = self.get_yaw_rate()
 
         if yaw_rate != 0.0:
