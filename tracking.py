@@ -48,7 +48,7 @@ class LocalTrackingController:
         self.rotation_threshold = 0.1  # Radians
 
         self.current_goal_index = 0  # Index of the current goal in the path
-        self.reached_threshold = 0.2
+        self.reached_threshold = 0.3
         # if robot_spec specifies a different reached_threshold, use that (ex. VTOL)
         if 'reached_threshold' in robot_spec:
             self.reached_threshold = robot_spec['reached_threshold']
@@ -71,7 +71,7 @@ class LocalTrackingController:
             elif X0.shape[0] != 5:
                 raise ValueError(
                     "Invalid initial state dimension for DoubleIntegrator2D")
-        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
+        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
             if X0.shape[0] == 3:  # set initial velocity to 0.0
                 X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
         elif self.robot_spec['model'] in ['Quad2D']:
@@ -273,8 +273,10 @@ class LocalTrackingController:
         
         if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'Quad2D', 'Quad3D']:
             angle_unpassed=np.pi*2
-        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'VTOL2D']:
+        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'VTOL2D']:
             angle_unpassed=np.pi*1.2
+        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
+            angle_unpassed=np.pi*1.4
         
         if len(detected_obs) != 0:
             if len(self.obs) == 0:
@@ -375,6 +377,7 @@ class LocalTrackingController:
                 # check if the robot collides with the obstacle
                 distance = np.linalg.norm(self.robot.X[:2, 0] - obs[:2])
                 if distance < (obs[2] + robot_radius):
+                    print("Collision with unknown obstacle detected!")
                     return True
                 
         if self.obs is not None:
@@ -382,6 +385,7 @@ class LocalTrackingController:
                 # check if the robot collides with the obstacle
                 distance = np.linalg.norm(self.robot.X[:2, 0] - obs[:2])
                 if distance < (obs[2] + robot_radius):
+                    print(f"Collision with known obstacle detected! Obs: {obs}, Robot: {self.robot.X[:2, 0]} {robot_radius}, Distance: {distance}, {distance < (obs[2] + robot_radius)}")
                     return True
 
         # Collision with the ground
@@ -498,7 +502,7 @@ class LocalTrackingController:
             if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
                 self.u_att = self.robot.rotate_to(goal_angle)
                 u_ref = self.robot.stop()
-            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad2D', 'Quad3D', 'VTOL2D']:
+            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'Quad2D', 'Quad3D', 'VTOL2D']:
                 u_ref = self.robot.rotate_to(goal_angle)
         elif self.goal is None:
             u_ref = self.robot.stop()
@@ -513,14 +517,17 @@ class LocalTrackingController:
         control_ref = {'state_machine': self.state_machine,
                        'u_ref': u_ref,
                        'goal': self.goal}
+        
+        #TODO: Add draw_collision_quad for KinematicBicycle2D_DPCBF
         if self.pos_controller_type in ['optimal_decay_cbf_qp', 'cbf_qp']:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_obs)
             self.robot.draw_collision_cone(self.robot.X, [self.nearest_obs], self.ax)
-        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
+        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, [self.nearest_obs.flatten()])
-            self.robot.draw_collision_cone(self.robot.X, [self.nearest_obs], self.ax)            
+            # self.robot.draw_collision_cone(self.robot.X, [self.nearest_obs], self.ax)            
+            self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)            
         else:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
@@ -653,7 +660,7 @@ class LocalTrackingController:
 
 def single_agent_main(controller_type):
     dt = 0.05
-    model = 'Quad3D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'KinematicBicycle2D_DPCBF' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     waypoints = [
         [2, 2, math.pi/2],
@@ -698,6 +705,13 @@ def single_agent_main(controller_type):
             'sensor': 'rgbd',
             'radius': 0.5
         }
+    elif model == 'KinematicBicycle2D_DPCBF':
+        robot_spec = {
+            'model': 'KinematicBicycle2D_DPCBF',
+            'a_max': 0.5,
+            'sensor': 'rgbd',
+            'radius': 0.5
+        }
     elif model == 'KinematicBicycle2D_C3BF':
         robot_spec = {
             'model': 'KinematicBicycle2D_C3BF',
@@ -713,7 +727,6 @@ def single_agent_main(controller_type):
                 vx, vy = -0.1, 0.05
             dynamic_obs.append([ox, oy, r, vx, vy])
         known_obs = np.array(dynamic_obs)
-
     elif model == 'Quad2D':
         robot_spec = {
             'model': 'Quad2D',
@@ -803,7 +816,7 @@ def single_agent_main(controller_type):
                                                   controller_type=controller_type,
                                                   dt=dt,
                                                   show_animation=True,
-                                                  save_animation=False,
+                                                  save_animation=True,
                                                   show_mpc_traj=False,
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
@@ -895,4 +908,5 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'gatekeeper'}) # only Integrators have attitude controller, otherwise ignored
+    single_agent_main(controller_type={'pos': 'mpc_cbf'})
+    # single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'gatekeeper'}) # only Integrators have attitude controller, otherwise ignored
