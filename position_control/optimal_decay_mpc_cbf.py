@@ -8,7 +8,7 @@ class NotCompatibleError(Exception):
     Exception raised for errors when the robot model is not compatible with the controller.
     '''
 
-    def __init__(self, message="Currently not compatible with the robot model. Only compatible with DynamicUnicycle2D now"):
+    def __init__(self, message="Currently not compatible with the robot model."):
         self.message = message
         super().__init__(self.message)
 
@@ -16,7 +16,7 @@ class OptimalDecayMPCCBF:
     def __init__(self, robot, robot_spec):
         self.robot = robot
         self.robot_spec = robot_spec
-        if self.robot_spec['model'] not in ['DynamicUnicycle2D', 'KinematicBicycle2D']: # TODO: not compatible with other robot models yet
+        if self.robot_spec['model'] not in ['DynamicUnicycle2D', 'KinematicBicycle2D', 'Quad2D', 'Quad3D', 'VTOL2D']: # TODO: not compatible with other robot models yet
             raise NotCompatibleError("Infeasible or Collision")
         self.status = 'optimal'  # TODO: not implemented
 
@@ -34,9 +34,21 @@ class OptimalDecayMPCCBF:
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
             self.Q = np.diag([50, 50, 20, 20])  # State cost matrix
             self.R = np.array([0.5, 0.5])  # Input cost matrix
-        elif self.robot_spec['model'] == 'KinematicBicycle2D':
+        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
             self.Q = np.diag([50, 50, 1, 1])  # State cost matrix
             self.R = np.array([0.5, 50.0])  # Input cost matrix
+        elif self.robot_spec['model'] == 'Quad2D':
+            self.Q = np.diag([25, 25, 50, 10, 10, 50])
+            self.R = np.array([0.5, 0.5])
+        elif self.robot_spec['model'] == 'Quad3D':
+            self.Q = np.diag([30, 30, 5, 20, 20, 1, 10, 10, 10, 20, 20, 1]) 
+            self.R = np.array([1, 1, 1, 1])
+        elif self.robot_spec['model'] == 'VTOL2D':
+            self.horizon = 30
+            self.Q = np.diag([10, 10, 250, 10, 10, 50])
+            self.R = np.array([0.5, 0.5, 0.5, 50000])
+            
+        self.n_controls = 2
             
         # DT CBF parameters should scale from 0 to 1
         self.cbf_param = {}
@@ -55,8 +67,24 @@ class OptimalDecayMPCCBF:
             self.cbf_param['alpha1'] = 0.05
             self.cbf_param['alpha2'] = 0.05
             self.n_states = 4
-        self.n_controls = 2
-
+        elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
+            self.cbf_param['alpha'] = 0.15
+            self.n_states = 4
+        elif self.robot_spec['model'] == 'Quad2D':
+            self.cbf_param['alpha1'] = 0.15
+            self.cbf_param['alpha2'] = 0.15
+            self.n_states = 6
+        elif self.robot_spec['model'] == 'Quad3D':
+            self.cbf_param['alpha'] = 0.15
+            self.n_states = 12
+            self.n_controls = 4 # override n_controls for Quad3D
+            self.goal = np.array([0, 0, 0]) # override goal with z placeholder
+        elif self.robot_spec['model'] == 'VTOL2D':
+            self.cbf_param['alpha1'] = 0.35 # 0.35
+            self.cbf_param['alpha2'] = 0.35
+            self.n_states = 6
+            self.n_controls = 4 # override n_controls for VTOL2D
+            
         # Optimal-decay parameters
         self.cbf_param['omega1'] = 1.0  # Initial omega1
         self.cbf_param['p_sb1'] = 10**1  # Penalty parameter for omega1
@@ -91,16 +119,16 @@ class OptimalDecayMPCCBF:
         _goal = model.set_variable(
             var_type='_tvp', var_name='goal', shape=(self.n_states, 1))
         _obs = model.set_variable(
-            var_type='_tvp', var_name='obs', shape=(5, 3))
+            var_type='_tvp', var_name='obs', shape=(5, 5))
 
         # Add omega parameters
         _omega1 = model.set_variable(var_type='_u', var_name='omega1', shape=(1, 1))
         _omega2 = model.set_variable(var_type='_u', var_name='omega2', shape=(1, 1))
 
-        if self.robot_spec['model'] == 'Unicycle2D':
+        if self.robot_spec['model'] in ['Unicycle2D', 'KinematicBicycle2D_C3BF', 'Quad3D']:
             _alpha = model.set_variable(
                 var_type='_tvp', var_name='alpha', shape=(1, 1))
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D']:
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'VTOL2D']:
             _alpha1 = model.set_variable(
                 var_type='_tvp', var_name='alpha1', shape=(1, 1))
             _alpha2 = model.set_variable(
@@ -169,14 +197,34 @@ class OptimalDecayMPCCBF:
                 [-self.robot_spec['ax_max'], -self.robot_spec['ay_max']])
             mpc.bounds['upper', '_u', 'u'] = np.array(
                 [self.robot_spec['ax_max'], self.robot_spec['ay_max']])
-        elif self.robot_spec['model'] == 'KinematicBicycle2D':
+        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
             mpc.bounds['lower', '_x', 'x', 3] = -self.robot_spec['v_max']
             mpc.bounds['upper', '_x', 'x', 3] = self.robot_spec['v_max']
             mpc.bounds['lower', '_u', 'u'] = np.array(
                 [-self.robot_spec['a_max'], -self.robot_spec['beta_max']])
             mpc.bounds['upper', '_u', 'u'] = np.array(
                 [self.robot_spec['a_max'], self.robot_spec['beta_max']])
-
+        elif self.robot_spec['model'] == 'Quad2D':
+            mpc.bounds['lower', '_u', 'u'] = np.array(
+                [self.robot_spec['f_min'], self.robot_spec['f_min']])
+            mpc.bounds['upper', '_u', 'u'] = np.array(
+                [self.robot_spec['f_max'], self.robot_spec['f_max']])
+        elif self.robot_spec['model'] == 'Quad3D':
+            mpc.bounds['lower', '_u', 'u'] = np.array(
+                [self.robot_spec['u_min'], self.robot_spec['u_min'], self.robot_spec['u_min'], self.robot_spec['u_min']])
+            mpc.bounds['upper', '_u', 'u'] = np.array(
+                [self.robot_spec['u_max'], self.robot_spec['u_max'], self.robot_spec['u_max'], self.robot_spec['u_max']])
+        elif self.robot_spec['model'] == 'VTOL2D':
+            mpc.bounds['lower', '_u', 'u'] = np.array(
+                [self.robot_spec['throttle_min'], self.robot_spec['throttle_min'], self.robot_spec['throttle_min'], self.robot_spec['elevator_min']])
+            mpc.bounds['upper', '_u', 'u'] = np.array(
+                [self.robot_spec['throttle_max'], self.robot_spec['throttle_max'], self.robot_spec['throttle_max'], self.robot_spec['elevator_max']])
+            mpc.bounds['lower', '_x', 'x', 3] = -self.robot_spec['v_max']
+            mpc.bounds['upper', '_x', 'x', 3] = self.robot_spec['v_max']
+            mpc.bounds['lower', '_x', 'x', 4] = -self.robot_spec['descent_speed_max']
+            #mpc.bounds['upper', '_x', 'x', 1] = 15.0
+            mpc.bounds['lower', '_x', 'x', 2] = -self.robot_spec['pitch_max']*3.14159/180
+            mpc.bounds['upper', '_x', 'x', 2] = self.robot_spec['pitch_max']*3.14159/180
 
         mpc = self.set_tvp(mpc)
         mpc = self.set_cbf_constraint(mpc)
@@ -190,26 +238,26 @@ class OptimalDecayMPCCBF:
             tvp_template = mpc.get_tvp_template()
 
             # Set goal
-            tvp_template['_tvp', :, 'goal'] = np.concatenate([self.goal, [0] * (self.n_states - 2)])
+            tvp_template['_tvp', :, 'goal'] = np.concatenate([self.goal, [0] * (self.n_states - self.goal.shape[0])])
 
             # Handle up to 5 obstacles (if fewer than 5, substitute dummy obstacles)
             if self.obs is None:
                 # Before detecting any obstacle, set 5 dummy obstacles far away
-                dummy_obstacles = np.tile(np.array([1000, 1000, 0]), (5, 1))  # 5 far away obstacles
+                dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0]), (5, 1))  # 5 far away obstacles
                 tvp_template['_tvp', :, 'obs'] = dummy_obstacles
             else:
                 num_obstacles = self.obs.shape[0]
                 if num_obstacles < 5:
                     # Add dummy obstacles for missing ones
-                    dummy_obstacles = np.tile(np.array([1000, 1000, 0]), (5 - num_obstacles, 1))
+                    dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0]), (5 - num_obstacles, 1))
                     tvp_template['_tvp', :, 'obs'] = np.vstack([self.obs, dummy_obstacles])
                 else:
                     # Use the detected obstacles directly
                     tvp_template['_tvp', :, 'obs'] = self.obs[:5, :]  # Limit to 5 obstacles
 
-            if self.robot_spec['model'] == 'Unicycle2D':
+            if self.robot_spec['model'] in ['Unicycle2D', 'KinematicBicycle2D_C3BF', 'Quad3D']:
                 tvp_template['_tvp', :, 'alpha'] = self.cbf_param['alpha']
-            elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D']:
+            elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'VTOL2D']:
                 tvp_template['_tvp', :, 'alpha1'] = self.cbf_param['alpha1']
                 tvp_template['_tvp', :, 'alpha2'] = self.cbf_param['alpha2']
 
@@ -234,11 +282,12 @@ class OptimalDecayMPCCBF:
     def compute_cbf_constraint(self, _x, _u, _obs):
         '''compute cbf constraint value
         We reuse this function to print the CBF constraint'''
-        if self.robot_spec['model'] == 'Unicycle2D':
+        
+        if self.robot_spec['model'] in ['Unicycle2D', 'KinematicBicycle2D_C3BF', 'Quad3D']:
             _alpha = self.model.tvp['alpha']
             h_k, d_h = self.robot.agent_barrier_dt(_x, _u, _obs)
             cbf_constraint = d_h + _alpha * h_k
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D']:
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'VTOL2D']:
             _alpha1 = self.model.tvp['alpha1']
             _alpha2 = self.model.tvp['alpha2']
             omega1 = self.model.u['omega1']
@@ -265,20 +314,29 @@ class OptimalDecayMPCCBF:
         # Update the tvp variables
         self.goal = np.array(goal)
         
-        obs = obs.reshape(-1,3)
-        
         if obs is None or len(obs) == 0:
             # No obstacles detected, set 5 dummy obstacles far away
-            self.obs = np.tile(np.array([1000, 1000, 0]), (5, 1))
+            self.obs = np.tile(np.array([1000, 1000, 0, 0, 0]), (5, 1))
         else:
             num_obstacles = len(obs)
+            padded_obs = []
+            for ob in obs:
+                ob = np.array(ob)
+                if ob.shape[0] == 3:
+                    # Pad missing velocity fields with zeros
+                    ob = np.concatenate([ob, [0.0, 0.0]])
+                elif ob.shape[0] != 5:
+                    raise ValueError(f"Invalid obstacle format: {ob}")
+                padded_obs.append(ob)
+            padded_obs = np.array(padded_obs)
+
             if num_obstacles < 5:
                 # Add dummy obstacles for missing ones
-                dummy_obstacles = np.tile(np.array([1000, 1000, 0]), (5 - num_obstacles, 1))
-                self.obs = np.vstack([obs, dummy_obstacles])
+                dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0]), (5 - num_obstacles, 1))
+                self.obs = np.vstack([padded_obs, dummy_obstacles])
             else:
                 # Use the detected obstacles directly (up to 5)
-                self.obs = np.array(obs[:5])
+                self.obs = padded_obs[:5]
 
     def solve_control_problem(self, robot_state, control_ref, nearest_obs):
         # Set initial state and reference

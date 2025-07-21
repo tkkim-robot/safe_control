@@ -27,8 +27,7 @@ class CBFQP:
             self.cbf_param['alpha1'] = 1.5
             self.cbf_param['alpha2'] = 1.5
         elif self.robot_spec['model'] == 'Quad3D':
-            self.cbf_param['alpha1'] = 1.5
-            self.cbf_param['alpha2'] = 1.5
+            self.cbf_param['alpha'] = 1.5
 
         self.setup_control_problem()
 
@@ -87,11 +86,11 @@ class CBFQP:
             # deactivate the CBF constraints
             self.A1.value = np.zeros_like(self.A1.value)
             self.b1.value = np.zeros_like(self.b1.value)
-        elif self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
+        elif self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF', 'Quad3D']:
             h, dh_dx = self.robot.agent_barrier(nearest_obs)
             self.A1.value[0,:] = dh_dx @ self.robot.g()
             self.b1.value[0,:] = dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'Quad3D']:
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D']:
             h, h_dot, dh_dot_dx = self.robot.agent_barrier(nearest_obs)
             self.A1.value[0,:] = dh_dot_dx @ self.robot.g()
             self.b1.value[0,:] = dh_dot_dx @ self.robot.f() + (self.cbf_param['alpha1']+self.cbf_param['alpha2']) * h_dot + self.cbf_param['alpha1']*self.cbf_param['alpha2']*h
