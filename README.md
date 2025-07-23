@@ -188,11 +188,11 @@ controller = LocalTrackingController(..., show_animation=True, save_animation=Tr
 If you find this repository useful, please consider citing our paper:
 
 ```
-@inproceedings{kim2025learning, 
-    author    = {Kim, Taekyung and Kee, Robin Inho and Panagou, Dimitra},
-    title     = {Learning to Refine Input Constrained Control Barrier Functions via Uncertainty-Aware Online Parameter Adaptation}, 
-    booktitle = {IEEE International Conference on Robotics and Automation (ICRA)},
-    shorttitle = {Online-Adaptive-CBF},
+@inproceedings{kim2025how, 
+    author    = {Kim, Taekyung and Beard, Randal W. and Panagou, Dimitra},
+    title     = {How to Adapt Control Barrier Functions? A Learning-Based Approach with Applications to a VTOL Quadplane}, 
+    booktitle = {IEEE Conference on Decision and Control (CDC)},
+    shorttitle = {How to Adapt Control Barrier Functions},
     year      = {2025}
 }
 ```
