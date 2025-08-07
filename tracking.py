@@ -6,6 +6,9 @@ import glob
 import subprocess
 import csv
 
+# BarrierNet inference controller
+from position_control.barriernet_controller import BarrierNetController
+
 """
 Created on June 20th, 2024
 @author: Taekyung Kim
@@ -40,7 +43,7 @@ class LocalTrackingController:
                  ax=None, fig=None, env=None):
 
         self.robot_spec = robot_spec
-        self.pos_controller_type = controller_type.get('pos', 'cbf_qp')  # 'cbf_qp' or 'mpc_cbf'
+        self.pos_controller_type = controller_type.get('pos', 'cbf_qp')  # 'cbf_qp', 'mpc_cbf', 'barriernet'
         self.att_controller_type = controller_type.get('att', 'velocity_tracking_yaw')  # 'simple' or 'velocity_tracking_yaw'
         self.dt = dt
 
@@ -138,6 +141,13 @@ class LocalTrackingController:
         elif self.pos_controller_type == 'optimal_decay_mpc_cbf':
             from position_control.optimal_decay_mpc_cbf import OptimalDecayMPCCBF
             self.pos_controller = OptimalDecayMPCCBF(self.robot, self.robot_spec)
+        elif self.pos_controller_type == 'barriernet':
+            ckpt_path = controller_type.get('ckpt')
+            if ckpt_path is None:
+                raise ValueError("For pos=='barriernet' you must supply controller_type['ckpt']")
+            self.pos_controller = BarrierNetController(
+                robot_spec=self.robot_spec,
+                ckpt_path=ckpt_path)
         else:
             raise ValueError(
                 f"Unknown controller type: {self.pos_controller_type}")
@@ -534,6 +544,10 @@ class LocalTrackingController:
                 self.robot.X, control_ref, [self.nearest_obs.flatten()])
             # self.robot.draw_collision_cone(self.robot.X, [self.nearest_obs], self.ax)            
             self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)            
+        elif self.pos_controller_type == 'barriernet':
+            u = self.pos_controller.solve_control_problem(
+                self.robot.X, control_ref, self.nearest_multi_obs)
+            u = np.asarray(u).reshape(-1, 1)  # ensure column vector
         else:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
@@ -916,3 +930,4 @@ if __name__ == "__main__":
 
     single_agent_main(controller_type={'pos': 'mpc_cbf'})
     # single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'gatekeeper'}) # only Integrators have attitude controller, otherwise ignored
+    # single_agent_main(controller_type={'pos': 'barriernet', 'ckpt': 'BarrierNet/2D_Robot/model_bn.pth'}) # BarrierNet controller example
