@@ -17,7 +17,7 @@ from safe_control.robots.quad3D import Quad3D
 # Import the BarrierNet model
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), 'BarrierNet'))
-from models import BarrierNet
+from safe_control.position_control.BarrierNet.models import BarrierNet
 
 
 class BarrierNetController:
