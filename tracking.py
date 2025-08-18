@@ -287,12 +287,12 @@ class LocalTrackingController:
         Get the nearest 5 obstacles that haven't been passed by (i.e., they're still in front of the robot or the robot should still consider the obstacle).
         '''
         
-        if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'Quad2D', 'Quad3D']:
+        if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D', 
+                                        'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF',
+                                        'Quad2D', 'Quad3D']:
             angle_unpassed=np.pi*2
         elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'VTOL2D']:
             angle_unpassed=np.pi*1.2
-        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
-            angle_unpassed=np.pi*1.4
         
         if len(detected_obs) != 0:
             if len(self.obs) == 0:

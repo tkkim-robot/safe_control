@@ -74,12 +74,12 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
 
         return h, dh_dx
 
-    def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.01):
+    def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.1):
         '''Discrete Time C3BF'''
         # Dynamics equations for the next states
         x_k1 = self.step(x_k, u_k, casadi=True)
 
-        def h(x, obs, robot_radius, beta=1.01):
+        def h(x, obs, robot_radius, beta=1.1):
             '''Computes C3BF h(x) = <p_rel, v_rel> + ||p_rel||*||v_rel||*cos(phi)'''
             theta = x[2, 0]
             v = x[3, 0]

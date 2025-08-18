@@ -109,12 +109,12 @@ class KinematicBicycle2D_DPCBF(KinematicBicycle2D):
 
         return h, dh_dx
 
-    def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.05):
+    def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.1):
         '''Discrete Time Q3BF'''
         # Dynamics equations for the next states
         x_k1 = self.step(x_k, u_k, casadi=True)
 
-        def h(x, obs, robot_radius, beta=1.05):
+        def h(x, obs, robot_radius, beta=1.1):
             theta = x[2, 0]
             v = x[3, 0]
 
