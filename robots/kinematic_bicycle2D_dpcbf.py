@@ -13,7 +13,7 @@ class KinematicBicycle2D_DPCBF(KinematicBicycle2D):
 
     def agent_barrier(self, X, obs, robot_radius, beta=1.05):
         """
-        '''Continuous Time C3BF'''
+        '''Continuous Time DPCBF'''
         Compute a Dynamic Parabolic Control Barrier Function for the Kinematic Bicycle2D.
         The barrier's relative degree is "1"
             h_dot = ∂h/∂x ⋅ f(x) + ∂h/∂x ⋅ g(x) ⋅ u
@@ -49,8 +49,6 @@ class KinematicBicycle2D_DPCBF(KinematicBicycle2D):
 
         p_rel_x = p_rel[0, 0]
         p_rel_y = p_rel[1, 0]
-        v_rel_x = v_rel[0, 0]
-        v_rel_y = v_rel[1, 0]
 
         rot_angle = np.arctan2(p_rel_y, p_rel_x)
 
@@ -73,44 +71,23 @@ class KinematicBicycle2D_DPCBF(KinematicBicycle2D):
 
         k_lamda, k_mu = 0.5 * np.sqrt(beta**2 - 1)/ego_dim, 1.0 * np.sqrt(beta**2 - 1)/ego_dim
 
-        lamda = k_lamda * np.sqrt(d_safe) / v_rel_mag # same as 1/tan(phi)
+        lamda = k_lamda * np.sqrt(d_safe) / v_rel_mag
         mu = k_mu * np.sqrt(d_safe)
 
         # Barrier function h(x)
         h = v_rel_new_x + lamda * (v_rel_new_y**2) + mu
-        # print(f"v_rel_new_x: {v_rel_new_x} | lamda: {lamda} | mu: {mu} | rot_angle: {rot_angle}")
-        # print(h)
 
-        # Compute h (C3BF)
+        # Compute h (DPCBF)
         dh_dx = np.zeros((1, 4))
-
-        # ver: d(x)
         dh_dx[0, 0] = p_rel_y * v_rel_new_y / p_rel_mag**2 - k_lamda * p_rel_x * v_rel_new_y**2 / v_rel_mag / np.sqrt(d_safe) - 2 * k_lamda * np.sqrt(d_safe) / v_rel_mag * v_rel_new_y * p_rel_y / p_rel_mag**2 * v_rel_new_x - k_mu * p_rel_x / np.sqrt(d_safe)
         dh_dx[0, 1] = - p_rel_x * v_rel_new_y / p_rel_mag**2 - k_lamda * p_rel_y * v_rel_new_y**2 / v_rel_mag / np.sqrt(d_safe) + 2 * k_lamda * np.sqrt(d_safe) / v_rel_mag * v_rel_new_y * p_rel_x / p_rel_mag**2 * v_rel_new_x - k_mu * p_rel_y / np.sqrt(d_safe)
         dh_dx[0, 2] = - v * np.sin(rot_angle-theta) - k_lamda * np.sqrt(d_safe) * v * (obs_vel_x * np.sin(theta) - obs_vel_y * np.cos(theta)) * v_rel_new_y**2 / v_rel_mag**3 - 2 * k_lamda * np.sqrt(d_safe) * v_rel_new_y * v * np.cos(rot_angle-theta) / v_rel_mag
         dh_dx[0, 3] = - np.cos(rot_angle-theta) - k_lamda * np.sqrt(d_safe) / v_rel_mag**3 * (v - obs_vel_x * np.cos(theta) - obs_vel_y * np.sin(theta)) * v_rel_new_y**2 - 2 * k_lamda * np.sqrt(d_safe) * v_rel_new_y * np.sin(rot_angle-theta) / v_rel_mag
 
-        # ver: k_mu * d(x) * ||vrel||
-        # dh_dx[0, 0] = p_rel_y * v_rel_new_y / p_rel_mag**2 - k_lamda * p_rel_x * v_rel_new_y**2 / v_rel_mag / np.sqrt(d_safe) - 2 * k_lamda * np.sqrt(d_safe) / v_rel_mag * v_rel_new_y * p_rel_y / p_rel_mag**2 * v_rel_new_x - k_mu * v_rel_mag * p_rel_x / np.sqrt(d_safe)
-        # dh_dx[0, 1] = - p_rel_x * v_rel_new_y / p_rel_mag**2 - k_lamda * p_rel_y * v_rel_new_y**2 / v_rel_mag / np.sqrt(d_safe) + 2 * k_lamda * np.sqrt(d_safe) / v_rel_mag * v_rel_new_y * p_rel_x / p_rel_mag**2 * v_rel_new_x - k_mu * v_rel_mag * p_rel_y / np.sqrt(d_safe)
-        # dh_dx[0, 2] = - v * np.sin(rot_angle-theta) - k_lamda * np.sqrt(d_safe) * v * (obs_vel_x * np.sin(theta) - obs_vel_y * np.cos(theta)) * v_rel_new_y**2 / v_rel_mag**3 - 2 * k_lamda * np.sqrt(d_safe) * v_rel_new_y * v * np.cos(rot_angle-theta) / v_rel_mag + k_mu * np.sqrt(d_safe) * v / v_rel_mag * (obs_vel_x * np.sin(theta) - obs_vel_y * np.cos(theta))
-        # dh_dx[0, 3] = - np.cos(rot_angle-theta) - k_lamda * np.sqrt(d_safe) / v_rel_mag**3 * (v - obs_vel_x * np.cos(theta) - obs_vel_y * np.sin(theta)) * v_rel_new_y**2 + 2 * k_lamda * np.sqrt(d_safe) * v_rel_new_y * np.sin(rot_angle-theta) / v_rel_mag + k_mu * np.sqrt(d_safe) / v_rel_mag * (v - obs_vel_x * np.cos(theta) - obs_vel_y * np.sin(theta))
-
-        # Lf_h = v * np.cos(theta) * dh_dx[0, 0] + v * np.sin(theta) * dh_dx[0, 1]
-        # Lg_h1 = dh_dx[0, 3]
-        # Lg_h2 = -v * np.sin(theta) * dh_dx[0, 0] + v * np.cos(theta) * dh_dx[0, 1] + v * 0.3 * dh_dx[0, 2]
-        # print(f"Lfh: {Lf_h} | Lgh_a: {Lg_h1} | Lgh_beta: {Lg_h2}")
-
-        # # ver: k_mu * (d(x)-||vrel||) - original
-        # dh_dx[0, 0] = p_rel_y * v_rel_new_y / p_rel_mag**2 - k_lamda * p_rel_x * v_rel_new_y**2/ v_rel_mag / np.sqrt(d_safe) - 2 * k_lamda * np.sqrt(d_safe) / v_rel_mag * v_rel_new_y * p_rel_y / p_rel_mag**2 * v_rel_new_x - k_mu * p_rel_x / np.sqrt(d_safe)
-        # dh_dx[0, 1] = - p_rel_x * v_rel_new_y / p_rel_mag**2 - k_lamda * p_rel_y * v_rel_new_y**2 / v_rel_mag / np.sqrt(d_safe) + 2 * k_lamda * np.sqrt(d_safe) / v_rel_mag * v_rel_new_y * p_rel_x / p_rel_mag**2 * v_rel_new_x - k_mu * p_rel_y / np.sqrt(d_safe)
-        # dh_dx[0, 2] = - v * np.sin(rot_angle-theta) - k_lamda * np.sqrt(d_safe) * v * (obs_vel_x * np.sin(theta) - obs_vel_y * np.cos(theta)) * v_rel_new_y**2 / v_rel_mag**3 - 2 * k_lamda * np.sqrt(d_safe) * v_rel_new_y * v * np.cos(rot_angle-theta) / v_rel_mag - k_mu * v / v_rel_mag * (obs_vel_x * np.sin(theta) - obs_vel_y * np.cos(theta))
-        # dh_dx[0, 3] = - np.cos(rot_angle-theta) - k_lamda * np.sqrt(d_safe) / v_rel_mag**3 * (v - obs_vel_x * np.cos(theta) - obs_vel_y * np.sin(theta)) * v_rel_new_y**2 + 2 * k_lamda * np.sqrt(d_safe) * v_rel_new_y * np.sin(rot_angle-theta) / v_rel_mag - k_mu / v_rel_mag * (v - obs_vel_x * np.cos(theta) - obs_vel_y * np.sin(theta))
-
         return h, dh_dx
 
     def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.05):
-        '''Discrete Time Q3BF'''
+        '''Discrete Time DPCBF'''
         # Dynamics equations for the next states
         x_k1 = self.step(x_k, u_k, casadi=True)
 
@@ -127,17 +104,16 @@ class KinematicBicycle2D_DPCBF(KinematicBicycle2D):
                 obs_vel_y = 0.0
 
             # Combine radius R
-            ego_dim = (obs[2] + robot_radius) * beta   # Total collision radius
+            ego_dim = (obs[2] + robot_radius) * beta
 
             # Compute relative position and velocity
             p_rel = ca.vertcat(obs[0] - x[0, 0], obs[1] - x[1, 0])
             v_rel = ca.vertcat(obs_vel_x - v * ca.cos(theta), obs_vel_y - v * ca.sin(theta))
 
-            # Compute the rotation angle: align p_rel with y-axis
+            # Compute the rotation angle
             rot_angle = ca.atan2(p_rel[1], p_rel[0])
 
             # Rotation matrix for transforming to the new coordinate frame:
-            # Using R(-rot_angle) to rotate vectors such that p_rel aligns with the y-axis
             R = ca.vertcat( 
                 ca.horzcat(ca.cos(rot_angle), ca.sin(rot_angle)),
                 ca.horzcat(-ca.sin(rot_angle), ca.cos(rot_angle))
@@ -152,7 +128,7 @@ class KinematicBicycle2D_DPCBF(KinematicBicycle2D):
             eps = 1e-6
             d_safe = ca.fmax(p_rel_mag**2 - ego_dim**2, eps)
 
-            k_lamda, k_mu = 0.7 * ca.sqrt(beta**2 - 1)/ego_dim, 0.3 * ca.sqrt(beta**2 - 1)/ego_dim
+            k_lamda, k_mu = 0.1 * ca.sqrt(beta**2 - 1)/ego_dim, 0.5 * ca.sqrt(beta**2 - 1)/ego_dim
 
             lamda = k_lamda * ca.sqrt(d_safe) / v_rel_mag
             mu = k_mu * ca.sqrt(d_safe)
