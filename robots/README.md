@@ -1,33 +1,29 @@
-# safe_control
+# Dynamic Parabolic Control Barrier Function
 
-`safe_control` is a Python library that provides a unified codebase for safety controllers in robotic navigation. It implements various control barrier function (CBF) based controllers and other types of safety-critical controllers, such as CBF-QP, MPC-CBF, Optimal-Decay CBF, gatekeeper. It supports various robot systems such as integrators, unicycles, quadrotors, autonomous vehicles (bicycle model), and VTOL. 
+`kinematic_bicycle2D_dpcbf.py` details the implementation of the Dynamic Parabolic Control Barrier Function (DPCBF), a novel safety controller designed for the kinematic bicycle model within the safe_control library. This method is based on the paper:
 
-## Features
+Beyon Collision Cones: Dynamic Obstacle Avoidance for Nonholonomic Robots via Dynamic Parabolic Control Barrier Functions.
 
-- Implementation of various positional safety-critical controllers, including [`CBF-QP`](https://ieeexplore.ieee.org/document/8796030) and [`MPC-CBF`](https://ieeexplore.ieee.org/document/9483029)
-- Implementation of safety-critical attitude controller using [`gatekeeper`](https://ieeexplore.ieee.org/document/10341790)
-- Support for different robot dynamics models (e.g., unicycle, double integrator)
-- Support sensing and mapping simulation for RGB-D type camera sensors (limited FOV)
-- Support both single and multi agents navigation
-- Interactive plotting and visualization
+The core advantage of our DPCBF is its ability to reduce control conservatism compared to collision cone-based CBF methods, improving navigation success rates in dense, dynamic environments.
 
-## Installation
+## How It Works
 
-To install `safe_control`, follow these steps:
+Collision cone-based methods define a fixed cone as unsafe set in the relative velocity space. This can be overly restrictive, as the robot is prevented from moving toward an obstacle regardless of its distance or relative speed.
+DPCBF replaces this fixed cone with an adaptive parabolic safety boundary. The key idea is to define a safe set that dynamically adjusts its shape based on both the robot's clearance from the obstacle and the magnitude of their relative velocity.
+This is achieved through the following steps:
+- Coordinate Transformation
+- State-Dependent Parabolic
+- CBF Formulation
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/tkkim-robot/safe_control.git
-   cd safe_control
-   ```
+## Dynamics
 
-2. (Optional) Create and activate a virtual environment:
 
-3. Install the package and its dependencie:
-   ```bash
-   python -m pip install -e .
-   ```
-   Or, install packages manually (see [`setup.py`](https://github.com/tkkim-robot/safe_control/blob/main/setup.py)).
+## Code Implementation
+The following code implements the DPCBF for a `kinematicBicycle2D` model. It overrides the base class's `agent_barrier` method to compute the continous-time DPCBF and its gradient, which are then used by a CBF-QP controller.
+```python
+class KinematicBicycle2D_DPCBF(KinematicBicycle2D):
+    def __init__(self, dt, robot_spec):
+        super().__init__(dt, robot_spec)
 
 
 ## Getting Started
@@ -129,49 +125,11 @@ First determine the specification of each robot (with different `id`), then run 
 |  <img src="https://github.com/user-attachments/assets/d55518d3-79ec-46ec-8cfb-3f78dd7d6e82"  height="200px"> | <img src="https://github.com/user-attachments/assets/7c3db292-f9fa-4734-8578-3034e85ab4fb"  height="200px"> |
 
 
-## Module Breakdown
-
-### Dynamics
-
-Supported robot dynamics can be found in the [`robots/`](https://github.com/tkkim-robot/safe_control/tree/main/robots) directory:
-
-- `single_integrator2D`
-- `double_integrator2D`
-- `single_integrator2D with camera angle`: allow to rotate
-- `double_integrator2D with camera angle`
-- `unicycle2D`
-- `dynamic_unicycle2D`: A unicycle model that uses velocity as state and acceleration as input.
-- `kinematic_bicycle2D`: need to use [`C3BF`](https://arxiv.org/abs/2403.07043) for valid CBF. See [`robots/kinematic_bicycle2D_c3bf.py](https://github.com/tkkim-robot/safe_control/blob/main/robots/kinematic_bicycle2D_c3bf.py) for more details.
-- `quad2d`: x - forward, z - vertical
-- `quad3d`: 12 states, using [`RK4 Sampled Data CBF`](https://arxiv.org/pdf/2203.11470) to construct CBF for relative degree of 4 input.
-- `vtol2d`: x - forward, z - vertical
-
 ### Positional Control Algorithms
 
 Supported positional controllers can be found in the [`position_control/`](https://github.com/tkkim-robot/safe_control/tree/main/position_control) directory:
 
 - `cbf_qp`: A simple CBF-QP controller for collision avoidance (ref: [[1]](https://ieeexplore.ieee.org/document/8796030))
-- `mpc_cbf`: An MPC controller using discrete-time CBF (ref: [[2]](https://ieeexplore.ieee.org/document/9483029))
-- `optimal_decay_cbf_qp`: A modified CBF-QP for point-wise feasibility guarantee (ref: [[3]](https://ieeexplore.ieee.org/document/9482626))
-- `optimal_decay_mpc_cbf`: The same technique applied to MPC-CBF (ref: [[4]](https://ieeexplore.ieee.org/document/9683174))
-
-To use a specific control algorithm, specify it when initializing the `LocalTrackingController`:
-
-```python
-controller = LocalTrackingController(..., control_type='cbf_qp', ...)
-```
-
-### Attitude Control Algorithms
-
-Supported attitude controllers can be found in the [`attitude_control/`](https://github.com/tkkim-robot/safe_control/tree/main/attitude_control) directory:
-
-- `gatekeeper`: A safety filter between pre-defined nominal and backup controller, designed to guarantee safety for infinite time (ref: [[5]](https://ieeexplore.ieee.org/document/10665919))
-- `velocity tracking yaw`
-- `visibility promoting yaw`: A simple visibility promoting attitude controller based on the accumulated map
-
-### Customizing Environments
-
-You can modify the environment in [`utils/env.py`](https://github.com/tkkim-robot/safe_control/blob/main/utils/env.py).
 
 ### Visualization
 The online visualization is performed using [`matplotlib.pyplot.ion`](https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.ion.html).
