@@ -1,6 +1,6 @@
 # Dynamic Parabolic Control Barrier Function
 
-`kinematic_bicycle2D_dpcbf.py` details the implementation of the Dynamic Parabolic Control Barrier Function (DPCBF), a novel safety controller designed for the kinematic bicycle model within the safe_control library. This method is based on the paper:
+`kinematic_bicycle2D_dpcbf.py` details the implementation of the Dynamic Parabolic Control Barrier Function (DPCBF), a novel safety controller designed for the kinematic bicycle model within the `safe_control` library. This method is based on the paper:
 
 Beyon Collision Cones: Dynamic Obstacle Avoidance for Nonholonomic Robots via Dynamic Parabolic Control Barrier Functions.
 
@@ -9,10 +9,10 @@ The core advantage of our DPCBF is its ability to reduce control conservatism co
 ## How It Works
 
 Collision cone-based methods define a fixed cone as unsafe set in the relative velocity space. This can be overly restrictive, as the robot is prevented from moving toward an obstacle regardless of its distance or relative speed.
-DPCBF replaces this fixed cone with an adaptive parabolic safety boundary. The key idea is to define a safe set that dynamically adjusts its shape based on both the robot's clearance from the obstacle and the magnitude of their relative velocity.
+DPCBF replaces this fixed cone with an adaptive parabolic safety boundary. The key idea is to define a safety boundary that dynamically adjusts its shape based on both the robot's clearance from the obstacle and the magnitude of their relative velocity.
 This is achieved through the following steps:
-- Coordinate Transformation
-- State-Dependent Parabolic
+- Coordinate Transformation: The relative position and velocity vectors are transformed from the world frame into a Line-of-Sight (LoS) frame.  In the LoS frame, the new x-axis aligns with the vecotir connecting the robot to the obstacle. This simplifies the geometry of the safety constraint.
+- State-Dependent Parabolic: A parabolic boundary is defined in the LoS frame. Its shape is governed by two key functions, 
 - CBF Formulation
 
 ## Dynamics
