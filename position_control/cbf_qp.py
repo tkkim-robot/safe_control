@@ -2,9 +2,10 @@ import numpy as np
 import cvxpy as cp
 
 class CBFQP:
-    def __init__(self, robot, robot_spec):
+    def __init__(self, robot, robot_spec, num_obs=100):
         self.robot = robot
         self.robot_spec = robot_spec
+        self.num_obs = num_obs
 
         self.cbf_param = {}
 
@@ -22,6 +23,8 @@ class CBFQP:
             self.cbf_param['alpha1'] = 1.5
             self.cbf_param['alpha2'] = 1.5
         elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
+            self.cbf_param['alpha'] = 1.5
+        elif self.robot_spec['model'] == 'KinematicBicycle2D_DPCBF':
             self.cbf_param['alpha'] = 1.5
         elif self.robot_spec['model'] == 'Quad2D':
             self.cbf_param['alpha1'] = 1.5
@@ -54,7 +57,7 @@ class CBFQP:
             constraints = [self.A1 @ self.u + self.b1 >= 0,
                            cp.abs(self.u[0]) <= self.robot_spec['a_max'],
                            cp.abs(self.u[1]) <= self.robot_spec['a_max']]
-        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
+        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
             constraints = [self.A1 @ self.u + self.b1 >= 0,
                            cp.abs(self.u[0]) <= self.robot_spec['a_max'],
                            cp.abs(self.u[1]) <= self.robot_spec['beta_max']]
@@ -80,20 +83,22 @@ class CBFQP:
 
         self.cbf_controller = cp.Problem(objective, constraints)
 
-    def solve_control_problem(self, robot_state, control_ref, nearest_obs):
-        # 3. Update the CBF constraints
-        if nearest_obs is None:
-            # deactivate the CBF constraints
-            self.A1.value = np.zeros_like(self.A1.value)
-            self.b1.value = np.zeros_like(self.b1.value)
-        elif self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF', 'Quad3D']:
-            h, dh_dx = self.robot.agent_barrier(nearest_obs)
-            self.A1.value[0,:] = dh_dx @ self.robot.g()
-            self.b1.value[0,:] = dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D']:
-            h, h_dot, dh_dot_dx = self.robot.agent_barrier(nearest_obs)
-            self.A1.value[0,:] = dh_dot_dx @ self.robot.g()
-            self.b1.value[0,:] = dh_dot_dx @ self.robot.f() + (self.cbf_param['alpha1']+self.cbf_param['alpha2']) * h_dot + self.cbf_param['alpha1']*self.cbf_param['alpha2']*h
+    def solve_control_problem(self, robot_state, control_ref, obs_list):
+        for i in range(min(self.num_obs, len(obs_list))):
+            obs = obs_list[i]
+            # 3. Update the CBF constraints
+            if obs is None:
+                # deactivate the CBF constraints
+                self.A1.value = np.zeros_like(self.A1.value)
+                self.b1.value = np.zeros_like(self.b1.value)
+            elif self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF', 'KinetmaticBicycle2D_DPCBF', 'Quad3D']:
+                h, dh_dx = self.robot.agent_barrier(obs)
+                self.A1.value[0,:] = dh_dx @ self.robot.g()
+                self.b1.value[0,:] = dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h
+            elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D']:
+                h, h_dot, dh_dot_dx = self.robot.agent_barrier(obs)
+                self.A1.value[0,:] = dh_dot_dx @ self.robot.g()
+                self.b1.value[0,:] = dh_dot_dx @ self.robot.f() + (self.cbf_param['alpha1']+self.cbf_param['alpha2']) * h_dot + self.cbf_param['alpha1']*self.cbf_param['alpha2']*h
 
         self.u_ref.value = control_ref['u_ref']
 

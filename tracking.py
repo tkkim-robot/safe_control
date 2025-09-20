@@ -282,7 +282,7 @@ class LocalTrackingController:
         elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'VTOL2D']:
             angle_unpassed=np.pi*1.2
         elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
-            angle_unpassed=np.pi*1.4
+            angle_unpassed=np.pi*2.0
         
         if len(detected_obs) != 0:
             if len(self.obs) == 0:
@@ -519,25 +519,27 @@ class LocalTrackingController:
             else:
                 u_ref = self.robot.nominal_input(self.goal)
 
-        # 4. Update the CBF constraints & 5. Solve the control problem & 6. Draw Collision Cones for C3BF
+        # 4. Update the CBF constraints & 5. Solve the control problem & 6. Draw collision cones/parabolas for C3BF/DPCBF
         control_ref = {'state_machine': self.state_machine,
                        'u_ref': u_ref,
                        'goal': self.goal}
         
-        #TODO: Add draw_collision_quad for KinematicBicycle2D_DPCBF
         if self.pos_controller_type in ['optimal_decay_cbf_qp', 'cbf_qp']:
             u = self.pos_controller.solve_control_problem(
-                self.robot.X, control_ref, self.nearest_obs)
-            self.robot.draw_collision_cone(self.robot.X, [self.nearest_obs], self.ax)
-        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
-            u = self.pos_controller.solve_control_problem(
-                self.robot.X, control_ref, [self.nearest_obs.flatten()])
-            # self.robot.draw_collision_cone(self.robot.X, [self.nearest_obs], self.ax)            
-            self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)            
+                self.robot.X, control_ref, self.nearest_multi_obs)
+        # elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
+        #     u = self.pos_controller.solve_control_problem(
+        #         self.robot.X, control_ref, [self.nearest_multi_obs.flatten()])
+        #     self.robot.draw_collision_parabola(self.robot.X, self.nearest_multi_obs, self.ax)
+        #     self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)  
+            if self.robot_spec['model'] in ['KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'DoubleIntegrator2D_DPCBF', 'DynamicUnicycle2D_DPCBF']:
+                self.robot.draw_collision_parabola(self.robot.X, self.nearest_multi_obs, self.ax)
+                self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)
+            elif self.robot_spec['model'] in ['DynamicUnicycle2D_C3BF']:
+                self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)   
         else:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
-            self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)
         plt.figure(self.fig.number)
 
         # 7. Update the attitude controller
@@ -822,7 +824,7 @@ def single_agent_main(controller_type):
                                                   controller_type=controller_type,
                                                   dt=dt,
                                                   show_animation=True,
-                                                  save_animation=True,
+                                                  save_animation=False,
                                                   show_mpc_traj=False,
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
@@ -914,5 +916,5 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main(controller_type={'pos': 'mpc_cbf'})
+    single_agent_main(controller_type={'pos': 'cbf_qp'})
     # single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'gatekeeper'}) # only Integrators have attitude controller, otherwise ignored
