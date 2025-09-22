@@ -19,12 +19,57 @@ This is achieved through the following steps:
 
 
 ## Code Implementation
+
 The following code implements the DPCBF for a `kinematicBicycle2D` model. It overrides the base class's `agent_barrier` method to compute the continous-time DPCBF and its gradient, which are then used by a CBF-QP controller.
 ```python
 class KinematicBicycle2D_DPCBF(KinematicBicycle2D):
     def __init__(self, dt, robot_spec):
         super().__init__(dt, robot_spec)
 
+```
+
+Define the relative position and velocity between the robot and the obstacle.
+```python
+# Compute relative position and velocity
+        p_rel = np.array([[obs[0] - X[0, 0]], 
+                        [obs[1] - X[1, 0]]])
+        v_rel = np.array([[obs_vel_x - v * np.cos(theta)], 
+                        [obs_vel_y - v * np.sin(theta)]])
+# Compute norms
+        p_rel_mag = np.linalg.norm(p_rel)
+        v_rel_mag = np.linalg.norm(v_rel)
+```
+
+By rotating the coordinates by an angle rot_angle, the new x-axis of the new coordinate frame is aligned with the vector from the robot to the obstacle, p_rel. We refer to the rotated frame by the rotation matrix R as LoS frame. Finally, we define the relative velocity in the LoS frame. This transformation simplifies the definition of the parabolic safety boundary.
+```python
+# Rotation angle and transformation
+        rot_angle = np.arctan2(p_rel_y, p_rel_x)
+        R = np.array([[np.cos(rot_angle), np.sin(rot_angle)],
+                    [-np.sin(rot_angle),  np.cos(rot_angle)]])
+
+# Transform v_rel into the new coordinate frame
+        v_rel_new = R @ v_rel
+        v_rel_new_x = v_rel_new[0, 0]
+        v_rel_new_y = v_rel_new[1, 0]
+```
+
+```python
+# Compute clearance safely
+        eps = 1e-6
+        d_safe = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
+```
+
+We define DPCBF
+```python
+# Introduce tunable parameters
+        k_lamda, k_mu = 0.1 * np.sqrt(s**2 - 1)/ego_dim, 0.5 * np.sqrt(s**2 - 1)/ego_dim
+        # DPCBF functions
+        lamda = k_lamda * np.sqrt(d_safe) / v_rel_mag
+        mu = k_mu * np.sqrt(d_safe)
+
+        # Barrier function h(x)
+        h = v_rel_new_x + lamda * (v_rel_new_y**2) + mu
+```
 
 ## Getting Started
 
