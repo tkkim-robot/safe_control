@@ -43,35 +43,41 @@ Define the relative position and velocity between the robot and the obstacle.
 By rotating the coordinates by an angle rot_angle, the new x-axis of the new coordinate frame is aligned with the vector from the robot to the obstacle, p_rel. We refer to the rotated frame by the rotation matrix R as LoS frame. Finally, we define the relative velocity in the LoS frame. This transformation simplifies the definition of the parabolic safety boundary.
 ```python
 # Rotation angle and transformation
-        rot_angle = np.arctan2(p_rel_y, p_rel_x)
-        R = np.array([[np.cos(rot_angle), np.sin(rot_angle)],
-                    [-np.sin(rot_angle),  np.cos(rot_angle)]])
+rot_angle = np.arctan2(p_rel_y, p_rel_x)
+R = np.array([[np.cos(rot_angle), np.sin(rot_angle)],
+            [-np.sin(rot_angle),  np.cos(rot_angle)]])
 
 # Transform v_rel into the new coordinate frame
-        v_rel_new = R @ v_rel
-        v_rel_new_x = v_rel_new[0, 0]
-        v_rel_new_y = v_rel_new[1, 0]
+v_rel_new = R @ v_rel
+v_rel_new_x = v_rel_new[0, 0]
+v_rel_new_y = v_rel_new[1, 0]
 ```
 
 ```python
 # Compute clearance safely
-        eps = 1e-6
-        d_safe = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
+eps = 1e-6
+d_safe = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
 ```
 
 We define DPCBF
 ```python
 # Introduce tunable parameters
-        k_lamda, k_mu = 0.1 * np.sqrt(s**2 - 1)/ego_dim, 0.5 * np.sqrt(s**2 - 1)/ego_dim
-        # DPCBF functions
-        lamda = k_lamda * np.sqrt(d_safe) / v_rel_mag
-        mu = k_mu * np.sqrt(d_safe)
+k_lamda, k_mu = 0.1 * np.sqrt(s**2 - 1)/ego_dim, 0.5 * np.sqrt(s**2 - 1)/ego_dim
+# DPCBF functions
+lamda = k_lamda * np.sqrt(d_safe) / v_rel_mag
+mu = k_mu * np.sqrt(d_safe)
 
-        # Barrier function h(x)
-        h = v_rel_new_x + lamda * (v_rel_new_y**2) + mu
+# Barrier function h(x)
+h = v_rel_new_x + lamda * (v_rel_new_y**2) + mu
 ```
 
-## Getting Started
+Three examples describe how a parabolic region in the new plane shapes the safety boundary:
+
+|     mu(x)-only case              |              lambda(x)-only case        |              DPCBF        |
+| :------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: |
+|  <img src="https://github.com/user-attachments/assets/a3571760-b8f3-48cc-91cd-895e1252c0f7"  height="250px"> | <img src="https://github.com/user-attachments/assets/5114daea-75f0-4ea1-a575-e37837d8d19d"  height="250px"> | <img src="https://github.com/user-attachments/assets/e7898647-94bb-4dea-ac25-17e9004b68e3"  height="250px"> |
+
+<!-- ## Getting Started
 
 Familiarize with APIs and examples with the scripts in [`tracking.py`](https://github.com/tkkim-robot/safe_control/blob/main/tracking.py)
 
@@ -111,11 +117,7 @@ for _ in range(int(tf / self.dt)):
 self.export_video()
 ```
 
-The sample results from the basic example:
 
-|     mu(x)-only case              |              lambda(x)-only case        |              DPCBF        |
-| :------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: |
-|  <img src="https://github.com/user-attachments/assets/a3571760-b8f3-48cc-91cd-895e1252c0f7"  height="250px"> | <img src="https://github.com/user-attachments/assets/5114daea-75f0-4ea1-a575-e37837d8d19d"  height="250px"> | <img src="https://github.com/user-attachments/assets/e7898647-94bb-4dea-ac25-17e9004b68e3"  height="250px"> |
 
 
 |      Navigation with MPC-CBF controller            |
@@ -124,7 +126,7 @@ The sample results from the basic example:
 
 The green points are the given waypoints, and the blue area is the accumulated sensing footprints.
 
-The gray circles are the obstacles that are known a priori.
+The gray circles are the obstacles that are known a priori. -->
 
 ### Detect/Avoid Unknown Obstacles
 You can also simulate online detection of unknown obstacles and avoidance of obstacles that are detected on-the-fly using safety-critical constratins.
