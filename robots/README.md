@@ -68,9 +68,14 @@ self.export_video()
 
 The sample results from the basic example:
 
+|     mu(x)-only case              |              lambda(x)-only case        |              DPCBF        |
+| :------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: |
+|  <img src="https://github.com/user-attachments/assets/78e6dfb4-8eca-42e5-b9a4-363965bf599e"  height="200px"> | <img src="https://github.com/user-attachments/assets/d22bb161-e5d6-4e78-ac30-48847bcf01aa"  height="200px"> | <img src="https://github.com/user-attachments/assets/b229e974-5343-4d56-affc-41682895daa6"  height="200px"> |
+
+
 |      Navigation with MPC-CBF controller            |
 | :-------------------------------: |
-|  <img src="https://github.com/user-attachments/assets/3e294698-b8e4-45a9-b6c2-55b1779cd5e5"  height="350px"> |
+|  <img src="https://github.com/user-attachments/assets/78e6dfb4-8eca-42e5-b9a4-363965bf599e"  height="350px"> |
 
 The green points are the given waypoints, and the blue area is the accumulated sensing footprints.
 
