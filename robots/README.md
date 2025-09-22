@@ -70,7 +70,7 @@ The sample results from the basic example:
 
 |     mu(x)-only case              |              lambda(x)-only case        |              DPCBF        |
 | :------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: |
-|  <img src="https://github.com/user-attachments/assets/a3571760-b8f3-48cc-91cd-895e1252c0f7"  height="200px"> | <img src="https://github.com/user-attachments/assets/d22bb161-e5d6-4e78-ac30-48847bcf01aa"  height="200px"> | <img src="https://github.com/user-attachments/assets/b229e974-5343-4d56-affc-41682895daa6"  height="200px"> |
+|  <img src="https://github.com/user-attachments/assets/a3571760-b8f3-48cc-91cd-895e1252c0f7"  height="250px"> | <img src="https://github.com/user-attachments/assets/5114daea-75f0-4ea1-a575-e37837d8d19d"  height="250px"> | <img src="https://github.com/user-attachments/assets/e7898647-94bb-4dea-ac25-17e9004b68e3"  height="250px"> |
 
 
 |      Navigation with MPC-CBF controller            |
