@@ -70,7 +70,7 @@ The sample results from the basic example:
 
 |     mu(x)-only case              |              lambda(x)-only case        |              DPCBF        |
 | :------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: |
-|  <img src="https://github.com/user-attachments/assets/78e6dfb4-8eca-42e5-b9a4-363965bf599e"  height="200px"> | <img src="https://github.com/user-attachments/assets/d22bb161-e5d6-4e78-ac30-48847bcf01aa"  height="200px"> | <img src="https://github.com/user-attachments/assets/b229e974-5343-4d56-affc-41682895daa6"  height="200px"> |
+|  <img src="https://github-production-user-asset-6210df.s3.amazonaws.com/179742329/492144743-78e6dfb4-8eca-42e5-b9a4-363965bf599e.mp4?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAVCODYLSA53PQK4ZA%2F20250922%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20250922T054941Z&X-Amz-Expires=300&X-Amz-Signature=5b3d32bc8078c6409f4e8b7c8cc932fa9d801cb5247f61a034e9ccbe8b83a852&X-Amz-SignedHeaders=host"  height="200px"> | <img src="https://github.com/user-attachments/assets/d22bb161-e5d6-4e78-ac30-48847bcf01aa"  height="200px"> | <img src="https://github.com/user-attachments/assets/b229e974-5343-4d56-affc-41682895daa6"  height="200px"> |
 
 
 |      Navigation with MPC-CBF controller            |
