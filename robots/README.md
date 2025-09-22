@@ -1,4 +1,4 @@
-# Dynamic Parabolic Control Barrier Function
+# Dynamic Parabolic Control Barrier Functions
 
 `kinematic_bicycle2D_dpcbf.py` details the implementation of the Dynamic Parabolic Control Barrier Function (DPCBF), a novel safety controller designed for the kinematic bicycle model within the `safe_control` library. This method is based on the paper:
 
@@ -128,7 +128,7 @@ The green points are the given waypoints, and the blue area is the accumulated s
 
 The gray circles are the obstacles that are known a priori. -->
 
-### Detect/Avoid Unknown Obstacles
+### Preview Experiments
 You can also simulate online detection of unknown obstacles and avoidance of obstacles that are detected on-the-fly using safety-critical constratins.
 The configuration of the obstacles is (x, y, radius).
 
