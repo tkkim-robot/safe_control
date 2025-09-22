@@ -129,6 +129,31 @@ The green points are the given waypoints, and the blue area is the accumulated s
 The gray circles are the obstacles that are known a priori. -->
 
 ### Preview Experiments
+
+<div align="center" style="display:flex; gap:16px; align-items:flex-start;">
+  <!-- LEFT: 3 small images stacked -->
+  <div style="display:flex; flex-direction:column; gap:12px; width:120px;">
+    <div style="text-align:center;">
+      <img src="https://github.com/user-attachments/assets/9f214784-8a16-484e-bda6-be61267f2e1e" alt="Small 1" width="120" height="90" style="object-fit:cover;">
+      <div style="font-size:12px; margin-top:4px;"><em>Small Title 1</em></div>
+    </div>
+    <div style="text-align:center;">
+      <img src="https://github.com/user-attachments/assets/85e95f74-7433-485b-85ca-b4df02f3e904" alt="Small 2" width="120" height="90" style="object-fit:cover;">
+      <div style="font-size:12px; margin-top:4px;"><em>Small Title 2</em></div>
+    </div>
+    <div style="text-align:center;">
+      <img src="https://github.com/user-attachments/assets/94f90e36-6f7f-460b-b5f0-b1a85eb022a8" alt="Small 3" width="120" height="90" style="object-fit:cover;">
+      <div style="font-size:12px; margin-top:4px;"><em>Small Title 3</em></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: 1 large image -->
+  <div style="text-align:center; width:360px;">
+    <img src="LARGE_IMG.png" alt="Large" width="360" height="270" style="object-fit:cover;">
+    <div style="font-size:13px; font-weight:600; margin-top:6px;">Main (Large) Title</div>
+  </div>
+</div>
+
 You can also simulate online detection of unknown obstacles and avoidance of obstacles that are detected on-the-fly using safety-critical constratins.
 The configuration of the obstacles is (x, y, radius).
 
