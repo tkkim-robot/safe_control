@@ -1,6 +1,6 @@
 # Dynamic Parabolic Control Barrier Functions
 
-`kinematic_bicycle2D_dpcbf.py` details the implementation of the Dynamic Parabolic Control Barrier Function (DPCBF), a safety controller designed for the kinematic bicycle model within the `safe_control` library. The core advantage of our DPCBF is its ability to reduce control conservatism compared to collision cone-based CBF methods, improving navigation success rates in dense, dynamic environments. Please see our paper ["Beyon Collision Cones: Dynamic Obstacle Avoidance for Nonholonomic Robots via Dynamic Parabolic Control Barrier Functions"]() for more details.
+`kinematic_bicycle2D_dpcbf.py` details the implementation of the Dynamic Parabolic Control Barrier Function (DPCBF), a safety controller designed for the kinematic bicycle model within the `safe_control` library. Please see our paper ["Beyon Collision Cones: Dynamic Obstacle Avoidance for Nonholonomic Robots via Dynamic Parabolic Control Barrier Functions"]() for more details.
 
 <div align="center">
 <img src="https://github.com/user-attachments/assets/0f6c1b74-7f00-4340-a2a8-16da081e68bf" >
@@ -32,19 +32,9 @@ python -m dynamic_env.main
 
 ### More Examples
 
-|        max_obs_radius = 0.3 m          |
-| :-------------------------------: |
-|  <img src="https://github.com/user-attachments/assets/c0e20a14-f8b6-41ab-ac90-85df3ab8775b"  height="350px"> |
-
-
-|      max_obs_radius = 0.5 m            |
-| :-------------------------------: |
-|  <img src="https://github.com/user-attachments/assets/63bc2053-2cd6-4473-8718-302bc137670a"  height="350px"> |
-
-
-|      max_obs_radius = 0.7 m            |
-| :-------------------------------: |
-|  <img src="https://github.com/user-attachments/assets/1506e504-d6e3-4cfa-a7ba-ef7b9138cdbb"  height="350px"> |
+|     max_obs_radius = 0.3 m              |              max_obs_radius = 0.5 m        |              max_obs_radius = 0.7 m        |
+| :------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: |
+|  <img src="https://github.com/user-attachments/assets/c0e20a14-f8b6-41ab-ac90-85df3ab8775b"  height="250px"> | <img src="https://github.com/user-attachments/assets/63bc2053-2cd6-4473-8718-302bc137670a"  height="250px"> | <img src="https://github.com/user-attachments/assets/1506e504-d6e3-4cfa-a7ba-ef7b9138cdbb"  height="250px"> |
 
 
 ## Implementation Details
