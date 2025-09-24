@@ -166,68 +166,25 @@ controller.set_unknown_obs(unknown_obs)
 
 The unknown obstacles are visualized in orange.
 
-|      Navigation with MPC-CBF controller            |
-| :-------------------------------: |
-|  <img src="https://github.com/user-attachments/assets/8be5453f-8629-4f1d-aa36-c0f9160fd2ee"  height="350px"> |
+|      C3BF            |      MA-CBF-VO            |
+| :-------------------------------: | :-------------------------------: |
+|  <img src="https://github.com/user-attachments/assets/613cd6a3-eba8-43c2-bb35-d8aa74969cf2"  height="350px"> |  <img src="https://github.com/user-attachments/assets/ead7ce43-d98a-4d45-81ae-62e2bd36cec0" />
 
-
-### Multi-Robot Example
-
-You can simulate heterogeneous, multiple robots navigating in the same environment. 
-
-```python
-robot_spec = {
-    'model': 'Unicycle2D',
-    'robot_id': 0
-    }
-controller_0 = LocalTrackingController(x_init, robot_spec)
-
-robot_spec = {
-    'model': 'DynamicUnicycle2D',
-    'robot_id': 1,
-    'a_max': 1.5,
-    'fov_angle': 90.0,
-    'cam_range': 5.0,
-    'radius': 0.25
-}
-controller_1 = LocalTrackingController(x_init, robot_spec)
-
-# then, run simulation
-```
-
-First determine the specification of each robot (with different `id`), then run the simulation.
-
-|     Homogeneous Robots              |              Heterogeneous Robots        |
-| :------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: |
-|  <img src="https://github.com/user-attachments/assets/d55518d3-79ec-46ec-8cfb-3f78dd7d6e82"  height="200px"> | <img src="https://github.com/user-attachments/assets/7c3db292-f9fa-4734-8578-3034e85ab4fb"  height="200px"> |
-
-
-### Positional Control Algorithms
-
-Supported positional controllers can be found in the [`position_control/`](https://github.com/tkkim-robot/safe_control/tree/main/position_control) directory:
-
-- `cbf_qp`: A simple CBF-QP controller for collision avoidance (ref: [[1]](https://ieeexplore.ieee.org/document/8796030))
-
-### Visualization
-The online visualization is performed using [`matplotlib.pyplot.ion`](https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.ion.html).
-
-It allows you to interatively scroll, resize, change view, etc. during simulation.
-
-You can visualize and save animation by setting the arguments:
-```python
-controller = LocalTrackingController(..., show_animation=True, save_animation=True)
-```
+e6e-b734-66d1696b219b"  height="350px"> |
+|      Dynamic Zone-based CBF            |      DPCBF            |
+| :-------------------------------: | :-------------------------------: |
+|  <img src="https://github.com/user-attachments/assets/fb04d05a-bde7-4cc1-8952-3cb5096c149a"  height="350px"> |  <img src="https://github.com/user-attachments/assets/1506e504-d6e3-4cfa-a7ba-ef7b9138cdbb"  height="350px"> |
 
 ## Citing
 
 If you find this repository useful, please consider citing our paper:
 
 ```
-@inproceedings{kim2025how, 
-    author    = {Kim, Taekyung and Beard, Randal W. and Panagou, Dimitra},
-    title     = {How to Adapt Control Barrier Functions? A Learning-Based Approach with Applications to a VTOL Quadplane}, 
-    booktitle = {IEEE Conference on Decision and Control (CDC)},
-    shorttitle = {How to Adapt Control Barrier Functions},
+@inproceedings{park2025dpcbf, 
+    author    = {Park, Hun Kuk and Kim, Taekyung and Panagou, Dimitra},
+    title     = {Beyond Collision Cones: Dynamic Obstacle Avoidance for Nonholonomic Robots via Dynamic Parabolic Control Barrier Functions}, 
+    booktitle = {arXiv preprint arXiv.25},
+    shorttitle = {DPCBF},
     year      = {2025}
 }
 ```
