@@ -8,6 +8,8 @@ The core advantage of our DPCBF is its ability to reduce control conservatism co
 
 ## How It Works
 
+<img src="https://github.com/user-attachments/assets/0f6c1b74-7f00-4340-a2a8-16da081e68bf">
+
 Collision cone-based methods define a fixed cone as unsafe set in the relative velocity space. This can be overly restrictive, as the robot is prevented from moving toward an obstacle regardless of its distance or relative speed.
 DPCBF replaces this fixed cone with an adaptive parabolic safety boundary. The key idea is to define a safety boundary that dynamically adjusts its shape based on both the robot's clearance from the obstacle and the magnitude of their relative velocity.
 This is achieved through the following steps:
@@ -168,9 +170,7 @@ The unknown obstacles are visualized in orange.
 
 |      C3BF            |      MA-CBF-VO            |
 | :-------------------------------: | :-------------------------------: |
-|  <img src="https://github.com/user-attachments/assets/613cd6a3-eba8-43c2-bb35-d8aa74969cf2"  height="350px"> |  <img src="https://github.com/user-attachments/assets/ead7ce43-d98a-4d45-81ae-62e2bd36cec0" />
-
-e6e-b734-66d1696b219b"  height="350px"> |
+|  <img src="https://github.com/user-attachments/assets/613cd6a3-eba8-43c2-bb35-d8aa74969cf2"  height="350px"> |  <img src="https://github.com/user-attachments/assets/ead7ce43-d98a-4d45-81ae-62e2bd36cec0"  height="350px"> |
 |      Dynamic Zone-based CBF            |      DPCBF            |
 | :-------------------------------: | :-------------------------------: |
 |  <img src="https://github.com/user-attachments/assets/fb04d05a-bde7-4cc1-8952-3cb5096c149a"  height="350px"> |  <img src="https://github.com/user-attachments/assets/1506e504-d6e3-4cfa-a7ba-ef7b9138cdbb"  height="350px"> |
