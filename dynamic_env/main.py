@@ -224,7 +224,7 @@ class LocalTrackingControllerDyn(LocalTrackingController):
 
 def single_agent_main(controller_type):
     dt = 0.05
-    model = 'Quad2D' # SingleIntegrator2D, DoubleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, Quad2D
+    model = 'KinematicBicycle2D_DPCBF' # SingleIntegrator2D, DoubleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, Quad2D
 
     waypoints = [
          [1, 7.5, 0],

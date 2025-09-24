@@ -1,6 +1,6 @@
 # Dynamic Parabolic Control Barrier Functions
 
-`kinematic_bicycle2D_dpcbf.py` details the implementation of the Dynamic Parabolic Control Barrier Function (DPCBF), a safety controller designed for the kinematic bicycle model within the `safe_control` library. Please see our paper ["Beyon Collision Cones: Dynamic Obstacle Avoidance for Nonholonomic Robots via Dynamic Parabolic Control Barrier Functions"]() for more details.
+`kinematic_bicycle2D_dpcbf.py` details the implementation of the Dynamic Parabolic Control Barrier Function (DPCBF), a safety controller designed for the kinematic bicycle model within the `safe_control` library. Please see our paper ["Beyond Collision Cones: Dynamic Obstacle Avoidance for Nonholonomic Robots via Dynamic Parabolic Control Barrier Functions"]() for more details.
 
 <div align="center">
 <img src="https://github.com/user-attachments/assets/0f6c1b74-7f00-4340-a2a8-16da081e68bf" >
@@ -15,10 +15,27 @@
 </div>
 
 ## How to Run Example
-You can run our test example by:
+You can run the primary test example for DPCBF by:
 ```bash
 python -m dynamic_env.main
 ```
+
+Alternatively, you can import `LocalTrackingControllerDyn` from 'main.py'
+```python
+from dynamic_env import LocalTrackingControllerDyn
+# initialize LocalTrackingControllerDyn
+single_agent_main()
+```
+
+You can test the baseline algorithm:
+- [C3BF*](https://arxiv.org/abs/2403.07043):
+    - by setting `model = 'KinematicBicycle2D_C3BF'`.
+
+The sample results of the dynamic obstacle environments:
+|                                                     C3BF                                                    |                                                                       DPCBF                |
+| :------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: |
+|  <img src="https://github.com/user-attachments/assets/41c056d5-9e6d-44f8-9e75-4f6ae1e465b1"  height="350px"> | <img src="https://github.com/user-attachments/assets/60bd63b4-71dc-49ce-bdb2-1b2cf928ecaa"  height="350px"> |
+
 
 ### Comparison (Surrounded by Obstacles)
 |      C3BF            |      MA-CBF-VO            |

@@ -8,8 +8,10 @@ only the continous and discrete-time CBF funcitions for Dynamic Parabolic CBF (D
 """
 
 class KinematicBicycle2D_DPCBF(KinematicBicycle2D):
-    def __init__(self, dt, robot_spec):
+    def __init__(self, dt, robot_spec, k_lambda=0.1, k_mu=0.5):
         super().__init__(dt, robot_spec)
+        self.k_lambda = k_lambda
+        self.k_mu = k_mu
 
     def agent_barrier(self, X, obs, robot_radius, s=1.05):
         """
@@ -65,21 +67,19 @@ class KinematicBicycle2D_DPCBF(KinematicBicycle2D):
         eps = 1e-6
         d_safe = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
 
-        # Introduce tunable parameters
-        k_lamda, k_mu = 0.1 * np.sqrt(s**2 - 1)/ego_dim, 0.5 * np.sqrt(s**2 - 1)/ego_dim
         # DPCBF functions
-        func_lamda = k_lamda * np.sqrt(d_safe) / v_rel_mag
-        func_mu = k_mu * np.sqrt(d_safe)
+        func_lamda = self.k_lambda * np.sqrt(d_safe) / v_rel_mag
+        func_mu = self.k_mu * np.sqrt(d_safe)
 
         # Barrier function h(x)
         h = v_rel_new_x + func_lamda * (v_rel_new_y**2) + func_mu
 
         # Compute dh_dx for DPCBF
         dh_dx = np.zeros((1, 4))
-        dh_dx[0, 0] = p_rel_y * v_rel_new_y / p_rel_mag**2 - k_lamda * p_rel_x * v_rel_new_y**2 / v_rel_mag / np.sqrt(d_safe) - 2 * k_lamda * np.sqrt(d_safe) / v_rel_mag * v_rel_new_y * p_rel_y / p_rel_mag**2 * v_rel_new_x - k_mu * p_rel_x / np.sqrt(d_safe)
-        dh_dx[0, 1] = - p_rel_x * v_rel_new_y / p_rel_mag**2 - k_lamda * p_rel_y * v_rel_new_y**2 / v_rel_mag / np.sqrt(d_safe) + 2 * k_lamda * np.sqrt(d_safe) / v_rel_mag * v_rel_new_y * p_rel_x / p_rel_mag**2 * v_rel_new_x - k_mu * p_rel_y / np.sqrt(d_safe)
-        dh_dx[0, 2] = - v * np.sin(rot_angle-theta) - k_lamda * np.sqrt(d_safe) * v * (obs_vel_x * np.sin(theta) - obs_vel_y * np.cos(theta)) * v_rel_new_y**2 / v_rel_mag**3 - 2 * k_lamda * np.sqrt(d_safe) * v_rel_new_y * v * np.cos(rot_angle-theta) / v_rel_mag
-        dh_dx[0, 3] = - np.cos(rot_angle-theta) - k_lamda * np.sqrt(d_safe) / v_rel_mag**3 * (v - obs_vel_x * np.cos(theta) - obs_vel_y * np.sin(theta)) * v_rel_new_y**2 - 2 * k_lamda * np.sqrt(d_safe) * v_rel_new_y * np.sin(rot_angle-theta) / v_rel_mag
+        dh_dx[0, 0] = p_rel_y * v_rel_new_y / p_rel_mag**2 - self.k_lambda * p_rel_x * v_rel_new_y**2 / v_rel_mag / np.sqrt(d_safe) - 2 * self.k_lambda * np.sqrt(d_safe) / v_rel_mag * v_rel_new_y * p_rel_y / p_rel_mag**2 * v_rel_new_x - self.k_mu * p_rel_x / np.sqrt(d_safe)
+        dh_dx[0, 1] = - p_rel_x * v_rel_new_y / p_rel_mag**2 - self.k_lambda * p_rel_y * v_rel_new_y**2 / v_rel_mag / np.sqrt(d_safe) + 2 * self.k_lambda * np.sqrt(d_safe) / v_rel_mag * v_rel_new_y * p_rel_x / p_rel_mag**2 * v_rel_new_x - self.k_mu * p_rel_y / np.sqrt(d_safe)
+        dh_dx[0, 2] = - v * np.sin(rot_angle-theta) - self.k_lambda * np.sqrt(d_safe) * v * (obs_vel_x * np.sin(theta) - obs_vel_y * np.cos(theta)) * v_rel_new_y**2 / v_rel_mag**3 - 2 * self.k_lambda * np.sqrt(d_safe) * v_rel_new_y * v * np.cos(rot_angle-theta) / v_rel_mag
+        dh_dx[0, 3] = - np.cos(rot_angle-theta) - self.k_lambda * np.sqrt(d_safe) / v_rel_mag**3 * (v - obs_vel_x * np.cos(theta) - obs_vel_y * np.sin(theta)) * v_rel_new_y**2 - 2 * self.k_lambda * np.sqrt(d_safe) * v_rel_new_y * np.sin(rot_angle-theta) / v_rel_mag
 
         return h, dh_dx
 
