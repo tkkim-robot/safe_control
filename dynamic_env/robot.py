@@ -7,10 +7,18 @@ from shapely.geometry import Polygon, Point, LineString
 from shapely import is_valid_reason
 from utils.geometry import custom_merge
 
-class BaseRobot_dynamic_obs(BaseRobot):
+class BaseRobotDyn(BaseRobot):
 
     def __init__(self, X0, robot_spec, dt, ax):
         super().__init__(X0, robot_spec, dt, ax)
+
+        self.collision_parabola_patches = []
+        self.collision_parabola_patch = None
+        
+        self.collision_cone_patches = []
+        self.collision_cone_patch = None
+
+        self.rel_vel_patches = []
 
     def draw_collision_cone(self, X, obs_list, ax):
         '''

@@ -2,7 +2,7 @@ import numpy as np
 import cvxpy as cp
 
 class CBFQP:
-    def __init__(self, robot, robot_spec, num_obs=100):
+    def __init__(self, robot, robot_spec, num_obs=1): # When solving a QP with constraints for n obstacles, set 'num_obs=n'
         self.robot = robot
         self.robot_spec = robot_spec
         self.num_obs = num_obs
@@ -57,7 +57,7 @@ class CBFQP:
             constraints = [self.A1 @ self.u + self.b1 >= 0,
                            cp.abs(self.u[0]) <= self.robot_spec['a_max'],
                            cp.abs(self.u[1]) <= self.robot_spec['a_max']]
-        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
+        elif 'KinematicBicycle2D' in self.robot_spec['model']:
             constraints = [self.A1 @ self.u + self.b1 >= 0,
                            cp.abs(self.u[0]) <= self.robot_spec['a_max'],
                            cp.abs(self.u[1]) <= self.robot_spec['beta_max']]

@@ -276,7 +276,7 @@ class LocalTrackingController:
             angle_unpassed=np.pi*2
         elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'VTOL2D']:
             angle_unpassed=np.pi*1.2
-        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
+        elif 'KinematicBicycle2D' in self.robot_spec['model']:
             angle_unpassed=np.pi*2.0
         
         if len(detected_obs) != 0:
@@ -623,7 +623,7 @@ class LocalTrackingController:
 
 def single_agent_main(controller_type):
     dt = 0.05
-    model = 'KinematicBicycle2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'DynamicUnicycle2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     waypoints = [
         [2, 2, math.pi/2],
@@ -666,19 +666,6 @@ def single_agent_main(controller_type):
             'model': 'KinematicBicycle2D',
             'a_max': 0.5,
             'sensor': 'rgbd',
-            'radius': 0.5
-        }
-    elif model == 'KinematicBicycle2D_DPCBF':
-        robot_spec = {
-            'model': 'KinematicBicycle2D_DPCBF',
-            'a_max': 0.5,
-            'sensor': 'rgbd',
-            'radius': 0.5
-        }
-    elif model == 'KinematicBicycle2D_C3BF':
-        robot_spec = {
-            'model': 'KinematicBicycle2D_C3BF',
-            'a_max': 0.5,
             'radius': 0.5
         }
     elif model == 'Quad2D':
@@ -862,7 +849,7 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main(controller_type={'pos': 'cbf_qp'})
-    # single_agent_main(controller_type={'pos': 'mpc_cbf'})
+    # single_agent_main(controller_type={'pos': 'cbf_qp'})
+    single_agent_main(controller_type={'pos': 'mpc_cbf'})
     # single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'gatekeeper'}) # only Integrators have attitude controller, otherwise ignored
     

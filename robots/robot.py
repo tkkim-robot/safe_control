@@ -139,13 +139,6 @@ class BaseRobot:
         self.U = np.array([0, 0]).reshape(-1, 1)
         self.U_att = np.array([0]).reshape(-1, 1)
 
-        self.collision_parabola_patches = []
-        self.collision_parabola_patch = None
-        self.rel_vel_patches = []
-        
-        self.collision_cone_patches = []
-        self.collision_cone_patch = None
-
         # Plot handles
         self.vis_orient_len = 0.5
         if self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:

@@ -17,7 +17,7 @@ class InfeasibleError(Exception):
         self.message = message
         super().__init__(self.message)
 
-class TrackingController_dynamic_env(LocalTrackingController):
+class LocalTrackingControllerDyn(LocalTrackingController):
 
     def __init__(self, X0, robot_spec,
                  controller_type=None,
@@ -42,8 +42,8 @@ class TrackingController_dynamic_env(LocalTrackingController):
     
 
     def setup_robot(self, X0):
-        from dynamic_env.robot import BaseRobot_dynamic_obs
-        self.robot = BaseRobot_dynamic_obs(
+        from dynamic_env.robot import BaseRobotDyn
+        self.robot = BaseRobotDyn(
             X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
         
     # Update dynamic obs position
@@ -224,7 +224,7 @@ class TrackingController_dynamic_env(LocalTrackingController):
 
 def single_agent_main(controller_type):
     dt = 0.05
-    model = 'KinematicBicycle2D_DPCBF' # KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF
+    model = 'Quad2D' # SingleIntegrator2D, DoubleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, Quad2D
 
     waypoints = [
          [1, 7.5, 0],
@@ -256,7 +256,36 @@ def single_agent_main(controller_type):
 
     env_width = 22.0
     env_height = 15.0
-    if model == 'KinematicBicycle2D_C3BF':
+    if model == 'SingleIntegrator2D':
+        robot_spec = {
+            'model': 'SingleIntegrator2D',
+            'v_max': 1.0,
+            'radius': 0.25
+        }
+    elif model == 'DoubleIntegrator2D':
+        robot_spec = {
+            'model': 'DoubleIntegrator2D',
+            'v_max': 1.0,
+            'a_max': 1.0,
+            'radius': 0.25,
+            'sensor': 'rgbd'
+        }
+    elif model == 'DynamicUnicycle2D':
+        robot_spec = {
+            'model': 'DynamicUnicycle2D',
+            'w_max': 0.5,
+            'a_max': 0.5,
+            'sensor': 'rgbd',
+            'radius': 0.25
+        }
+    elif model == 'KinematicBicycle2D':
+        robot_spec = {
+            'model': 'KinematicBicycle2D',
+            'a_max': 0.5,
+            'sensor': 'rgbd',
+            'radius': 0.5
+        }
+    elif model == 'KinematicBicycle2D_C3BF':
         robot_spec = {
             'model': 'KinematicBicycle2D_C3BF',
             'a_max': 5.0,
@@ -269,6 +298,26 @@ def single_agent_main(controller_type):
             # 'sensor': 'rgbd',
             'radius': 0.3
         }
+    elif model == 'Quad2D':
+        robot_spec = {
+            'model': 'Quad2D',
+            'f_min': 3.0,
+            'f_max': 10.0,
+            'sensor': 'rgbd',
+            'radius': 0.25
+        }
+    elif model == 'Quad3D':
+        robot_spec = {
+            'model': 'Quad3D',
+            'radius': 0.25
+        }
+        # override the waypoints with z axis
+        waypoints = [
+            [2, 2, 0, math.pi/2],
+            [2, 12, 1, 0],
+            [12, 12, -1, 0],
+            [12, 2, 0, 0]
+        ]
 
     waypoints = np.array(waypoints, dtype=np.float64)
 
@@ -287,7 +336,7 @@ def single_agent_main(controller_type):
     ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here
     env_handler = env.Env()
 
-    tracking_controller = TrackingController_dynamic_env(x_init, robot_spec,
+    tracking_controller = LocalTrackingControllerDyn(x_init, robot_spec,
                                                   controller_type=controller_type,
                                                   dt=dt,
                                                   show_animation=True,
@@ -307,6 +356,6 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    # single_agent_main(controller_type={'pos': 'cbf_qp'})
-    # single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'gatekeeper'}) # only Integrators have attitude controller, otherwise ignored
     single_agent_main(controller_type={'pos': 'cbf_qp'})
+    # single_agent_main(controller_type={'pos': 'mpc_cbf'})
+    # single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'gatekeeper'}) # only Integrators have attitude controller, otherwise ignored
