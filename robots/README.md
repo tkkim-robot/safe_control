@@ -8,8 +8,9 @@ The core advantage of our DPCBF is its ability to reduce control conservatism co
 
 ## How It Works
 
-<img src="https://github.com/user-attachments/assets/0f6c1b74-7f00-4340-a2a8-16da081e68bf" width="1000px">
-
+<div align="center">
+<img src="https://github.com/user-attachments/assets/0f6c1b74-7f00-4340-a2a8-16da081e68bf" >
+</div>
 Collision cone-based methods define a fixed cone as unsafe set in the relative velocity space. This can be overly restrictive, as the robot is prevented from moving toward an obstacle regardless of its distance or relative speed.
 DPCBF replaces this fixed cone with an adaptive parabolic safety boundary. The key idea is to define a safety boundary that dynamically adjusts its shape based on both the robot's clearance from the obstacle and the magnitude of their relative velocity.
 This is achieved through the following steps:
@@ -18,9 +19,10 @@ This is achieved through the following steps:
 - CBF Formulation
 
 ## Dynamics
-
-<img src="https://github.com/user-attachments/assets/402e1df5-6f50-4d87-8569-b98adabb82f5" width="1000px">
-The robot's state defined by its Center of Mass (CoM) position (x,y) heading angle $\theta$, and forward velocity $v$. The distances from the CoM to the front and rear axles are $\ell_{f}$ and $\ell_{r}$, respectively. The front wheel steering angle is $\delta$, and $\beta$ is the resulting vehicle slip angle.
+<div align="center">
+<img src="https://github.com/user-attachments/assets/402e1df5-6f50-4d87-8569-b98adabb82f5">
+</div>
+The robot's state defined by its Center of Mass (CoM) position (x,y) heading angle θ, and forward velocity v. The distances from the CoM to the front and rear axles are ℓ_f and ℓ_r, respectively. The front wheel steering angle is $\delta$, and $\beta$ is the resulting vehicle slip angle.
 
 ## Code Implementation
 
@@ -134,45 +136,30 @@ The gray circles are the obstacles that are known a priori. -->
 
 ### Preview Experiments
 
-<div align="center" style="display:flex; gap:16px; align-items:flex-start;">
-  <!-- LEFT: 3 small images stacked -->
-  <div style="display:flex; flex-direction:column; gap:12px; width:120px;">
-    <div style="text-align:center;">
-      <img src="https://github.com/user-attachments/assets/9f214784-8a16-484e-bda6-be61267f2e1e" alt="Small 1" width="120" height="90" style="object-fit:cover;">
-      <div style="font-size:12px; margin-top:4px;"><em>C3BF</em></div>
-    </div>
-    <div style="text-align:center;">
-      <img src="https://github.com/user-attachments/assets/85e95f74-7433-485b-85ca-b4df02f3e904" alt="Small 2" width="120" height="90" style="object-fit:cover;">
-      <div style="font-size:12px; margin-top:4px;"><em>MA-CBF-VO</em></div>
-    </div>
-    <div style="text-align:center;">
-      <img src="https://github.com/user-attachments/assets/94f90e36-6f7f-460b-b5f0-b1a85eb022a8" alt="Small 3" width="120" height="90" style="object-fit:cover;">
-      <div style="font-size:12px; margin-top:4px;"><em>Dynamic zone-based CBF</em></div>
-    </div>
-  </div>
+Scenario 1
+|      C3BF            |      MA-CBF-VO            |
+| :-------------------------------: | :-------------------------------: |
+|  <img src="https://github.com/user-attachments/assets/9f214784-8a16-484e-bda6-be61267f2e1e"  height="350px"> |  <img src="https://github.com/user-attachments/assets/85e95f74-7433-485b-85ca-b4df02f3e904"  height="350px"> |
 
-  <!-- RIGHT: 1 large image -->
-  <div style="text-align:center; width:360px;">
-    <img src="LARGE_IMG.png" alt="Large" width="360" height="270" style="object-fit:cover;">
-    <div style="font-size:13px; font-weight:600; margin-top:6px;">Main (Large) Title</div>
-  </div>
-</div>
+|      Dynamic Zone-based CBF            |      DPCBF            |
+| :-------------------------------: | :-------------------------------: |
+|  <img src="https://github.com/user-attachments/assets/94f90e36-6f7f-460b-b5f0-b1a85eb022a8"  height="350px"> |  <img src="https://github.com/user-attachments/assets/1506e504-d6e3-4cfa-a7ba-ef7b9138cdbb"  height="350px"> |
 
-You can also simulate online detection of unknown obstacles and avoidance of obstacles that are detected on-the-fly using safety-critical constratins.
-The configuration of the obstacles is (x, y, radius).
+Scenario 2
+|      C3BF            |      MA-CBF-VO            |
+| :-------------------------------: | :-------------------------------: |
+|  <img src="https://github.com/user-attachments/assets/9f214784-8a16-484e-bda6-be61267f2e1e"  height="350px"> |  <img src="https://github.com/user-attachments/assets/85e95f74-7433-485b-85ca-b4df02f3e904"  height="350px"> |
 
-```python
-unknown_obs = np.array([[2, 2, 0.2], [3.0, 3.0, 0.3]])
-controller.set_unknown_obs(unknown_obs)
+|      Dynamic Zone-based CBF            |      DPCBF            |
+| :-------------------------------: | :-------------------------------: |
+|  <img src="https://github.com/user-attachments/assets/94f90e36-6f7f-460b-b5f0-b1a85eb022a8"  height="350px"> |  <img src="https://github.com/user-attachments/assets/1506e504-d6e3-4cfa-a7ba-ef7b9138cdbb"  height="350px"> |
 
-# then, run simulation
-```
-
-The unknown obstacles are visualized in orange.
+Scenario 4
 
 |      C3BF            |      MA-CBF-VO            |
 | :-------------------------------: | :-------------------------------: |
 |  <img src="https://github.com/user-attachments/assets/613cd6a3-eba8-43c2-bb35-d8aa74969cf2"  height="350px"> |  <img src="https://github.com/user-attachments/assets/ead7ce43-d98a-4d45-81ae-62e2bd36cec0"  height="350px"> |
+
 |      Dynamic Zone-based CBF            |      DPCBF            |
 | :-------------------------------: | :-------------------------------: |
 |  <img src="https://github.com/user-attachments/assets/fb04d05a-bde7-4cc1-8952-3cb5096c149a"  height="350px"> |  <img src="https://github.com/user-attachments/assets/1506e504-d6e3-4cfa-a7ba-ef7b9138cdbb"  height="350px"> |
