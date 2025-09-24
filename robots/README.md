@@ -109,7 +109,7 @@ Now, our DPCBF formulation defines a parabolic safety boundary with a Line-of-Si
 ### Scenario 2 (max_obs_radius = 0.3 m)
 |      C3BF            |      MA-CBF-VO            |
 | :-------------------------------: | :-------------------------------: |
-|  <img src="https://github.com/user-attachments/assets/9f214784-8a16-484e-bda6-be61267f2e1e"  height="350px"> |  <img src="https://github.com/user-attachments/assets/7ebbb8bf-5077-4ed0-9fc4-91dcb618edde"  height="350px"> |
+|  <img src="https://github.com/user-attachments/assets/9f214784-8a16-484e-bda6-be61267f2e1e"  height="350px"> |  <img src="https://github.com/user-attachments/assets/c457d645-68f0-46f8-87c5-8ad887e63dae"  height="350px"> |
 
 |      Dynamic Zone-based CBF            |      DPCBF            |
 | :-------------------------------: | :-------------------------------: |
