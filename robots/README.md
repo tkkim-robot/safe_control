@@ -8,7 +8,7 @@ The core advantage of our DPCBF is its ability to reduce control conservatism co
 
 ## How It Works
 
-<img src="https://github.com/user-attachments/assets/0f6c1b74-7f00-4340-a2a8-16da081e68bf">
+<img src="https://github.com/user-attachments/assets/0f6c1b74-7f00-4340-a2a8-16da081e68bf" width="1000px">
 
 Collision cone-based methods define a fixed cone as unsafe set in the relative velocity space. This can be overly restrictive, as the robot is prevented from moving toward an obstacle regardless of its distance or relative speed.
 DPCBF replaces this fixed cone with an adaptive parabolic safety boundary. The key idea is to define a safety boundary that dynamically adjusts its shape based on both the robot's clearance from the obstacle and the magnitude of their relative velocity.
@@ -19,6 +19,8 @@ This is achieved through the following steps:
 
 ## Dynamics
 
+<img src="https://github.com/user-attachments/assets/402e1df5-6f50-4d87-8569-b98adabb82f5" width="1000px">
+The robot's state defined by its Center of Mass (CoM) position (x,y) heading angle $\theta$, and forward velocity $v$. The distances from the CoM to the front and rear axles are $\ell_{f}$ and $\ell_{r}$, respectively. The front wheel steering angle is $\delta$, and $\beta$ is the resulting vehicle slip angle.
 
 ## Code Implementation
 
