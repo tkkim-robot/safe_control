@@ -99,7 +99,7 @@ Now, our DPCBF formulation defines a parabolic safety boundary with a Line-of-Si
 ### Scenario 1 (Surrounded by Obstacles)
 |      C3BF            |      MA-CBF-VO            |
 | :-------------------------------: | :-------------------------------: |
-|  <img src="https://github.com/user-attachments/assets/d5b8c868-1113-41b5-8e2d-c40b2551160a"  height="350px"> |  <img src="https://github.com/user-attachments/assets/3d2388df-e04b-4886-8e68-3f47377b62cc""  height="350px"> |
+|  <img src="https://github.com/user-attachments/assets/d5b8c868-1113-41b5-8e2d-c40b2551160a"  height="350px"> |  <img src="https://github.com/user-attachments/assets/3d2388df-e04b-4886-8e68-3f47377b62cc"  height="350px"> |
 
 |      Dynamic Zone-based CBF            |      DPCBF            |
 | :-------------------------------: | :-------------------------------: |
