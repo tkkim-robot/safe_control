@@ -61,18 +61,24 @@ class Plotting:
             )
 
         for obs_info in self.obs_circle:
-            if obs_info.shape[0] == 3:
-                ox, oy, r = obs_info
-            elif obs_info.shape[0] == 5:
-                continue
-            main_ax.add_patch(
-                patches.Circle(
-                    (ox, oy), r,
-                    edgecolor='black',
-                    facecolor='gray',
-                    fill=True
+            ox, oy, r = obs_info[:3]
+            is_static = True # Assume the obstacle is static by default
+
+            if obs_info.shape[0] >= 5:
+                vx, vy = obs_info[3:5]
+                # If velocity is non-zero, it's a dynamic obstacle
+                if vx != 0 or vy != 0:
+                    is_static = False
+            # Only draw the obstacle if it's static
+            if is_static:
+                main_ax.add_patch(
+                    patches.Circle(
+                        (ox, oy), r,
+                        edgecolor='black',
+                        facecolor='gray',
+                        fill=True
+                    )
                 )
-            )
 
         main_ax.set_title(name)
         eps = 0.015

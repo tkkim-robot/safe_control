@@ -39,15 +39,16 @@ class KinematicBicycle2D:
         self.dt = dt
         self.robot_spec = robot_spec
 
-        self.robot_spec.setdefault('wheel_base', 0.5)
+        self.robot_spec.setdefault('wheel_base', 0.4)
         self.robot_spec.setdefault('body_width', 0.3)
-        self.robot_spec.setdefault('radius', 0.5)
+        self.robot_spec.setdefault('radius', 0.3)
         self.robot_spec.setdefault('front_ax_dist', 0.2)
-        self.robot_spec.setdefault('rear_ax_dist', 0.3)
-        self.robot_spec.setdefault('v_max', 1.0)
-        self.robot_spec.setdefault('a_max', 0.5)
-        self.robot_spec.setdefault('delta_max', np.deg2rad(30))
+        self.robot_spec.setdefault('rear_ax_dist', 0.2)
+        self.robot_spec.setdefault('v_max', 3.5)
+        self.robot_spec.setdefault('a_max', 5.0)
+        self.robot_spec.setdefault('delta_max', np.deg2rad(32))
         self.robot_spec.setdefault('beta_max', self.beta(self.robot_spec['delta_max']))
+        self.robot_spec.setdefault('v_min', 0.2)
 
     def beta(self, delta):
         # Computes the slip angle beta
@@ -109,6 +110,14 @@ class KinematicBicycle2D:
     def step(self, X, U, casadi=False):
         X = X + (self.f(X, casadi) + self.g(X, casadi) @ U) * self.dt
         X[2, 0] = angle_normalize(X[2, 0])
+
+        v_min = self.robot_spec['v_min']
+        v_max = self.robot_spec['v_max']
+        if casadi:
+            X[3, 0] = ca.fmax(ca.fmin(X[3, 0], v_max), v_min)
+        else:
+            X[3, 0] = np.clip(X[3, 0], v_min, v_max)
+
         return X
    
     def nominal_input(self, X, G, d_min=0.05, k_theta=0.5, k_a = 1.5, k_v=0.5):
@@ -117,6 +126,7 @@ class KinematicBicycle2D:
         '''
         G = np.copy(G.reshape(-1, 1))  # goal state
         v_max = self.robot_spec['v_max']
+        v_min = self.robot_spec['v_min']
         delta_max = self.robot_spec['delta_max']
 
         distance = max(np.linalg.norm(X[0:2, 0] - G[0:2, 0]) - d_min, 0.05)
@@ -127,10 +137,9 @@ class KinematicBicycle2D:
         delta = np.clip(k_theta * error_theta, -delta_max, delta_max)  # Steering angle
         beta = self.beta(delta)  # Slip angle conversion
                 
-        if abs(error_theta) > np.deg2rad(90):
-            v = 0.0
-        else:
-            v = min(k_v * distance * np.cos(error_theta), v_max)
+        heading_scale = max(0.0, np.cos(error_theta))
+        v_cmd = k_v * distance * heading_scale
+        v = np.clip(v_cmd, v_min, v_max)
             
         a = k_a * (v - X[3, 0])
         return np.array([a, beta]).reshape(-1, 1)
@@ -148,12 +157,9 @@ class KinematicBicycle2D:
 
     def agent_barrier(self, X, obs, robot_radius, beta=1.1):
         '''Continuous Time High Order CBF'''
-        try:
-            obsX = obs[0:2]
-            d_min = obs[2][0] + robot_radius  # obs radius + robot radius
-        except:
-            obsX = obs[0:2].reshape(2,1)
-            d_min = obs[2] + robot_radius  # obs radius + robot radius
+
+        obsX = obs[0:2].reshape(2,1)
+        d_min = obs[2] + robot_radius  # obs radius + robot radius
 
         h = np.linalg.norm(X[0:2] - obsX[0:2])**2 - beta*d_min**2
         # Lgh is zero => relative degree is 2

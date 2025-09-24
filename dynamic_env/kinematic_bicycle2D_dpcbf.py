@@ -68,11 +68,11 @@ class KinematicBicycle2D_DPCBF(KinematicBicycle2D):
         # Introduce tunable parameters
         k_lamda, k_mu = 0.1 * np.sqrt(s**2 - 1)/ego_dim, 0.5 * np.sqrt(s**2 - 1)/ego_dim
         # DPCBF functions
-        lamda = k_lamda * np.sqrt(d_safe) / v_rel_mag
-        mu = k_mu * np.sqrt(d_safe)
+        func_lamda = k_lamda * np.sqrt(d_safe) / v_rel_mag
+        func_mu = k_mu * np.sqrt(d_safe)
 
         # Barrier function h(x)
-        h = v_rel_new_x + lamda * (v_rel_new_y**2) + mu
+        h = v_rel_new_x + func_lamda * (v_rel_new_y**2) + func_mu
 
         # Compute dh_dx for DPCBF
         dh_dx = np.zeros((1, 4))

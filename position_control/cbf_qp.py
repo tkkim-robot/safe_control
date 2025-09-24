@@ -37,8 +37,8 @@ class CBFQP:
     def setup_control_problem(self):
         self.u = cp.Variable((2, 1))
         self.u_ref = cp.Parameter((2, 1), value=np.zeros((2, 1)))
-        self.A1 = cp.Parameter((1, 2), value=np.zeros((1, 2)))
-        self.b1 = cp.Parameter((1, 1), value=np.zeros((1, 1)))
+        self.A1 = cp.Parameter((self.num_obs, 2), value=np.zeros((self.num_obs, 2)))
+        self.b1 = cp.Parameter((self.num_obs, 1), value=np.zeros((self.num_obs, 1)))
         objective = cp.Minimize(cp.sum_squares(self.u - self.u_ref))
 
         if self.robot_spec['model'] == 'SingleIntegrator2D':
@@ -91,15 +91,17 @@ class CBFQP:
                 # deactivate the CBF constraints
                 self.A1.value = np.zeros_like(self.A1.value)
                 self.b1.value = np.zeros_like(self.b1.value)
-            elif self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF', 'KinetmaticBicycle2D_DPCBF', 'Quad3D']:
+            elif self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'Quad3D']:
                 h, dh_dx = self.robot.agent_barrier(obs)
-                self.A1.value[0,:] = dh_dx @ self.robot.g()
-                self.b1.value[0,:] = dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h
+                self.A1.value[i,:] = dh_dx @ self.robot.g()
+                self.b1.value[i,:] = dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h
             elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D']:
                 h, h_dot, dh_dot_dx = self.robot.agent_barrier(obs)
-                self.A1.value[0,:] = dh_dot_dx @ self.robot.g()
-                self.b1.value[0,:] = dh_dot_dx @ self.robot.f() + (self.cbf_param['alpha1']+self.cbf_param['alpha2']) * h_dot + self.cbf_param['alpha1']*self.cbf_param['alpha2']*h
-
+                self.A1.value[i,:] = dh_dot_dx @ self.robot.g()
+                self.b1.value[i,:] = dh_dot_dx @ self.robot.f() + (self.cbf_param['alpha1']+self.cbf_param['alpha2']) * h_dot + self.cbf_param['alpha1']*self.cbf_param['alpha2']*h
+            
+            #print(f'h: {h} | value: {self.A1.value[i,:] @ self.u.value + self.b1.value[i,:]}')
+        
         self.u_ref.value = control_ref['u_ref']
 
         # 4. Solve this yields a new 'self.u'
