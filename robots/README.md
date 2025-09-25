@@ -15,7 +15,7 @@
 </div>
 
 ## How to Run Example
-You can run the primary test example for DPCBF by:
+You can run the test example for DPCBF by:
 ```bash
 python -m dynamic_env.main
 ```
@@ -23,8 +23,8 @@ python -m dynamic_env.main
 Alternatively, you can import `LocalTrackingControllerDyn` from 'main.py'
 ```python
 from dynamic_env import LocalTrackingControllerDyn
-# initialize LocalTrackingControllerDyn
-single_agent_main()
+# initialize LocalTrackingControllerDyn for a single robot with a predefined environment, obstacles, and waypoints.
+single_agent_main(controller_type={'pos': 'cbf_qp'})
 ```
 
 You can test the baseline algorithm:
@@ -34,7 +34,7 @@ You can test the baseline algorithm:
 The sample results of the dynamic obstacle environments:
 |                                                     C3BF                                                    |                                                                       DPCBF                |
 | :------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: |
-|  <img src="https://github.com/user-attachments/assets/41c056d5-9e6d-44f8-9e75-4f6ae1e465b1"  height="350px"> | <img src="https://github.com/user-attachments/assets/60bd63b4-71dc-49ce-bdb2-1b2cf928ecaa"  height="350px"> |
+|  <img src="https://github.com/user-attachments/assets/36de5f4d-b29a-46d0-932e-d26afc8bd41f"  height="350px"> | <img src="https://github.com/user-attachments/assets/369f1503-9280-4417-a2b9-9c0b1ff43af3"  height="350px"> |
 
 
 ### Comparison (Surrounded by Obstacles)
@@ -95,13 +95,11 @@ eps = 1e-6
 d_safe = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
 ```
 
-We introduce DPCBF functions with tunable parameters, which can adjust the curvature of the parabola and shift the parabola forward by the safe distance margin. Finally, we propose Dynamic Parabolic CBF (DPCBF).
+We introduce DPCBF functions with tunable hyperparameters, which can adjust the curvature of the parabola and shift the parabola forward by the safe distance margin. Finally, we propose Dynamic Parabolic CBF (DPCBF).
 ```python
-# Introduce tunable parameters
-k_lamda, k_mu = 0.1 * np.sqrt(s**2 - 1)/ego_dim, 0.5 * np.sqrt(s**2 - 1)/ego_dim
 # DPCBF functions
-lamda = k_lamda * np.sqrt(d_safe) / v_rel_mag
-mu = k_mu * np.sqrt(d_safe)
+func_lamda = self.k_lambda * np.sqrt(d_safe) / v_rel_mag
+func_mu = self.k_mu * np.sqrt(d_safe)
 
 # Barrier function h(x)
 h = v_rel_new_x + lamda * (v_rel_new_y**2) + mu

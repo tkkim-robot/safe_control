@@ -153,7 +153,7 @@ class LocalTrackingControllerDyn(LocalTrackingController):
             if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
                 self.u_att = self.robot.rotate_to(goal_angle)
                 u_ref = self.robot.stop()
-            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'Quad2D', 'Quad3D', 'VTOL2D']:
+            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'Quad2D', 'VTOL2D']:
                 u_ref = self.robot.rotate_to(goal_angle)
         elif self.goal is None:
             u_ref = self.robot.stop()
@@ -224,7 +224,7 @@ class LocalTrackingControllerDyn(LocalTrackingController):
 
 def single_agent_main(controller_type):
     dt = 0.05
-    model = 'KinematicBicycle2D_DPCBF' # SingleIntegrator2D, DoubleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, Quad2D
+    model = 'VTOL2D' # SingleIntegrator2D, DoubleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, Quad2D
 
     waypoints = [
          [1, 7.5, 0],
@@ -306,11 +306,6 @@ def single_agent_main(controller_type):
             'sensor': 'rgbd',
             'radius': 0.25
         }
-    elif model == 'Quad3D':
-        robot_spec = {
-            'model': 'Quad3D',
-            'radius': 0.25
-        }
         # override the waypoints with z axis
         waypoints = [
             [2, 2, 0, math.pi/2],
@@ -321,11 +316,8 @@ def single_agent_main(controller_type):
 
     waypoints = np.array(waypoints, dtype=np.float64)
 
-    if model in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'Quad2D', 'Quad3D']:
+    if model in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'Quad2D']:
         x_init = waypoints[0]
-    elif model == 'VTOL2D':
-        v_init = robot_spec['v_max'] # m/s
-        x_init = np.hstack((waypoints[0][0:2], 0.0, v_init, 0.0, 0.0))
     else:
         x_init = np.append(waypoints[0], 1.0)
     
