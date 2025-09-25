@@ -1,6 +1,6 @@
 # safe_control
 
-`safe_control` is a Python library that provides a unified codebase for safety controllers in robotic navigation. It implements various control barrier function (CBF) based controllers and other types of safety-critical controllers, such as CBF-QP, MPC-CBF, Optimal-Decay CBF, gatekeeper. It supports various robot systems such as integrators, unicycles, quadrotors, autonomous vehicles (bicycle model), and VTOL. 
+`safe_control` is a Python library that provides a unified codebase for safety controllers in robotic navigation. It implements various control barrier function (CBF) based controllers and other types of safety-critical controllers, such as CBF-QP, MPC-CBF, Optimal-Decay CBF, gatekeeper. It supports various robot systems such as integrators, unicycles, quadrotors, autonomous vehicles (bicycle model), and VTOL. It also supports dynamic environments (see `dynamic_env`).
 
 ## Features
 
@@ -9,6 +9,7 @@
 - Support for different robot dynamics models (e.g., unicycle, double integrator)
 - Support sensing and mapping simulation for RGB-D type camera sensors (limited FOV)
 - Support both single and multi agents navigation
+- Support dynamic obstacles and related CBFs, including [`C3BF`](https://arxiv.org/abs/2403.07043) and [`DPCBF`](https://www.taekyung.me/dpcbf)
 - Interactive plotting and visualization
 
 ## Installation
@@ -127,6 +128,20 @@ First determine the specification of each robot (with different `id`), then run 
 |     Homogeneous Robots              |              Heterogeneous Robots        |
 | :------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: |
 |  <img src="https://github.com/user-attachments/assets/d55518d3-79ec-46ec-8cfb-3f78dd7d6e82"  height="200px"> | <img src="https://github.com/user-attachments/assets/7c3db292-f9fa-4734-8578-3034e85ab4fb"  height="200px"> |
+
+### Dynamic Environment Example
+
+You can run one of the examples for dynamic obstacle collision avoidance by:
+```bash
+python dynamic_env/main.py
+```
+
+|      DPCBF implemented with CBF-QP            |
+| :-------------------------------: |
+|  <img src="https://github.com/user-attachments/assets/63bc2053-2cd6-4473-8718-302bc137670a"  height="350px"> |
+
+
+For more details, please see [`dynamic_env`](https://github.com/tkkim-robot/safe_control/tree/main/dynamic_env).
 
 
 ## Module Breakdown
