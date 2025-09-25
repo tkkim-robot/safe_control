@@ -32,19 +32,19 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
         
         # Check if obstacles have velocity components (static or moving)
         if obs.shape[0] > 3:
-            obs_vel_x = obs[3, 0]
-            obs_vel_y = obs[4, 0]
+            obs_vel_x = obs[3]
+            obs_vel_y = obs[4]
 
         else:
             obs_vel_x = 0.0
             obs_vel_y = 0.0
 
         # Combine radius R
-        ego_dim = (obs[2, 0] + robot_radius) * beta # Total collision safe radius
+        ego_dim = (obs[2] + robot_radius) * beta # Total collision safe radius
 
         # Compute relative position and velocity
-        p_rel = np.array([[obs[0, 0] - X[0, 0]], 
-                        [obs[1, 0] - X[1, 0]]])
+        p_rel = np.array([[obs[0] - X[0, 0]], 
+                        [obs[1] - X[1, 0]]])
         v_rel = np.array([[obs_vel_x - v * np.cos(theta)], 
                         [obs_vel_y - v * np.sin(theta)]])
 
