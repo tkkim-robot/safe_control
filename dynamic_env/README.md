@@ -1,6 +1,6 @@
 # Dynamic Parabolic Control Barrier Functions
 
-`kinematic_bicycle2D_dpcbf.py` details the implementation of the Dynamic Parabolic Control Barrier Function (DPCBF), a safety controller designed for the kinematic bicycle model within the `safe_control` library. Please see our paper ["Beyond Collision Cones: Dynamic Obstacle Avoidance for Nonholonomic Robots via Dynamic Parabolic Control Barrier Functions"]() for more details.
+The Dynamic Parabolic Contron barrier Function (DPCBF) is a safety-critical controller that enables safe dynamic obstacle avoidance for the kinematic bicycle model, and its detailed implementation can be found in `kinematic_bicycle2D_dpcbf.py` within the `safe_control` library. Please refer to our paper ["Beyond Collision Cones: Dynamic Obstacle Avoidance for Nonholonomic Robots via Dynamic Parabolic Control Barrier Functions"]() for more details.
 
 <div align="center">
 <img src="https://github.com/user-attachments/assets/0f6c1b74-7f00-4340-a2a8-16da081e68bf" >
@@ -17,18 +17,18 @@
 ## How to Run Example
 You can run the test example for DPCBF by:
 ```bash
-python -m dynamic_env.main
+python dynamic_env/main.py
 ```
 
 Alternatively, you can import `LocalTrackingControllerDyn` from 'main.py'
 ```python
-from dynamic_env import LocalTrackingControllerDyn
+from dynamic_env.main import LocalTrackingControllerDyn
 # initialize LocalTrackingControllerDyn for a single robot with a predefined environment, obstacles, and waypoints.
 single_agent_main(controller_type={'pos': 'cbf_qp'})
 ```
 
 You can test the baseline algorithm:
-- [C3BF*](https://arxiv.org/abs/2403.07043):
+- [C3BF](https://arxiv.org/abs/2403.07043):
     - by setting `model = 'KinematicBicycle2D_C3BF'`.
 
 The sample results of the dynamic obstacle environments:
