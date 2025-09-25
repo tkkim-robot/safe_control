@@ -6,11 +6,6 @@
 <img src="https://github.com/user-attachments/assets/0f6c1b74-7f00-4340-a2a8-16da081e68bf" >
 <div align="center">
 
-[[Homepage]](https://www.taekyung.me/dpcbf)
-[[Arxiv]](https://arxiv.org/abs/)
-[[Video]](https://youtu.be/57qgoe7YJao)
-[[Research Group]](https://dasc-lab.github.io/)
-
 </div>
 </div>
 
@@ -112,17 +107,3 @@ Three examples describe how a parabolic region in the new plane shapes the safet
 |  <img src="https://github.com/user-attachments/assets/a3571760-b8f3-48cc-91cd-895e1252c0f7"  height="250px"> | <img src="https://github.com/user-attachments/assets/5114daea-75f0-4ea1-a575-e37837d8d19d"  height="250px"> | <img src="https://github.com/user-attachments/assets/e7898647-94bb-4dea-ac25-17e9004b68e3"  height="250px"> |
 
 Now, our DPCBF formulation defines a parabolic safety boundary with a Line-of-Sight coordinate frame to explicitly consider both the distance to an obstacle and the relative velocity. DPCBF considers the robot is safe as long as its relative velocity vector stays outside the parabolic region.
-
-## Citing
-
-If you find this repository useful, please consider citing our paper:
-
-```
-@inproceedings{park2025dpcbf, 
-    author    = {Park, Hun Kuk and Kim, Taekyung and Panagou, Dimitra},
-    title     = {Beyond Collision Cones: Dynamic Obstacle Avoidance for Nonholonomic Robots via Dynamic Parabolic Control Barrier Functions}, 
-    booktitle = {arXiv preprint arXiv.25},
-    shorttitle = {DPCBF},
-    year      = {2025}
-}
-```
