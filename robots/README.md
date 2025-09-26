@@ -29,24 +29,24 @@ You can test the baseline algorithm:
 The sample results of the dynamic obstacle environments:
 |                                                     C3BF                                                    |                                                                       DPCBF                |
 | :------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: |
-|  <img src="https://github.com/user-attachments/assets/36de5f4d-b29a-46d0-932e-d26afc8bd41f"  height="350px"> | <img src="https://github.com/user-attachments/assets/369f1503-9280-4417-a2b9-9c0b1ff43af3"  height="350px"> |
+|  <img src="assets/c3bf_init.gif"  height="350px"> | <img src="assets/dpcbf_init.gif"  height="350px"> |
 
 
 ### Comparison (Surrounded by Obstacles)
 |      C3BF            |      MA-CBF-VO            |
 | :-------------------------------: | :-------------------------------: |
-|  <img src="https://github.com/user-attachments/assets/d5b8c868-1113-41b5-8e2d-c40b2551160a"  height="350px"> |  <img src="https://github.com/user-attachments/assets/3d2388df-e04b-4886-8e68-3f47377b62cc"  height="350px"> |
+|  <img src="assets/c3bf_surrounded.png"  height="350px"> |  <img src="assets/ma_cbf_vo_surrounded.png"  height="350px"> |
 
 |      Dynamic Zone-based CBF            |      DPCBF            |
 | :-------------------------------: | :-------------------------------: |
-|  <img src="https://github.com/user-attachments/assets/430a9a41-068f-4763-ad70-2fcfe26f3a44"  height="350px"> |  <img src="https://github.com/user-attachments/assets/3eac2226-6b01-4ded-9448-55124637fe69"  height="350px"> |
+|  <img src="assets/dzone_cbf_surrounded.gif"  height="350px"> |  <img src="assets/dpcbf_surrounded.gif"  height="350px"> |
 
 
 ### More Examples
 
 |     max_obs_radius = 0.3 m              |              max_obs_radius = 0.5 m        |              max_obs_radius = 0.7 m        |
 | :------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: |
-|  <img src="https://github.com/user-attachments/assets/c0e20a14-f8b6-41ab-ac90-85df3ab8775b"  height="250px"> | <img src="https://github.com/user-attachments/assets/63bc2053-2cd6-4473-8718-302bc137670a"  height="250px"> | <img src="https://github.com/user-attachments/assets/1506e504-d6e3-4cfa-a7ba-ef7b9138cdbb"  height="250px"> |
+|  <img src="assets/dpcbf_scenario1"  height="250px"> | <img src="assets/dpcbf_scenario2"  height="250px"> | <img src="assets/dpcbf_scenario3"  height="250px"> |
 
 
 ## Implementation Details
@@ -104,6 +104,6 @@ Three examples describe how a parabolic region in the new plane shapes the safet
 
 |     mu(x)-only case              |              lambda(x)-only case        |              DPCBF        |
 | :------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: |
-|  <img src="https://github.com/user-attachments/assets/a3571760-b8f3-48cc-91cd-895e1252c0f7"  height="250px"> | <img src="https://github.com/user-attachments/assets/5114daea-75f0-4ea1-a575-e37837d8d19d"  height="250px"> | <img src="https://github.com/user-attachments/assets/e7898647-94bb-4dea-ac25-17e9004b68e3"  height="250px"> |
+|  <img src="assets/case_a.gif"  height="250px"> | <img src="assets/case_b.gif"  height="250px"> | <img src="assets/case_c.gif"  height="250px"> |
 
 Now, our DPCBF formulation defines a parabolic safety boundary with a Line-of-Sight coordinate frame to explicitly consider both the distance to an obstacle and the relative velocity. DPCBF considers the robot is safe as long as its relative velocity vector stays outside the parabolic region.
