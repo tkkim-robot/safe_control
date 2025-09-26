@@ -35,11 +35,11 @@ The sample results of the dynamic obstacle environments:
 ### Comparison (Surrounded by Obstacles)
 |      C3BF            |      MA-CBF-VO            |
 | :-------------------------------: | :-------------------------------: |
-|  <img src="assets/c3bf_surrounded.png"  height="350px"> |  <img src="assets/ma_cbf_vo_surrounded.png"  height="350px"> |
+|  <img src="assets/c3bf_surrounded.png"  width="500px"> |  <img src="assets/ma_cbf_vo_surrounded.png"  width="500px"> |
 
 |      Dynamic Zone-based CBF            |      DPCBF            |
 | :-------------------------------: | :-------------------------------: |
-|  <img src="assets/dzone_cbf_surrounded.gif"  height="350px"> |  <img src="assets/dpcbf_surrounded.gif"  height="350px"> |
+|  <img src="assets/dzone_cbf_surrounded.gif"  width="500px"> |  <img src="assets/dpcbf_surrounded.gif"  width="500px"> |
 
 
 ### More Examples
