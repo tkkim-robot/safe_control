@@ -39,7 +39,7 @@ The sample results of the dynamic obstacle environments:
 
 |      Dynamic Zone-based CBF            |      DPCBF            |
 | :-------------------------------: | :-------------------------------: |
-|  <img src="assets/dzone_cbf_surrounded.gif"  width="450px"> |  <img src="assets/dpcbf_surrounded.gif"  width="450px"> |
+|  <img src="assets/dzone_cbf_surrounded.gif"  width="480px"> |  <img src="assets/dpcbf_surrounded.gif"  width="480px"> |
 
 
 ### More Examples
