@@ -46,7 +46,7 @@ The sample results of the dynamic obstacle environments:
 
 |     max_obs_radius = 0.3 m              |              max_obs_radius = 0.5 m        |              max_obs_radius = 0.7 m        |
 | :------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: |
-|  <img src="assets/dpcbf_scenario1"  height="250px"> | <img src="assets/dpcbf_scenario2"  height="250px"> | <img src="assets/dpcbf_scenario3"  height="250px"> |
+|  <img src="assets/dpcbf_scenario1.gif"  height="250px"> | <img src="assets/dpcbf_scenario2.gif"  height="250px"> | <img src="assets/dpcbf_scenario3.gif"  height="250px"> |
 
 
 ## Implementation Details
