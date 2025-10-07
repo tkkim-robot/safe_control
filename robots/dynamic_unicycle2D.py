@@ -114,16 +114,59 @@ class DynamicUnicycle2D:
 
     def agent_barrier(self, X, obs, robot_radius, beta=1.01):
         '''Continuous Time High Order CBF'''
-        obsX = obs[0:2].reshape(-1,1)
-        d_min = obs[2] + robot_radius  # obs radius + robot radius
 
-        h = np.linalg.norm(X[0:2] - obsX[0:2])**2 - beta*d_min**2
-        # Lgh is zero => relative degree is 2
-        h_dot = 2 * (X[0:2] - obsX[0:2]).T @ (self.f(X)[0:2])
+        h = 0
+        h_dot = 0
+        dh_dot_dx = 0
+        if obs[-1] == 0:
+            obsX = obs[0:2].reshape(-1,1)
+            d_min = obs[2] + robot_radius  # obs radius + robot radius
 
-        df_dx = self.df_dx(X)
-        dh_dot_dx = np.append((2 * self.f(X)[0:2]).T, np.array(
-            [[0, 0]]), axis=1) + 2 * (X[0:2] - obsX[0:2]).T @ df_dx[0:2, :]
+            h = np.linalg.norm(X[0:2] - obsX[0:2])**2 - beta*d_min**2
+            # Lgh is zero => relative degree is 2
+            h_dot = 2 * (X[0:2] - obsX[0:2]).T @ (self.f(X)[0:2])
+
+            df_dx = self.df_dx(X)
+            dh_dot_dx = np.append((2 * self.f(X)[0:2]).T, np.array(
+                [[0, 0]]), axis=1) + 2 * (X[0:2] - obsX[0:2]).T @ df_dx[0:2, :]
+            
+        elif obs[-1] == 1:
+            ox = obs[0]
+            oy = obs[1]
+            a = obs[2]
+            b = obs[3]
+            n = obs[4]
+            theta = obs[5]
+
+            pox_prime = np.cos(theta)*(X[0]-ox) + np.sin(theta)*(X[1]-oy)
+            poy_prime = -np.sin(theta)*(X[0]-ox) + np.cos(theta)*(X[1]-oy)
+
+            h = (pox_prime/(a + robot_radius))**(n) + (poy_prime/(b + robot_radius))**(n) - 1
+
+            dh_dx = np.array([
+                n*(pox_prime**(n-1))*(np.cos(theta)/(a + robot_radius)**n) + n*(poy_prime**(n-1))*(-np.sin(theta)/(b + robot_radius)**n),
+                n*(pox_prime**(n-1))*(np.sin(theta)/(a + robot_radius)**n) + n*(poy_prime**(n-1))*(np.cos(theta)/(b + robot_radius)**n),
+                0,
+                0
+            ]).reshape(1, -1)
+
+            h_dot = dh_dx @ (self.f(X))
+
+            dh_dot_dx = np.array([
+                    ((n * (n - 1) / ((a + robot_radius)**n)) * (pox_prime**(n - 2)) * np.cos(theta)**2 + (n * (n - 1) / ((b + robot_radius)**n)) * (poy_prime**(n - 2)) * np.sin(theta)**2) * X[3]*np.cos(X[2]) 
+                    + (((n * (n - 1) / ((a + robot_radius)**n)) * (pox_prime**(n - 2)) - (n * (n - 1) / ((b + robot_radius)**n)) * (poy_prime**(n - 2))) * np.cos(theta) * np.sin(theta)) * X[3]*np.sin(X[2]),
+                
+                    (((n * (n - 1) / ((a + robot_radius)**n)) * (pox_prime**(n - 2)) - (n * (n - 1) / ((b + robot_radius)**n)) * (poy_prime**(n - 2))) * np.cos(theta) * np.sin(theta)) * X[3]*np.cos(X[2]) 
+                    + ((n * (n - 1) / ((a + robot_radius)**n)) * (pox_prime**(n - 2)) * np.sin(theta)**2 + (n * (n - 1) / ((b + robot_radius)**n)) * (poy_prime**(n - 2)) * np.cos(theta)**2) * X[3]*np.sin(X[2]),
+                
+                    ((n / ((a + robot_radius)**n)) * (pox_prime**(n - 1)) * np.cos(theta) - (n / ((b + robot_radius)**n)) * (poy_prime**(n - 1)) * np.sin(theta)) * (-X[3] * np.sin(X[2])) 
+                    + ((n / ((a + robot_radius)**n)) * (pox_prime**(n - 1)) * np.sin(theta) + (n / ((b + robot_radius)**n)) * (poy_prime**(n - 1)) * np.cos(theta)) * (X[3] * np.cos(X[2])),
+                
+                    ((n / ((a + robot_radius)**n)) * (pox_prime**(n - 1)) * np.cos(theta) - (n / ((b + robot_radius)**n)) * (poy_prime**(n - 1)) * np.sin(theta)) * np.cos(X[2]) 
+                    + ((n / ((a + robot_radius)**n)) * (pox_prime**(n - 1)) * np.sin(theta) + (n / ((b + robot_radius)**n)) * (poy_prime**(n - 1)) * np.cos(theta)) * np.sin(X[2])
+                    ]).reshape(1, -1)
+
+
         return h, h_dot, dh_dot_dx
 
     def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.01):
@@ -132,7 +175,7 @@ class DynamicUnicycle2D:
         x_k1 = self.step(x_k, u_k)
         x_k2 = self.step(x_k1, u_k)
 
-        def h(x, obs, robot_radius, beta=1.01):
+        def _h_circle(x, obs, robot_radius, beta):
             '''Computes CBF h(x) = ||x-x_obs||^2 - beta*d_min^2'''
             x_obs = obs[0]
             y_obs = obs[1]
@@ -141,6 +184,28 @@ class DynamicUnicycle2D:
 
             h = (x[0, 0] - x_obs)**2 + (x[1, 0] - y_obs)**2 - beta*d_min**2
             return h
+        
+        def _h_superellipsoid(x, obs, robot_radius, beta):
+            ox = obs[0]
+            oy = obs[1]
+            a = obs[2]
+            b = obs[3]
+            n = obs[4]
+            theta = obs[5]
+
+            pox_prime = np.cos(theta)*(x[0,0]-ox) + np.sin(theta)*(x[1,0]-oy)
+            poy_prime = -np.sin(theta)*(x[0,0]-ox) + np.cos(theta)*(x[1,0]-oy)
+
+            h = (ca.fabs(pox_prime)/(a + robot_radius))**(n) + (ca.fabs(poy_prime)/(b + robot_radius))**(n) - 1
+            return h
+        
+        def h(x, obs, robot_radius, beta=1.01):
+
+            is_circle = (obs[6] < 0.5) 
+            
+            return ca.if_else(is_circle,
+                                _h_circle(x, obs, robot_radius, beta),
+                                _h_superellipsoid(x, obs, robot_radius, beta))
 
         h_k2 = h(x_k2, obs, robot_radius, beta)
         h_k1 = h(x_k1, obs, robot_radius, beta)

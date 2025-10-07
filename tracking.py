@@ -507,11 +507,11 @@ class LocalTrackingController:
         collide = self.is_collide_unknown()
         if self.pos_controller.status != 'optimal' or collide:
             cause = "Collision" if collide else "Infeasible"
-            self.draw_infeasible()
-            print(f"{cause} detected !!")
-            if self.raise_error:
-                raise InfeasibleError(f"{cause} detected !!")
-            return -2
+            #self.draw_infeasible()
+            #print(f"{cause} detected !!")
+            #if self.raise_error:
+            #    raise InfeasibleError(f"{cause} detected !!")
+            #return -2
 
         # 8. Step the robot
         self.robot.step(u, self.u_att)
@@ -623,7 +623,7 @@ class LocalTrackingController:
 
 def single_agent_main(controller_type):
     dt = 0.05
-    model = 'DynamicUnicycle2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'DoubleIntegrator2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     waypoints = [
         [2, 2, math.pi/2],
@@ -633,9 +633,14 @@ def single_agent_main(controller_type):
     ]
 
     # Define static obs
-    known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
-                        [10.0, 7.3, 0.4],
-                        [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
+    #known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [4.0, 3.5, 1.5],
+    #                    [10.0, 7.3, 0.4],
+    #                    [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
+    
+    
+    #[7.0, 7.0, 3.0],
+
+    known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2]])
 
     env_width = 14.0
     env_height = 14.0
@@ -746,8 +751,11 @@ def single_agent_main(controller_type):
     else:
         x_init = np.append(waypoints[0], 1.0)
     
-    if len(known_obs) > 0 and known_obs.shape[1] != 5:
-        known_obs = np.hstack((known_obs, np.zeros((known_obs.shape[0], 2)))) # Set static obs velocity 0.0 at (5, 5)
+    if len(known_obs) > 0 and known_obs.shape[1] != 7:
+        known_obs = np.hstack((known_obs, np.zeros((known_obs.shape[0], 4)))) # Set static obs velocity 0.0 at (5, 5)
+
+    known_obs = np.vstack((known_obs, np.array([12.0, 6.0, 1.0, 1.5, 10, np.pi/4, 1])))
+    #known_obs = np.array([7.0, 7.0, 1.0, 1.5, 40, 0.0, 1])
 
     plot_handler = plotting.Plotting(width=env_width, height=env_height, known_obs=known_obs)
     ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here
@@ -849,7 +857,7 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    # single_agent_main(controller_type={'pos': 'cbf_qp'})
+    #single_agent_main(controller_type={'pos': 'cbf_qp'})
     single_agent_main(controller_type={'pos': 'mpc_cbf'})
     # single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'gatekeeper'}) # only Integrators have attitude controller, otherwise ignored
     

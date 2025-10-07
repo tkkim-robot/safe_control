@@ -11,6 +11,7 @@ class Plotting:
         self.obs_bound = self.env.obs_boundary
         self.obs_circle = self.env.obs_circle
         self.obs_rectangle = self.env.obs_rectangle
+        self.obs_superellipsoid = self.env.obs_superellipsoid
 
     def animation(self, nodelist, path, name, animation=False):
         self.plot_grid(name)
@@ -58,6 +59,11 @@ class Plotting:
                     facecolor='gray',
                     fill=True
                 )
+            )
+
+        for obs_info in self.obs_superellipsoid:
+            main_ax.add_patch(
+                self.generate_superellipsoid_patch(obs_info)
             )
 
         for obs_info in self.obs_circle:
@@ -179,3 +185,40 @@ class Plotting:
         #     lefts.append(prev_fov_left)
         #     rights.append(prev_fov_right)
         # print([lefts, rights])
+
+    @staticmethod
+    def generate_superellipsoid_patch(obs_info):
+
+        #ox, oy, a, b, n, theta, type=1
+        ox = obs_info[0]
+        oy = obs_info[1]
+        a = obs_info[2]
+        b = obs_info[3]
+        n = obs_info[4]
+        theta = obs_info[5]
+            
+        e = 2 / n
+
+        phi = np.linspace(0, 2 * np.pi, 100)
+
+        # 3. Parametrize the super-ellipsoid at the origin
+        x = a * np.sign(np.cos(phi)) * np.abs(np.cos(phi))**e
+        y = b * np.sign(np.sin(phi)) * np.abs(np.sin(phi))**e
+            
+        coords = np.vstack((x, y))
+
+        # 4. Create the rotation matrix and apply transformations
+        theta_rad = theta
+        rotation_matrix = np.array([
+            [np.cos(theta_rad), -np.sin(theta_rad)],
+            [np.sin(theta_rad),  np.cos(theta_rad)]
+        ])
+        final_coords = rotation_matrix @ coords + np.array([[ox], [oy]])
+            
+        # 5. Create the Matplotlib patch
+        path = patches.Path(final_coords.T, closed=True)
+        patch = patches.PathPatch(path, edgecolor='black',
+                    facecolor='gray',
+                    fill=True)
+            
+        return patch

@@ -1,4 +1,5 @@
 import numpy as np
+
 class Env:
     def __init__(self, width=20.0, height=20.0, known_obs = [], resolution=0.1):
         self.width = width
@@ -9,6 +10,7 @@ class Env:
         self.obs_boundary = self.set_obs_boundary(width, height)
         self.obs_circle = self.set_obs_circle(known_obs)
         self.obs_rectangle = self.set_obs_rectangle()
+        self.obs_superellipsoid = self.set_obs_superellipsoid(known_obs)
         self._discretize_map()
 
     def _discretize_map(self):
@@ -72,5 +74,20 @@ class Env:
     def set_obs_circle(known_obs):
         # obs_cir = [[18, 18, 1]]
         # obs_cir = []
-        obs_cir = known_obs
+        obs_cir = []
+        for obs in known_obs:
+            if obs[-1] == 0:
+                obs_cir.append(obs)
+        #obs_cir = known_obs
         return obs_cir
+    @staticmethod
+    def set_obs_superellipsoid(known_obs):
+        
+        obs_super_ellipsoid = []
+        for obs in known_obs:
+            if obs[-1] == 1:
+                assert obs[4] >= 2, "n should be >= 2 for superellipsoid approximation"
+                obs_super_ellipsoid.append(obs)
+        #obs_super_ellipsoid = known_obs
+        return obs_super_ellipsoid
+    
