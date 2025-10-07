@@ -115,7 +115,7 @@ class SingleIntegrator2D:
         h = 0
         dh_dx = np.zeros((1, 2))
 
-        if len(obs) == 3:
+        if obs[-1] == 0:
             obsX = obs[0:2].reshape(-1, 1)
             d_min = obs[2] + robot_radius  # obs radius + robot radius
 
@@ -123,8 +123,7 @@ class SingleIntegrator2D:
             # relative degree is 1
 
             dh_dx = (2 * (X[0:2] - obsX[0:2])).T
-            print(dh_dx.shape)
-        elif len(obs) == 6:
+        elif obs[-1] == 1:
             ox = obs[0]
             oy = obs[1]
             a = obs[2]
@@ -170,7 +169,7 @@ class SingleIntegrator2D:
             pox_prime = np.cos(theta)*(x[0,0]-ox) + np.sin(theta)*(x[1,0]-oy)
             poy_prime = -np.sin(theta)*(x[0,0]-ox) + np.cos(theta)*(x[1,0]-oy)
 
-            h = (pox_prime/(a + robot_radius))**(n) + (poy_prime/(b + robot_radius))**(n) - 1
+            h = (ca.fabs(pox_prime)/(a + robot_radius))**(n) + (ca.fabs(poy_prime)/(b + robot_radius))**(n) - 1
             return h
         
         def h(x, obs, robot_radius, beta=1.01):

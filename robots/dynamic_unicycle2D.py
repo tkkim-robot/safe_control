@@ -138,8 +138,8 @@ class DynamicUnicycle2D:
             n = obs[4]
             theta = obs[5]
 
-            pox_prime = np.cos(theta)*(X[0]-ox) + np.sin(theta)*(X[1]-oy)
-            poy_prime = -np.sin(theta)*(X[0]-ox) + np.cos(theta)*(X[1]-oy)
+            pox_prime = np.cos(theta)*(X[0, 0]-ox) + np.sin(theta)*(X[1, 0]-oy)
+            poy_prime = -np.sin(theta)*(X[0, 0]-ox) + np.cos(theta)*(X[1, 0]-oy)
 
             h = (pox_prime/(a + robot_radius))**(n) + (poy_prime/(b + robot_radius))**(n) - 1
 
@@ -153,17 +153,17 @@ class DynamicUnicycle2D:
             h_dot = dh_dx @ (self.f(X))
 
             dh_dot_dx = np.array([
-                    ((n * (n - 1) / ((a + robot_radius)**n)) * (pox_prime**(n - 2)) * np.cos(theta)**2 + (n * (n - 1) / ((b + robot_radius)**n)) * (poy_prime**(n - 2)) * np.sin(theta)**2) * X[3]*np.cos(X[2]) 
-                    + (((n * (n - 1) / ((a + robot_radius)**n)) * (pox_prime**(n - 2)) - (n * (n - 1) / ((b + robot_radius)**n)) * (poy_prime**(n - 2))) * np.cos(theta) * np.sin(theta)) * X[3]*np.sin(X[2]),
+                    ((n * (n - 1) / ((a + robot_radius)**n)) * (pox_prime**(n - 2)) * np.cos(theta)**2 + (n * (n - 1) / ((b + robot_radius)**n)) * (poy_prime**(n - 2)) * np.sin(theta)**2) * X[3, 0]*np.cos(X[2, 0]) 
+                    + (((n * (n - 1) / ((a + robot_radius)**n)) * (pox_prime**(n - 2)) - (n * (n - 1) / ((b + robot_radius)**n)) * (poy_prime**(n - 2))) * np.cos(theta) * np.sin(theta)) * X[3, 0]*np.sin(X[2, 0]),
                 
-                    (((n * (n - 1) / ((a + robot_radius)**n)) * (pox_prime**(n - 2)) - (n * (n - 1) / ((b + robot_radius)**n)) * (poy_prime**(n - 2))) * np.cos(theta) * np.sin(theta)) * X[3]*np.cos(X[2]) 
-                    + ((n * (n - 1) / ((a + robot_radius)**n)) * (pox_prime**(n - 2)) * np.sin(theta)**2 + (n * (n - 1) / ((b + robot_radius)**n)) * (poy_prime**(n - 2)) * np.cos(theta)**2) * X[3]*np.sin(X[2]),
+                    (((n * (n - 1) / ((a + robot_radius)**n)) * (pox_prime**(n - 2)) - (n * (n - 1) / ((b + robot_radius)**n)) * (poy_prime**(n - 2))) * np.cos(theta) * np.sin(theta)) * X[3, 0]*np.cos(X[2, 0]) 
+                    + ((n * (n - 1) / ((a + robot_radius)**n)) * (pox_prime**(n - 2)) * np.sin(theta)**2 + (n * (n - 1) / ((b + robot_radius)**n)) * (poy_prime**(n - 2)) * np.cos(theta)**2) * X[3, 0]*np.sin(X[2, 0]),
                 
-                    ((n / ((a + robot_radius)**n)) * (pox_prime**(n - 1)) * np.cos(theta) - (n / ((b + robot_radius)**n)) * (poy_prime**(n - 1)) * np.sin(theta)) * (-X[3] * np.sin(X[2])) 
-                    + ((n / ((a + robot_radius)**n)) * (pox_prime**(n - 1)) * np.sin(theta) + (n / ((b + robot_radius)**n)) * (poy_prime**(n - 1)) * np.cos(theta)) * (X[3] * np.cos(X[2])),
+                    ((n / ((a + robot_radius)**n)) * (pox_prime**(n - 1)) * np.cos(theta) - (n / ((b + robot_radius)**n)) * (poy_prime**(n - 1)) * np.sin(theta)) * (-X[3, 0] * np.sin(X[2, 0])) 
+                    + ((n / ((a + robot_radius)**n)) * (pox_prime**(n - 1)) * np.sin(theta) + (n / ((b + robot_radius)**n)) * (poy_prime**(n - 1)) * np.cos(theta)) * (X[3, 0] * np.cos(X[2, 0])),
                 
-                    ((n / ((a + robot_radius)**n)) * (pox_prime**(n - 1)) * np.cos(theta) - (n / ((b + robot_radius)**n)) * (poy_prime**(n - 1)) * np.sin(theta)) * np.cos(X[2]) 
-                    + ((n / ((a + robot_radius)**n)) * (pox_prime**(n - 1)) * np.sin(theta) + (n / ((b + robot_radius)**n)) * (poy_prime**(n - 1)) * np.cos(theta)) * np.sin(X[2])
+                    ((n / ((a + robot_radius)**n)) * (pox_prime**(n - 1)) * np.cos(theta) - (n / ((b + robot_radius)**n)) * (poy_prime**(n - 1)) * np.sin(theta)) * np.cos(X[2, 0]) 
+                    + ((n / ((a + robot_radius)**n)) * (pox_prime**(n - 1)) * np.sin(theta) + (n / ((b + robot_radius)**n)) * (poy_prime**(n - 1)) * np.cos(theta)) * np.sin(X[2, 0])
                     ]).reshape(1, -1)
 
 

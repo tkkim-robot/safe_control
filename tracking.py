@@ -623,7 +623,7 @@ class LocalTrackingController:
 
 def single_agent_main(controller_type):
     dt = 0.05
-    model = 'DoubleIntegrator2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'DynamicUnicycle2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     waypoints = [
         [2, 2, math.pi/2],
@@ -754,7 +754,7 @@ def single_agent_main(controller_type):
     if len(known_obs) > 0 and known_obs.shape[1] != 7:
         known_obs = np.hstack((known_obs, np.zeros((known_obs.shape[0], 4)))) # Set static obs velocity 0.0 at (5, 5)
 
-    known_obs = np.vstack((known_obs, np.array([12.0, 6.0, 1.0, 1.5, 10, np.pi/4, 1])))
+    #known_obs = np.vstack((known_obs, np.array([12.0, 6.0, 1.0, 1.5, 10, np.pi/4, 1])))
     #known_obs = np.array([7.0, 7.0, 1.0, 1.5, 40, 0.0, 1])
 
     plot_handler = plotting.Plotting(width=env_width, height=env_height, known_obs=known_obs)
@@ -857,7 +857,7 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    #single_agent_main(controller_type={'pos': 'cbf_qp'})
-    single_agent_main(controller_type={'pos': 'mpc_cbf'})
+    single_agent_main(controller_type={'pos': 'cbf_qp'})
+    #single_agent_main(controller_type={'pos': 'mpc_cbf'})
     # single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'gatekeeper'}) # only Integrators have attitude controller, otherwise ignored
     
