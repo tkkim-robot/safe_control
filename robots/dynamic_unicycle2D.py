@@ -61,12 +61,16 @@ class DynamicUnicycle2D:
 
     def g(self, X, casadi=False):
         if casadi:
-            return ca.DM([
-                [0, 0],
-                [0, 0],
-                [0, 1],
-                [1, 0]
-            ])
+            g = ca.SX.zeros(4, 2)
+            g[2,1] = 1
+            g[3,0] = 1
+            return g
+            # return ca.DM([
+            #     [0, 0],
+            #     [0, 0],
+            #     [0, 1],
+            #     [1, 0]
+            # ])
         else:
             return np.array([[0, 0], [0, 0], [0, 1], [1, 0]])
 
@@ -152,6 +156,7 @@ class DynamicUnicycle2D:
 
             h_dot = dh_dx @ (self.f(X))
 
+            
             dh_dot_dx = np.array([
                     ((n * (n - 1) / ((a + robot_radius)**n)) * (pox_prime**(n - 2)) * np.cos(theta)**2 + (n * (n - 1) / ((b + robot_radius)**n)) * (poy_prime**(n - 2)) * np.sin(theta)**2) * X[3, 0]*np.cos(X[2, 0]) 
                     + (((n * (n - 1) / ((a + robot_radius)**n)) * (pox_prime**(n - 2)) - (n * (n - 1) / ((b + robot_radius)**n)) * (poy_prime**(n - 2))) * np.cos(theta) * np.sin(theta)) * X[3, 0]*np.sin(X[2, 0]),
