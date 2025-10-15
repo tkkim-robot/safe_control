@@ -365,11 +365,27 @@ class LocalTrackingController:
         if self.obs is not None:
             for obs in self.obs:
                 # check if the robot collides with the obstacle
-                distance = np.linalg.norm(self.robot.X[:2, 0] - obs[:2])
-                if distance < (obs[2] + robot_radius):
-                    print(f"Collision with known obstacle detected! Obs: {obs}, Robot: {self.robot.X[:2, 0]} {robot_radius}, Distance: {distance}, {distance < (obs[2] + robot_radius)}")
-                    return True
+                if obs[6] == 0:
+                    distance = np.linalg.norm(self.robot.X[:2, 0] - obs[:2])
+                    if distance < (obs[2] + robot_radius):
+                        print(f"Collision with known obstacle detected! Obs: {obs}, Robot: {self.robot.X[:2, 0]} {robot_radius}, Distance: {distance}, {distance < (obs[2] + robot_radius)}")
+                        return True
+                elif obs[6] == 1:
+                    ox = obs[0]
+                    oy = obs[1]
+                    a = obs[2]
+                    b = obs[3]
+                    e = obs[4]
+                    theta = obs[5]
 
+                    pox_prime = np.cos(theta)*(self.robot.X[0,0]-ox) + np.sin(theta)*(self.robot.X[1,0]-oy)
+                    poy_prime = -np.sin(theta)*(self.robot.X[0,0]-ox) + np.cos(theta)*(self.robot.X[1,0]-oy)
+
+                    h = ((pox_prime)/(a + robot_radius))**(e) + ((poy_prime)/(b + robot_radius))**(e) - 1
+                    if h<=0:
+                        print(f"Collision with known obstacle detected! Obs: {obs}, Robot: {self.robot.X[:2, 0]} {robot_radius}")
+                        return True
+                    
         # Collision with the ground
         if self.robot_spec['model'] in ['VTOL2D']:
             if self.robot.X[1, 0] < 0:
@@ -507,11 +523,11 @@ class LocalTrackingController:
         collide = self.is_collide_unknown()
         if self.pos_controller.status != 'optimal' or collide:
             cause = "Collision" if collide else "Infeasible"
-            #self.draw_infeasible()
-            #print(f"{cause} detected !!")
-            #if self.raise_error:
-            #    raise InfeasibleError(f"{cause} detected !!")
-            #return -2
+            self.draw_infeasible()
+            print(f"{cause} detected !!")
+            if self.raise_error:
+                raise InfeasibleError(f"{cause} detected !!")
+            return -2
 
         # 8. Step the robot
         self.robot.step(u, self.u_att)
@@ -623,7 +639,7 @@ class LocalTrackingController:
 
 def single_agent_main(controller_type):
     dt = 0.05
-    model = 'DoubleIntegrator2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'DynamicUnicycle2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     waypoints = [
         [2, 2, math.pi/2],

@@ -155,17 +155,17 @@ class DoubleIntegrator2D:
             oy = obs[1]
             a = obs[2]
             b = obs[3]
-            n = obs[4]
+            e = obs[4]
             theta = obs[5]
 
             pox_prime = np.cos(theta)*(X[0, 0]-ox) + np.sin(theta)*(X[1, 0]-oy)
             poy_prime = -np.sin(theta)*(X[0, 0]-ox) + np.cos(theta)*(X[1, 0]-oy)
 
-            h = (pox_prime/(a + robot_radius))**(n) + (poy_prime/(b + robot_radius))**(n) - 1
+            h = (pox_prime/(a + robot_radius))**(e) + (poy_prime/(b + robot_radius))**(e) - 1
 
             dh_dx = np.array([
-                n*(pox_prime**(n-1))*(np.cos(theta)/(a + robot_radius)**n) + n*(poy_prime**(n-1))*(-np.sin(theta)/(b + robot_radius)**n),
-                n*(pox_prime**(n-1))*(np.sin(theta)/(a + robot_radius)**n) + n*(poy_prime**(n-1))*(np.cos(theta)/(b + robot_radius)**n),
+                e*(pox_prime**(e-1))*(np.cos(theta)/(a + robot_radius)**e) + e*(poy_prime**(e-1))*(-np.sin(theta)/(b + robot_radius)**e),
+                e*(pox_prime**(e-1))*(np.sin(theta)/(a + robot_radius)**e) + e*(poy_prime**(e-1))*(np.cos(theta)/(b + robot_radius)**e),
                 0,
                 0
             ]).reshape(1, -1)
@@ -173,16 +173,16 @@ class DoubleIntegrator2D:
             h_dot = dh_dx @ (self.f(X))
 
             dh_dot_dx = np.array([
-                ((n * (n - 1) / ((a + robot_radius)**n)) * (pox_prime**(n - 2)) * np.cos(theta)**2 + (n * (n - 1) / ((b + robot_radius)**n)) * (poy_prime**(n - 2)) * np.sin(theta)**2) * X[2, 0] 
-                + (((n * (n - 1) / ((a + robot_radius)**n)) * (pox_prime**(n - 2)) - (n * (n - 1) / ((b + robot_radius)**n)) * (poy_prime**(n - 2))) * np.cos(theta) * np.sin(theta)) * X[3, 0],
+                ((e * (e - 1) / ((a + robot_radius)**e)) * (pox_prime**(e - 2)) * np.cos(theta)**2 + (e * (e - 1) / ((b + robot_radius)**e)) * (poy_prime**(e - 2)) * np.sin(theta)**2) * X[2, 0] 
+                + (((e * (e - 1) / ((a + robot_radius)**e)) * (pox_prime**(e - 2)) - (e * (e - 1) / ((b + robot_radius)**e)) * (poy_prime**(e - 2))) * np.cos(theta) * np.sin(theta)) * X[3, 0],
             
             
-                (((n * (n - 1) / ((a + robot_radius)**n)) * (pox_prime**(n - 2)) - (n * (n - 1) / ((b + robot_radius)**n)) * (poy_prime**(n - 2))) * np.cos(theta) * np.sin(theta)) * X[2, 0] 
-                + ((n * (n - 1) / ((a + robot_radius)**n)) * (pox_prime**(n - 2)) * np.sin(theta)**2 + (n * (n - 1) / ((b + robot_radius)**n)) * (poy_prime**(n - 2)) * np.cos(theta)**2) * X[3, 0],
+                (((e * (e - 1) / ((a + robot_radius)**e)) * (pox_prime**(e - 2)) - (e * (e - 1) / ((b + robot_radius)**e)) * (poy_prime**(e - 2))) * np.cos(theta) * np.sin(theta)) * X[2, 0] 
+                + ((e * (e - 1) / ((a + robot_radius)**e)) * (pox_prime**(e - 2)) * np.sin(theta)**2 + (e * (e - 1) / ((b + robot_radius)**e)) * (poy_prime**(e - 2)) * np.cos(theta)**2) * X[3, 0],
             
-                n * (pox_prime**(n - 1))*(np.cos(theta) / (a + robot_radius)**n) + n * (poy_prime**(n - 1)) * (-np.sin(theta) / (b + robot_radius)**n),
+                e * (pox_prime**(e - 1))*(np.cos(theta) / (a + robot_radius)**e) + e * (poy_prime**(e - 1)) * (-np.sin(theta) / (b + robot_radius)**e),
             
-                n * (pox_prime**(n - 1))*(np.sin(theta) / (a + robot_radius)**n) + n * (poy_prime**(n - 1)) * (np.cos(theta) / (b + robot_radius)**n)
+                e * (pox_prime**(e - 1))*(np.sin(theta) / (a + robot_radius)**e) + e * (poy_prime**(e - 1)) * (np.cos(theta) / (b + robot_radius)**e)
             ]).reshape(1, -1)
 
 
@@ -209,13 +209,13 @@ class DoubleIntegrator2D:
             oy = obs[1]
             a = obs[2]
             b = obs[3]
-            n = obs[4]
+            e = obs[4]
             theta = obs[5]
 
             pox_prime = np.cos(theta)*(x[0,0]-ox) + np.sin(theta)*(x[1,0]-oy)
             poy_prime = -np.sin(theta)*(x[0,0]-ox) + np.cos(theta)*(x[1,0]-oy)
 
-            h = ((pox_prime)/(a + robot_radius))**(n) + ((poy_prime)/(b + robot_radius))**(n) - 1
+            h = ((pox_prime)/(a + robot_radius))**(e) + ((poy_prime)/(b + robot_radius))**(e) - 1
             return h
         
         def h(x, obs, robot_radius, beta=1.01):

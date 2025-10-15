@@ -197,12 +197,12 @@ class Utils:
         return False
     
     @staticmethod
-    def rect_to_superellipsoid(obs_rectangle, n, theta):
+    def rect_to_superellipsoid(obs_rectangle, e, theta):
 
-        assert n >= 2, "n should be >= 2 for superellipsoid approximation"
+        assert e >= 2, "e should be >= 2 for superellipsoid approximation"
 
         obs_superellipsoid = []
         for (ox, oy, w, h) in obs_rectangle:   
-            obs_superellipsoid.append([ox, oy, w/2, h/2, n, theta, 1])  # a = w/2, b = h/2
+            obs_superellipsoid.append([ox, oy, w/2, h/2, e, theta, 1])  # a = w/2, b = h/2
 
         return obs_superellipsoid

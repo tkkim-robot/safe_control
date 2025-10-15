@@ -128,16 +128,16 @@ class SingleIntegrator2D:
             oy = obs[1]
             a = obs[2]
             b = obs[3]
-            n = obs[4]
+            e = obs[4]
             theta = obs[5]
 
             pox_prime = np.cos(theta)*(X[0]-ox) + np.sin(theta)*(X[1]-oy)
             poy_prime = -np.sin(theta)*(X[0]-ox) + np.cos(theta)*(X[1]-oy)
 
-            h = (pox_prime/(a + robot_radius))**(n) + (poy_prime/(b + robot_radius))**(n) - 1
+            h = (pox_prime/(a + robot_radius))**(e) + (poy_prime/(b + robot_radius))**(e) - 1
             dh_dx = np.array([
-                n*(pox_prime**(n-1))*(np.cos(theta)/(a + robot_radius)**n) + n*(poy_prime**(n-1))*(-np.sin(theta)/(b + robot_radius)**n),
-                n*(pox_prime**(n-1))*(np.sin(theta)/(a + robot_radius)**n) + n*(poy_prime**(n-1))*(np.cos(theta)/(b + robot_radius)**n)
+                e*(pox_prime**(e-1))*(np.cos(theta)/(a + robot_radius)**e) + e*(poy_prime**(e-1))*(-np.sin(theta)/(b + robot_radius)**e),
+                e*(pox_prime**(e-1))*(np.sin(theta)/(a + robot_radius)**e) + e*(poy_prime**(e-1))*(np.cos(theta)/(b + robot_radius)**e)
             ]).reshape(1, -1)
 
 
@@ -163,13 +163,13 @@ class SingleIntegrator2D:
             oy = obs[1]
             a = obs[2]
             b = obs[3]
-            n = obs[4]
+            e = obs[4]
             theta = obs[5]
 
             pox_prime = np.cos(theta)*(x[0,0]-ox) + np.sin(theta)*(x[1,0]-oy)
             poy_prime = -np.sin(theta)*(x[0,0]-ox) + np.cos(theta)*(x[1,0]-oy)
 
-            h = ((pox_prime)/(a + robot_radius))**(n) + ((poy_prime)/(b + robot_radius))**(n) - 1
+            h = ((pox_prime)/(a + robot_radius))**(e) + ((poy_prime)/(b + robot_radius))**(e) - 1
             return h
         
         def h(x, obs, robot_radius, beta=1.01):

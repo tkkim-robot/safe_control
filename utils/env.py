@@ -86,7 +86,7 @@ class Env:
         obs_super_ellipsoid = []
         for obs in known_obs:
             if obs[-1] == 1:
-                assert obs[4] >= 2, "n should be >= 2 for superellipsoid approximation"
+                assert obs[4] >= 2, "e should be >= 2 for superellipsoid"
                 obs_super_ellipsoid.append(obs)
         #obs_super_ellipsoid = known_obs
         return obs_super_ellipsoid

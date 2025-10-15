@@ -194,16 +194,14 @@ class Plotting:
         oy = obs_info[1]
         a = obs_info[2]
         b = obs_info[3]
-        n = obs_info[4]
+        e = obs_info[4]
         theta = obs_info[5]
-            
-        e = 2 / n
 
         phi = np.linspace(0, 2 * np.pi, 100)
 
         # 3. Parametrize the super-ellipsoid at the origin
-        x = a * np.sign(np.cos(phi)) * np.abs(np.cos(phi))**e
-        y = b * np.sign(np.sin(phi)) * np.abs(np.sin(phi))**e
+        x = a * np.sign(np.cos(phi)) * np.abs(np.cos(phi))**(2/e)
+        y = b * np.sign(np.sin(phi)) * np.abs(np.sin(phi))**(2/e)
             
         coords = np.vstack((x, y))
 
