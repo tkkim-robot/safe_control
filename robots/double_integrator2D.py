@@ -215,7 +215,7 @@ class DoubleIntegrator2D:
             pox_prime = np.cos(theta)*(x[0,0]-ox) + np.sin(theta)*(x[1,0]-oy)
             poy_prime = -np.sin(theta)*(x[0,0]-ox) + np.cos(theta)*(x[1,0]-oy)
 
-            h = (ca.fabs(pox_prime)/(a + robot_radius))**(n) + (ca.fabs(poy_prime)/(b + robot_radius))**(n) - 1
+            h = ((pox_prime)/(a + robot_radius))**(n) + ((poy_prime)/(b + robot_radius))**(n) - 1
             return h
         
         def h(x, obs, robot_radius, beta=1.01):
