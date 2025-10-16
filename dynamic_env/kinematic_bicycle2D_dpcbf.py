@@ -68,8 +68,8 @@ class KinematicBicycle2D_DPCBF(KinematicBicycle2D):
         d_safe = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
 
         # DPCBF functions
-        func_lamda = self.k_lambda * np.sqrt(d_safe) / v_rel_mag
-        func_mu = self.k_mu * np.sqrt(d_safe)
+        func_lamda = self.k_lambda * np.sqrt(d_safe) / v_rel_mag * np.sqrt(s**2 - 1)/ego_dim # using adaptive parameter
+        func_mu = self.k_mu * np.sqrt(d_safe) * np.sqrt(s**2 - 1)/ego_dim 
 
         # Barrier function h(x)
         h = v_rel_new_x + func_lamda * (v_rel_new_y**2) + func_mu

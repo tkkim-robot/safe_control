@@ -210,15 +210,15 @@ class BaseRobotDyn(BaseRobot):
                             label=f"Quadratic Obs {i}")
             self.collision_parabola_patches.append(line)
 
-            offset_angle = 0.0 * (i - (len(obs_list)//2))
+            offset_angle = 0.02 * (i - (len(obs_list)//2))
             R_offset = np.array([
                 [np.cos(offset_angle), -np.sin(offset_angle)],
                 [np.sin(offset_angle),  np.cos(offset_angle)]
             ])
             v_rel_offset = R_offset @ v_rel
 
-            x_offset = 0.8
-            y_offset = 0.8
+            x_offset = 1.0
+            y_offset = 1.0
         
             arrow = ax.arrow(float(robot_pos[0]), float(robot_pos[1]),
                             float(x_offset * v_rel_offset[0]), float(y_offset * v_rel_offset[1]),

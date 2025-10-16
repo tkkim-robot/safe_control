@@ -32,6 +32,10 @@ class LocalTrackingControllerDyn(LocalTrackingController):
                          enable_rotation=enable_rotation, raise_error=raise_error,
                          ax=ax, fig=fig, env=env)
         
+        if self.pos_controller_type == 'cbf_qp':
+            from position_control.cbf_qp import CBFQP
+            self.pos_controller = CBFQP(self.robot, self.robot_spec, num_obs=10)
+        
         # Create a list to hold the arrow patches for obstacle velocities
         self.obs_vel_arrows = []
         
