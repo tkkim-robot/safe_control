@@ -2,7 +2,7 @@ import numpy as np
 import cvxpy as cp
 
 class CBFQP:
-    def __init__(self, robot, robot_spec, num_obs=1): # when solving a QP with constraints for n obstacles, set 'num_obs=n'
+    def __init__(self, robot, robot_spec, num_obs=1):
         self.robot = robot
         self.robot_spec = robot_spec
         self.num_obs = num_obs
