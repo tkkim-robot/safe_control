@@ -111,13 +111,36 @@ class SingleIntegrator2D:
 
     def agent_barrier(self, X, obs, robot_radius, beta=1.01):
         '''Continuous Time High Order CBF'''
-        obsX = obs[0:2].reshape(-1, 1)
-        d_min = obs[2] + robot_radius  # obs radius + robot radius
 
-        h = np.linalg.norm(X[0:2] - obsX[0:2])**2 - beta*d_min**2
-        # relative degree is 1
+        h = 0
+        dh_dx = np.zeros((1, 2))
 
-        dh_dx = (2 * (X[0:2] - obsX[0:2])).T
+        if obs[-1] == 0:
+            obsX = obs[0:2].reshape(-1, 1)
+            d_min = obs[2] + robot_radius  # obs radius + robot radius
+
+            h = np.linalg.norm(X[0:2] - obsX[0:2])**2 - beta*d_min**2
+            # relative degree is 1
+
+            dh_dx = (2 * (X[0:2] - obsX[0:2])).T
+        elif obs[-1] == 1:
+            ox = obs[0]
+            oy = obs[1]
+            a = obs[2]
+            b = obs[3]
+            e = obs[4]
+            theta = obs[5]
+
+            pox_prime = np.cos(theta)*(X[0]-ox) + np.sin(theta)*(X[1]-oy)
+            poy_prime = -np.sin(theta)*(X[0]-ox) + np.cos(theta)*(X[1]-oy)
+
+            h = (pox_prime/(a + robot_radius))**(e) + (poy_prime/(b + robot_radius))**(e) - 1
+            dh_dx = np.array([
+                e*(pox_prime**(e-1))*(np.cos(theta)/(a + robot_radius)**e) + e*(poy_prime**(e-1))*(-np.sin(theta)/(b + robot_radius)**e),
+                e*(pox_prime**(e-1))*(np.sin(theta)/(a + robot_radius)**e) + e*(poy_prime**(e-1))*(np.cos(theta)/(b + robot_radius)**e)
+            ]).reshape(1, -1)
+
+
         return h, dh_dx
 
     def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.01):
@@ -125,7 +148,7 @@ class SingleIntegrator2D:
         # Dynamics equations for the next states
         x_k1 = self.step(x_k, u_k)
 
-        def h(x, obs, robot_radius, beta=1.01):
+        def _h_circle(x, obs, robot_radius, beta):
             '''Computes CBF h(x) = ||x-x_obs||^2 - beta*d_min^2'''
             x_obs = obs[0]
             y_obs = obs[1]
@@ -134,6 +157,27 @@ class SingleIntegrator2D:
 
             h = (x[0, 0] - x_obs)**2 + (x[1, 0] - y_obs)**2 - beta*d_min**2
             return h
+        
+        def _h_superellipsoid(x, obs, robot_radius, beta):
+            ox = obs[0]
+            oy = obs[1]
+            a = obs[2]
+            b = obs[3]
+            e = obs[4]
+            theta = obs[5]
+
+            pox_prime = np.cos(theta)*(x[0,0]-ox) + np.sin(theta)*(x[1,0]-oy)
+            poy_prime = -np.sin(theta)*(x[0,0]-ox) + np.cos(theta)*(x[1,0]-oy)
+
+            h = ((pox_prime)/(a + robot_radius))**(e) + ((poy_prime)/(b + robot_radius))**(e) - 1
+            return h
+        
+        def h(x, obs, robot_radius, beta=1.01):
+            is_circle = (obs[6] < 0.5) 
+            
+            return ca.if_else(is_circle,
+                                _h_circle(x, obs, robot_radius, beta),
+                                _h_superellipsoid(x, obs, robot_radius, beta))
 
         h_k1 = h(x_k1, obs, robot_radius, beta)
         h_k = h(x_k, obs, robot_radius, beta)

@@ -111,7 +111,7 @@ class MPCCBF:
         _goal = model.set_variable(
             var_type='_tvp', var_name='goal', shape=(self.n_states, 1))
         _obs = model.set_variable(
-            var_type='_tvp', var_name='obs', shape=(5, 5)) # (num_obs, obs_info), where [x, y, r, vx, vy]
+            var_type='_tvp', var_name='obs', shape=(5, 7)) # (num_obs, obs_info), where [x, y, r, vx, vy]
 
         if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'Quad3D']:
             _alpha = model.set_variable(
@@ -260,13 +260,13 @@ class MPCCBF:
             # Handle up to 5 obstacles (if fewer than 5, substitute dummy obstacles)
             if self.obs is None:
                 # Before detecting any obstacle, set 5 dummy obstacles far away
-                dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0]), (5, 1))  # 5 far away obstacles
+                dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0, 0, 0]), (5, 1))  # 5 far away obstacles
                 tvp_template['_tvp', :, 'obs'] = dummy_obstacles
             else:
                 num_obstacles = self.obs.shape[0]
                 if num_obstacles < 5:
                     # Add dummy obstacles for missing ones
-                    dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0]), (5 - num_obstacles, 1))
+                    dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0, 0, 0]), (5 - num_obstacles, 1))
                     tvp_template['_tvp', :, 'obs'] = np.vstack([self.obs, dummy_obstacles])
                 else:
                     # Use the detected obstacles directly
@@ -332,7 +332,7 @@ class MPCCBF:
         
         if obs is None or len(obs) == 0:
             # No obstacles detected, set 5 dummy obstacles far away
-            self.obs = np.tile(np.array([1000, 1000, 0, 0, 0]), (5, 1))
+            self.obs = np.tile(np.array([1000, 1000, 0, 0, 0, 0, 0]), (5, 1))
         else:
             num_obstacles = len(obs)
             padded_obs = []
@@ -340,15 +340,15 @@ class MPCCBF:
                 ob = np.array(ob)
                 if ob.shape[0] == 3:
                     # Pad missing velocity fields with zeros
-                    ob = np.concatenate([ob, [0.0, 0.0]])
-                elif ob.shape[0] != 5:
+                    ob = np.concatenate([ob, [0.0, 0.0, 0, 0]])
+                elif ob.shape[0] != 7:
                     raise ValueError(f"Invalid obstacle format: {ob}")
                 padded_obs.append(ob)
             padded_obs = np.array(padded_obs)
 
             if num_obstacles < 5:
                 # Add dummy obstacles for missing ones
-                dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0]), (5 - num_obstacles, 1))
+                dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0, 0, 0]), (5 - num_obstacles, 1))
                 self.obs = np.vstack([padded_obs, dummy_obstacles])
             else:
                 # Use the detected obstacles directly (up to 5)
