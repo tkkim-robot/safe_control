@@ -365,11 +365,27 @@ class LocalTrackingController:
         if self.obs is not None:
             for obs in self.obs:
                 # check if the robot collides with the obstacle
-                distance = np.linalg.norm(self.robot.X[:2, 0] - obs[:2])
-                if distance < (obs[2] + robot_radius):
-                    print(f"Collision with known obstacle detected! Obs: {obs}, Robot: {self.robot.X[:2, 0]} {robot_radius}, Distance: {distance}, {distance < (obs[2] + robot_radius)}")
-                    return True
+                if obs[6] == 0:
+                    distance = np.linalg.norm(self.robot.X[:2, 0] - obs[:2])
+                    if distance < (obs[2] + robot_radius):
+                        print(f"Collision with known obstacle detected! Obs: {obs}, Robot: {self.robot.X[:2, 0]} {robot_radius}, Distance: {distance}, {distance < (obs[2] + robot_radius)}")
+                        return True
+                elif obs[6] == 1:
+                    ox = obs[0]
+                    oy = obs[1]
+                    a = obs[2]
+                    b = obs[3]
+                    e = obs[4]
+                    theta = obs[5]
 
+                    pox_prime = np.cos(theta)*(self.robot.X[0,0]-ox) + np.sin(theta)*(self.robot.X[1,0]-oy)
+                    poy_prime = -np.sin(theta)*(self.robot.X[0,0]-ox) + np.cos(theta)*(self.robot.X[1,0]-oy)
+
+                    h = ((pox_prime)/(a + robot_radius))**(e) + ((poy_prime)/(b + robot_radius))**(e) - 1
+                    if h<=0:
+                        print(f"Collision with known obstacle detected! Obs: {obs}, Robot: {self.robot.X[:2, 0]} {robot_radius}")
+                        return True
+                    
         # Collision with the ground
         if self.robot_spec['model'] in ['VTOL2D']:
             if self.robot.X[1, 0] < 0:
@@ -746,8 +762,8 @@ def single_agent_main(controller_type):
     else:
         x_init = np.append(waypoints[0], 1.0)
     
-    if len(known_obs) > 0 and known_obs.shape[1] != 5:
-        known_obs = np.hstack((known_obs, np.zeros((known_obs.shape[0], 2)))) # Set static obs velocity 0.0 at (5, 5)
+    if len(known_obs) > 0 and known_obs.shape[1] != 7:
+        known_obs = np.hstack((known_obs, np.zeros((known_obs.shape[0], 4)))) # Set static obs velocity 0.0 at (5, 5)
 
     plot_handler = plotting.Plotting(width=env_width, height=env_height, known_obs=known_obs)
     ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here
@@ -849,7 +865,7 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    # single_agent_main(controller_type={'pos': 'cbf_qp'})
+    #single_agent_main(controller_type={'pos': 'cbf_qp'})
     single_agent_main(controller_type={'pos': 'mpc_cbf'})
     # single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'gatekeeper'}) # only Integrators have attitude controller, otherwise ignored
     
