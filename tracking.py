@@ -649,14 +649,9 @@ def single_agent_main(controller_type):
     ]
 
     # Define static obs
-    #known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [4.0, 3.5, 1.5],
-    #                    [10.0, 7.3, 0.4],
-    #                    [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
-    
-    
-    #[7.0, 7.0, 3.0],
-
-    known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2]])
+    known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
+                        [10.0, 7.3, 0.4],
+                        [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
 
     env_width = 14.0
     env_height = 14.0
@@ -769,10 +764,6 @@ def single_agent_main(controller_type):
     
     if len(known_obs) > 0 and known_obs.shape[1] != 7:
         known_obs = np.hstack((known_obs, np.zeros((known_obs.shape[0], 4)))) # Set static obs velocity 0.0 at (5, 5)
-
-    #Format for super ellipsoid obstacles: [ox, oy, a, b, e, theta, is_ellipse(1) or circle(0)]
-    known_obs = np.vstack((known_obs, np.array([12.0, 6.0, 1.0, 1.5, 10, np.pi/4, 1]), np.array([7.0, 11.5, 0.5, 1.3, 10, -np.pi/12, 1])))
-    #known_obs = np.array([7.0, 7.0, 1.0, 1.5, 40, 0.0, 1])
 
     plot_handler = plotting.Plotting(width=env_width, height=env_height, known_obs=known_obs)
     ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here
