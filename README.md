@@ -98,6 +98,26 @@ The unknown obstacles are visualized in orange.
 | :-------------------------------: |
 |  <img src="https://github.com/user-attachments/assets/8be5453f-8629-4f1d-aa36-c0f9160fd2ee"  height="350px"> |
 
+### Superellipsoid obstacles to approximate rectangles
+We support superellipsoid obstacles for collision avoidance with CBF. Superellipsoid with large enough power `e` (e.g., `e=10`) can approximate rectangles and it is differentiable. 
+
+```python
+# As an example, let me define two circular obstacles: [x,y,r]
+known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2]])
+
+# To use superellipsoid obstacles together, you need to pad its dimension to 7
+if len(known_obs) > 0 and known_obs.shape[1] != 7:
+   known_obs = np.hstack((known_obs, np.zeros((known_obs.shape[0], 4)))) # Set static obs velocity 0.0 at (5, 5)
+
+# Now, you can vstack the superellipsoid to `known_obs`: [ox, oy, a, b, e, theta, flag: is_ellipse(1) or circle(0)]
+known_obs = np.vstack((known_obs, np.array([12.0, 6.0, 1.0, 1.5, 10, np.pi/4, 1]), np.array([7.0, 11.5, 0.5, 1.3, 10, -np.pi/12, 1])))
+
+# then, run simulation
+```
+
+|    MPC-CBF with Dynamic Unicycle             |
+| :-------------------------------: |
+|  <img src="https://github.com/user-attachments/assets/c2e9ffcd-30f4-4045-8f90-4e25868894be"  height="350px"> |
 
 ### Multi-Robot Example
 
