@@ -1,6 +1,7 @@
 from shapely.geometry import Polygon, MultiPolygon
 from shapely.ops import unary_union
 from shapely.validation import explain_validity
+import utils.utils as utils
 
 def custom_merge(geometries):
     # First, perform a union operation

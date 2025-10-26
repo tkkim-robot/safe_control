@@ -11,6 +11,7 @@ class Plotting:
         self.obs_bound = self.env.obs_boundary
         self.obs_circle = self.env.obs_circle
         self.obs_rectangle = self.env.obs_rectangle
+        self.obs_superellipsoid = self.env.obs_superellipsoid
 
     def animation(self, nodelist, path, name, animation=False):
         self.plot_grid(name)
@@ -60,19 +61,30 @@ class Plotting:
                 )
             )
 
-        for obs_info in self.obs_circle:
-            if obs_info.shape[0] == 3:
-                ox, oy, r = obs_info
-            elif obs_info.shape[0] == 5:
-                continue
+        for obs_info in self.obs_superellipsoid:
             main_ax.add_patch(
-                patches.Circle(
-                    (ox, oy), r,
-                    edgecolor='black',
-                    facecolor='gray',
-                    fill=True
-                )
+                self.generate_superellipsoid_patch(obs_info)
             )
+
+        for obs_info in self.obs_circle:
+            ox, oy, r = obs_info[:3]
+            is_static = True # Assume the obstacle is static by default
+
+            if obs_info.shape[0] >= 5:
+                vx, vy = obs_info[3:5]
+                # If velocity is non-zero, it's a dynamic obstacle
+                if vx != 0 or vy != 0:
+                    is_static = False
+            # Only draw the obstacle if it's static
+            if is_static:
+                main_ax.add_patch(
+                    patches.Circle(
+                        (ox, oy), r,
+                        edgecolor='black',
+                        facecolor='gray',
+                        fill=True
+                    )
+                )
 
         main_ax.set_title(name)
         eps = 0.015
@@ -173,3 +185,38 @@ class Plotting:
         #     lefts.append(prev_fov_left)
         #     rights.append(prev_fov_right)
         # print([lefts, rights])
+
+    @staticmethod
+    def generate_superellipsoid_patch(obs_info):
+
+        #ox, oy, a, b, n, theta, type=1
+        ox = obs_info[0]
+        oy = obs_info[1]
+        a = obs_info[2]
+        b = obs_info[3]
+        e = obs_info[4]
+        theta = obs_info[5]
+
+        phi = np.linspace(0, 2 * np.pi, 100)
+
+        # 3. Parametrize the super-ellipsoid at the origin
+        x = a * np.sign(np.cos(phi)) * np.abs(np.cos(phi))**(2/e)
+        y = b * np.sign(np.sin(phi)) * np.abs(np.sin(phi))**(2/e)
+            
+        coords = np.vstack((x, y))
+
+        # 4. Create the rotation matrix and apply transformations
+        theta_rad = theta
+        rotation_matrix = np.array([
+            [np.cos(theta_rad), -np.sin(theta_rad)],
+            [np.sin(theta_rad),  np.cos(theta_rad)]
+        ])
+        final_coords = rotation_matrix @ coords + np.array([[ox], [oy]])
+            
+        # 5. Create the Matplotlib patch
+        path = patches.Path(final_coords.T, closed=True)
+        patch = patches.PathPatch(path, edgecolor='black',
+                    facecolor='gray',
+                    fill=True)
+            
+        return patch

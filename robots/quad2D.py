@@ -163,8 +163,8 @@ class Quad2D:
     
     def agent_barrier(self, X, obs, robot_radius, beta=1.01):
         '''Continuous Time High Order CBF'''
-        obsX = obs[0:2]
-        d_min = obs[2][0] + robot_radius  # obs radius + robot radius
+        obsX = obs[0:2].reshape(-1, 1)
+        d_min = obs[2] + robot_radius  # obs radius + robot radius
 
         h = np.linalg.norm(X[0:2] - obsX[0:2])**2 - beta*d_min**2
         # Lgh is zero => relative degree is 2

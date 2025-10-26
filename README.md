@@ -1,6 +1,6 @@
 # safe_control
 
-`safe_control` is a Python library that provides a unified codebase for safety controllers in robotic navigation. It implements various control barrier function (CBF) based controllers and other types of safety-critical controllers, such as CBF-QP, MPC-CBF, Optimal-Decay CBF, gatekeeper. It supports various robot systems such as integrators, unicycles, quadrotors, autonomous vehicles (bicycle model), and VTOL. 
+`safe_control` is a Python library that provides a unified codebase for safety controllers in robotic navigation. It implements various control barrier function (CBF) based controllers and other types of safety-critical controllers, such as CBF-QP, MPC-CBF, Optimal-Decay CBF, gatekeeper. It supports various robot systems such as integrators, unicycles, quadrotors, autonomous vehicles (bicycle model), and VTOL. It also supports dynamic environments (see `dynamic_env`).
 
 ## Features
 
@@ -9,6 +9,7 @@
 - Support for different robot dynamics models (e.g., unicycle, double integrator)
 - Support sensing and mapping simulation for RGB-D type camera sensors (limited FOV)
 - Support both single and multi agents navigation
+- Support dynamic obstacles and related CBFs, including [`C3BF`](https://arxiv.org/abs/2403.07043) and [`DPCBF`](https://www.taekyung.me/dpcbf)
 - Interactive plotting and visualization
 
 ## Installation
@@ -97,6 +98,26 @@ The unknown obstacles are visualized in orange.
 | :-------------------------------: |
 |  <img src="https://github.com/user-attachments/assets/8be5453f-8629-4f1d-aa36-c0f9160fd2ee"  height="350px"> |
 
+### Superellipsoid obstacles to approximate rectangles
+We support superellipsoid obstacles for collision avoidance with CBF. Superellipsoid with large enough power `e` (e.g., `e=10`) can approximate rectangles and it is differentiable. 
+
+```python
+# As an example, let me define two circular obstacles: [x,y,r]
+known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2]])
+
+# To use superellipsoid obstacles together, you need to pad its dimension to 7
+if len(known_obs) > 0 and known_obs.shape[1] != 7:
+   known_obs = np.hstack((known_obs, np.zeros((known_obs.shape[0], 4)))) # Set static obs velocity 0.0 at (5, 5)
+
+# Now, you can vstack the superellipsoid to `known_obs`: [ox, oy, a, b, e, theta, flag: is_ellipse(1) or circle(0)]
+known_obs = np.vstack((known_obs, np.array([12.0, 6.0, 1.0, 1.5, 10, np.pi/4, 1]), np.array([7.0, 11.5, 0.5, 1.3, 10, -np.pi/12, 1])))
+
+# then, run simulation
+```
+
+|    MPC-CBF with Dynamic Unicycle             |
+| :-------------------------------: |
+|  <img src="https://github.com/user-attachments/assets/c2e9ffcd-30f4-4045-8f90-4e25868894be"  height="350px"> |
 
 ### Multi-Robot Example
 
@@ -127,6 +148,20 @@ First determine the specification of each robot (with different `id`), then run 
 |     Homogeneous Robots              |              Heterogeneous Robots        |
 | :------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: |
 |  <img src="https://github.com/user-attachments/assets/d55518d3-79ec-46ec-8cfb-3f78dd7d6e82"  height="200px"> | <img src="https://github.com/user-attachments/assets/7c3db292-f9fa-4734-8578-3034e85ab4fb"  height="200px"> |
+
+### Dynamic Environment Example
+
+You can run one of the examples for dynamic obstacle collision avoidance by:
+```bash
+python dynamic_env/main.py
+```
+
+|      DPCBF implemented with CBF-QP            |
+| :-------------------------------: |
+|  <img src="https://github.com/user-attachments/assets/63bc2053-2cd6-4473-8718-302bc137670a"  height="350px"> |
+
+
+For more details, please see [`dynamic_env`](https://github.com/tkkim-robot/safe_control/tree/main/dynamic_env).
 
 
 ## Module Breakdown
@@ -188,11 +223,11 @@ controller = LocalTrackingController(..., show_animation=True, save_animation=Tr
 If you find this repository useful, please consider citing our paper:
 
 ```
-@inproceedings{kim2025learning, 
-    author    = {Kim, Taekyung and Kee, Robin Inho and Panagou, Dimitra},
-    title     = {Learning to Refine Input Constrained Control Barrier Functions via Uncertainty-Aware Online Parameter Adaptation}, 
-    booktitle = {IEEE International Conference on Robotics and Automation (ICRA)},
-    shorttitle = {Online-Adaptive-CBF},
+@inproceedings{kim2025how, 
+    author    = {Kim, Taekyung and Beard, Randal W. and Panagou, Dimitra},
+    title     = {How to Adapt Control Barrier Functions? A Learning-Based Approach with Applications to a VTOL Quadplane}, 
+    booktitle = {IEEE Conference on Decision and Control (CDC)},
+    shorttitle = {How to Adapt Control Barrier Functions},
     year      = {2025}
 }
 ```

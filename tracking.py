@@ -112,11 +112,6 @@ class LocalTrackingController:
         self.ax = ax
         self.fig = fig
         self.obs = np.array(env.obs_circle)
-
-        # Initialize moving obstacles
-        self.dyn_obs_patch = None # will be initialized after the first step
-        self.init_obs_info = None
-        self.init_obs_circle = None
         
         self.known_obs = np.array([])
         self.unknown_obs = np.array([])
@@ -364,25 +359,6 @@ class LocalTrackingController:
         nearest_obstacle = all_obs[min_distance_index]
         return nearest_obstacle.reshape(-1, 1)
 
-    # Update dynamic obs position
-    def step_dyn_obs(self):
-        """if self.obs (n,5) array (ex) [x, y, r, vx, vy], update obs position per time step"""
-        if len(self.obs) != 0 and self.obs.shape[1] >= 5:
-            self.obs[:, 0] += self.obs[:, 3] * self.dt
-            self.obs[:, 1] += self.obs[:, 4] * self.dt
-    
-    def render_dyn_obs(self):
-        for i, obs_info in enumerate(self.obs):
-            # obs: [x, y, r, vx, vy]
-            ox, oy, r = obs_info[:3]
-            self.dyn_obs_patch[i].center = ox, oy
-            self.dyn_obs_patch[i].set_radius(r)
-
-        for i, obs_info in enumerate(self.init_obs_info):
-            ox, oy, r = obs_info[:3]
-            self.init_obs_circle[i].center = ox, oy
-            self.init_obs_circle[i].set_radius(r)
-
     def is_collide_unknown(self):
         # if self.unknown_obs is None:
         #     return False
@@ -399,11 +375,27 @@ class LocalTrackingController:
         if self.obs is not None:
             for obs in self.obs:
                 # check if the robot collides with the obstacle
-                distance = np.linalg.norm(self.robot.X[:2, 0] - obs[:2])
-                if distance < (obs[2] + robot_radius):
-                    print(f"Collision with known obstacle detected! Obs: {obs}, Robot: {self.robot.X[:2, 0]} {robot_radius}, Distance: {distance}, {distance < (obs[2] + robot_radius)}")
-                    return True
+                if obs[6] == 0:
+                    distance = np.linalg.norm(self.robot.X[:2, 0] - obs[:2])
+                    if distance < (obs[2] + robot_radius):
+                        print(f"Collision with known obstacle detected! Obs: {obs}, Robot: {self.robot.X[:2, 0]} {robot_radius}, Distance: {distance}, {distance < (obs[2] + robot_radius)}")
+                        return True
+                elif obs[6] == 1:
+                    ox = obs[0]
+                    oy = obs[1]
+                    a = obs[2]
+                    b = obs[3]
+                    e = obs[4]
+                    theta = obs[5]
 
+                    pox_prime = np.cos(theta)*(self.robot.X[0,0]-ox) + np.sin(theta)*(self.robot.X[1,0]-oy)
+                    poy_prime = -np.sin(theta)*(self.robot.X[0,0]-ox) + np.cos(theta)*(self.robot.X[1,0]-oy)
+
+                    h = ((pox_prime)/(a + robot_radius))**(e) + ((poy_prime)/(b + robot_radius))**(e) - 1
+                    if h<=0:
+                        print(f"Collision with known obstacle detected! Obs: {obs}, Robot: {self.robot.X[:2, 0]} {robot_radius}")
+                        return True
+                    
         # Collision with the ground
         if self.robot_spec['model'] in ['VTOL2D']:
             if self.robot.X[1, 0] < 0:
@@ -453,14 +445,6 @@ class LocalTrackingController:
 
     def draw_plot(self, pause=0.01, force_save=False):
         if self.show_animation:
-            if self.dyn_obs_patch is None:
-                # Initialize moving obstacles
-                self.dyn_obs_patch = [self.ax.add_patch(plt.Circle(
-                    (0, 0), 0, edgecolor='black', facecolor='gray', fill=True)) for _ in range(len(self.obs))]
-                self.init_obs_info = self.obs.copy()
-                self.init_obs_circle = [self.ax.add_patch(plt.Circle((0, 0), 0, edgecolor='black', facecolor='none', linestyle='--')) for _ in self.init_obs_info]
-            
-            self.render_dyn_obs()
 
             self.fig.canvas.draw_idle()
             self.fig.canvas.flush_events()
@@ -507,10 +491,7 @@ class LocalTrackingController:
         self.nearest_multi_obs = self.get_nearest_unpassed_obs(detected_obs, obs_num=self.num_constraints)
         if self.nearest_multi_obs is not None:
             self.nearest_obs = self.nearest_multi_obs[0].reshape(-1, 1)
-
-        # 2. Update Moving Obstacles
-        self.step_dyn_obs()
-
+            
         # 3. Compuite nominal control input, pre-defined in the robot class
         if self.state_machine == 'rotate':
             goal_angle = np.arctan2(self.goal[1] - self.robot.X[1, 0],
@@ -529,12 +510,11 @@ class LocalTrackingController:
             else:
                 u_ref = self.robot.nominal_input(self.goal)
 
-        # 4. Update the CBF constraints & 5. Solve the control problem & 6. Draw Collision Cones for C3BF
+        # 4. Update the CBF constraints & 5. Solve the control problem
         control_ref = {'state_machine': self.state_machine,
                        'u_ref': u_ref,
                        'goal': self.goal}
         
-        #TODO: Add draw_collision_quad for KinematicBicycle2D_DPCBF
         if self.pos_controller_type in ['optimal_decay_cbf_qp', 'cbf_qp']:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_obs)
@@ -551,16 +531,15 @@ class LocalTrackingController:
         else:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
-            self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)
         plt.figure(self.fig.number)
 
-        # 7. Update the attitude controller
+        # 6. Update the attitude controller
         if self.state_machine == 'track' and self.att_controller is not None:
             # att_controller is only defined for integrators
             self.u_att = self.att_controller.solve_control_problem(
                     self.robot.X, self.robot.yaw, u)
 
-        # 8. Raise an error if the QP is infeasible, or the robot collides with the obstacle
+        # 7. Raise an error if the QP is infeasible, or the robot collides with the obstacle
         collide = self.is_collide_unknown()
         if self.pos_controller.status != 'optimal' or collide:
             cause = "Collision" if collide else "Infeasible"
@@ -570,14 +549,14 @@ class LocalTrackingController:
                 raise InfeasibleError(f"{cause} detected !!")
             return -2
 
-        # 9. Step the robot
+        # 8. Step the robot
         self.robot.step(u, self.u_att)
         self.u_pos = u
     
         if self.show_animation:
             self.robot.render_plot()
 
-        # 10. Update sensing information
+        # 9. Update sensing information
         if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
             self.robot.update_sensing_footprints()
             self.robot.update_safety_area()
@@ -683,7 +662,7 @@ class LocalTrackingController:
 
 def single_agent_main(controller_type):
     dt = 0.05
-    model = 'KinematicBicycle2D_DPCBF' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'DynamicUnicycle2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     waypoints = [
         [2, 2, math.pi/2],
@@ -728,28 +707,6 @@ def single_agent_main(controller_type):
             'sensor': 'rgbd',
             'radius': 0.5
         }
-    elif model == 'KinematicBicycle2D_DPCBF':
-        robot_spec = {
-            'model': 'KinematicBicycle2D_DPCBF',
-            'a_max': 0.5,
-            'sensor': 'rgbd',
-            'radius': 0.5
-        }
-    elif model == 'KinematicBicycle2D_C3BF':
-        robot_spec = {
-            'model': 'KinematicBicycle2D_C3BF',
-            'a_max': 0.5,
-            'radius': 0.5
-        }
-        dynamic_obs = []  
-        for i, obs_info in enumerate(known_obs):
-            ox, oy, r = obs_info[:3]
-            if i % 2 == 0:
-                vx, vy = 0.1, 0.05
-            else:
-                vx, vy = -0.1, 0.05
-            dynamic_obs.append([ox, oy, r, vx, vy])
-        known_obs = np.array(dynamic_obs)
     elif model == 'Quad2D':
         robot_spec = {
             'model': 'Quad2D',
@@ -828,8 +785,8 @@ def single_agent_main(controller_type):
     else:
         x_init = np.append(waypoints[0], 1.0)
     
-    if len(known_obs) > 0 and known_obs.shape[1] != 5:
-        known_obs = np.hstack((known_obs, np.zeros((known_obs.shape[0], 2)))) # Set static obs velocity 0.0 at (5, 5)
+    if len(known_obs) > 0 and known_obs.shape[1] != 7:
+        known_obs = np.hstack((known_obs, np.zeros((known_obs.shape[0], 4)))) # Set static obs velocity 0.0 at (5, 5)
 
     plot_handler = plotting.Plotting(width=env_width, height=env_height, known_obs=known_obs)
     ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here
@@ -839,7 +796,7 @@ def single_agent_main(controller_type):
                                                   controller_type=controller_type,
                                                   dt=dt,
                                                   show_animation=True,
-                                                  save_animation=True,
+                                                  save_animation=False,
                                                   show_mpc_traj=False,
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
@@ -931,6 +888,7 @@ if __name__ == "__main__":
     from utils import env
     import math
 
+    #single_agent_main(controller_type={'pos': 'cbf_qp'})
     single_agent_main(controller_type={'pos': 'mpc_cbf'})
     # single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'gatekeeper'}) # only Integrators have attitude controller, otherwise ignored
     # single_agent_main(controller_type={'pos': 'barriernet', 'ckpt': 'BarrierNet/2D_Robot/model_bn.pth'}) # BarrierNet controller example

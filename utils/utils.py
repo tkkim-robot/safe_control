@@ -96,11 +96,13 @@ class Utils:
         self.obs_circle = self.env.obs_circle
         self.obs_rectangle = self.env.obs_rectangle
         self.obs_boundary = self.env.obs_boundary
+        self.obs_superellipsoid = self.env.obs_superelliposid
 
     def update_obs(self, obs_cir, obs_bound, obs_rec):
         self.obs_circle = obs_cir
         self.obs_boundary = obs_bound
         self.obs_rectangle = obs_rec
+        self.obs_superellipsoid = self.rect_to_superellipsoid()
 
     def get_obs_vertex(self):
         delta = self.delta
@@ -193,3 +195,14 @@ class Utils:
                 return True
 
         return False
+    
+    @staticmethod
+    def rect_to_superellipsoid(obs_rectangle, e, theta):
+
+        assert e >= 2, "e should be >= 2 for superellipsoid approximation"
+
+        obs_superellipsoid = []
+        for (ox, oy, w, h) in obs_rectangle:   
+            obs_superellipsoid.append([ox, oy, w/2, h/2, e, theta, 1])  # a = w/2, b = h/2
+
+        return obs_superellipsoid
