@@ -594,7 +594,10 @@ class LocalTrackingController:
         return beyond_flag
 
     def get_control_input(self):
-        return self.u_pos
+        if hasattr(self, 'u_pos') and self.u_pos is not None:
+            return self.u_pos
+        else:
+            return np.zeros(2)  # Default zero control
     
     def draw_infeasible(self):
         if self.show_animation:

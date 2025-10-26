@@ -67,6 +67,9 @@ class BarrierNetController:
         
         # Store obstacle positions (can be updated during inference)
         self.obs_positions = obs_positions
+        
+        # Status attribute for compatibility with tracking controller
+        self.status = 'optimal'
     
     def _determine_robot_family(self, robot_model: str) -> str:
         """Determine robot family from robot model name."""
@@ -107,6 +110,9 @@ class BarrierNetController:
         model.load_state_dict(torch.load(ckpt_path, map_location=self.device))
         model.eval()
         
+        # Ensure model is on the correct device
+        model = model.to(self.device)
+        
         return model
     
     def _extract_features(self, robot_state: np.ndarray, goal: np.ndarray) -> np.ndarray:
@@ -120,6 +126,10 @@ class BarrierNetController:
         Returns:
             Feature vector for BarrierNet
         """
+        # Ensure robot_state is 1D
+        if robot_state.ndim > 1:
+            robot_state = robot_state.flatten()
+        
         if self.robot_model == "DynamicUnicycle2D":
             # State: [x, y, theta, v]
             # Features: [px, py, theta, v, dst_y] (dst_x is fixed at 50.0)
@@ -161,7 +171,11 @@ class BarrierNetController:
             Control input as numpy array
         """
         # Extract goal from control_ref
-        goal = control_ref['goal']
+        goal = control_ref.get('goal')
+        
+        # If no goal, return zero control
+        if goal is None:
+            return np.zeros(self.model.cfg["n_cls"])
         
         # Extract features
         features = self._extract_features(robot_state, goal)
@@ -180,6 +194,17 @@ class BarrierNetController:
                 self.model.cfg["obs_z"] = self.obs_positions[2]
                 if len(self.obs_positions) > 3:
                     self.model.cfg["R"] = self.obs_positions[3]
+        else:
+            # Use default obstacle positions from metadata
+            if self.robot_family == "2D_robot":
+                self.model.cfg["obs_x"] = 40.0
+                self.model.cfg["obs_y"] = 15.0
+                self.model.cfg["R"] = 6.0
+            elif self.robot_family == "3D_robot":
+                self.model.cfg["obs_x"] = 10.0
+                self.model.cfg["obs_y"] = 10.0
+                self.model.cfg["obs_z"] = 9.0
+                self.model.cfg["R"] = 7.0
         
         # Normalize features
         features_normalized = (features - self.model.mean.cpu().numpy()) / self.model.std.cpu().numpy()
@@ -188,20 +213,36 @@ class BarrierNetController:
         features_tensor = torch.from_numpy(features_normalized).double().unsqueeze(0).to(self.device)
         
         # Run inference (sgn=0 for inference mode)
-        with torch.no_grad():
-            control_output = self.model(features_tensor, sgn=0)
-        
-        # Convert output to numpy array
-        if isinstance(control_output, torch.Tensor):
-            control = control_output.cpu().numpy().flatten()
-        else:
-            # Handle test_solver output
-            control = np.array(control_output).flatten()
-        
-        # Clip control to robot input bounds
-        control = self._clip_control(control)
-        
-        return control
+        try:
+            with torch.no_grad():
+                control_output = self.model(features_tensor, sgn=0)
+            
+            # Convert output to numpy array
+            if isinstance(control_output, torch.Tensor):
+                control = control_output.cpu().numpy().flatten()
+            else:
+                # Handle test_solver output
+                control = np.array(control_output).flatten()
+            
+            # Handle Quad3D control output padding if needed
+            if self.robot_model == "Quad3D" and len(control) == 3:
+                # Pad with zero for the 4th control input
+                control = np.append(control, 0.0)
+            
+            # Clip control to robot input bounds
+            control = self._clip_control(control)
+            
+            # Set status to optimal if successful
+            self.status = 'optimal'
+            
+            return control
+            
+        except Exception as e:
+            # Set status to indicate failure
+            self.status = 'infeasible'
+            print(f"BarrierNet inference failed: {e}")
+            # Return zero control as fallback
+            return np.zeros(self.model.cfg["n_cls"])
     
     def _clip_control(self, control: np.ndarray) -> np.ndarray:
         """Clip control inputs to robot-specific bounds from robot classes."""
