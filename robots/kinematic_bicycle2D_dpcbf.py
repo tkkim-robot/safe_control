@@ -152,7 +152,7 @@ class KinematicBicycle2D_DPCBF(KinematicBicycle2D):
             eps = 1e-6
             d_safe = ca.fmax(p_rel_mag**2 - ego_dim**2, eps)
 
-            k_lamda, k_mu = 0.7 * ca.sqrt(beta**2 - 1)/ego_dim, 0.3 * ca.sqrt(beta**2 - 1)/ego_dim
+            k_lamda, k_mu = 0.1 * ca.sqrt(beta**2 - 1)/ego_dim, 0.5 * ca.sqrt(beta**2 - 1)/ego_dim
 
             lamda = k_lamda * ca.sqrt(d_safe) / v_rel_mag
             mu = k_mu * ca.sqrt(d_safe)
