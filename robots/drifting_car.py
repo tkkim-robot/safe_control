@@ -15,6 +15,7 @@ Input: U = [delta_dot, tau_dot]^T
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 from matplotlib.patches import Polygon as MplPolygon
 
 try:
@@ -137,6 +138,15 @@ class DriftingCar:
         self.body_color = np.array([0, 0.45, 0.74])
         self.tire_color = np.array([0.3, 0.3, 0.3])
         
+        # Current friction coefficient
+        self.current_friction = self.robot_spec.get('mu', 1.0)
+        self.default_friction = self.current_friction
+        
+        # Indicator bar parameters
+        self.max_indicator_width = 1.5  # Maximum width for indicator bars
+        self.indicator_height = 0.2    # Height of indicator bars
+        self.indicator_spacing = 0.3   # Spacing between indicators
+        
     def _setup_plot_handles(self):
         """Initialize matplotlib plot handles for animation."""
         if self.ax is None:
@@ -174,8 +184,174 @@ class DriftingCar:
             [], [], 'r--', linewidth=1.5, alpha=0.8, zorder=6
         )
         
+        # Setup indicator bars
+        self._setup_indicator_bars()
+        
         # Initial render
         self.render_plot()
+    
+    def _setup_indicator_bars(self):
+        """Setup velocity and friction indicator bars above the car."""
+        if self.ax is None:
+            return
+        
+        v_max = self.robot_spec.get('v_max', 20.0)
+        
+        # Velocity indicator (left side)
+        self.velocity_indicator = patches.Rectangle(
+            (0, 0),
+            width=0.0,
+            height=self.indicator_height,
+            color='green',
+            zorder=15
+        )
+        self.ax.add_patch(self.velocity_indicator)
+        
+        # Velocity frame (L-shaped border)
+        self.velocity_frame_h, = self.ax.plot(
+            [0, self.max_indicator_width], [0, 0],
+            color='black', linewidth=2, zorder=14
+        )
+        self.velocity_frame_v, = self.ax.plot(
+            [0, 0], [0, self.indicator_height],
+            color='black', linewidth=2, zorder=14
+        )
+        
+        # Velocity text label
+        self.velocity_text = self.ax.text(
+            0, 0, "0.0 m/s",
+            fontsize=10,
+            ha='center',
+            va='bottom',
+            zorder=16
+        )
+        
+        # Friction indicator (right side)
+        self.friction_indicator = patches.Rectangle(
+            (0, 0),
+            width=0.0,
+            height=self.indicator_height,
+            color='blue',
+            zorder=15
+        )
+        self.ax.add_patch(self.friction_indicator)
+        
+        # Friction frame (L-shaped border)
+        self.friction_frame_h, = self.ax.plot(
+            [0, self.max_indicator_width], [0, 0],
+            color='black', linewidth=2, zorder=14
+        )
+        self.friction_frame_v, = self.ax.plot(
+            [0, 0], [0, self.indicator_height],
+            color='black', linewidth=2, zorder=14
+        )
+        
+        # Friction text label
+        self.friction_text = self.ax.text(
+            0, 0, "μ=1.0",
+            fontsize=10,
+            ha='center',
+            va='bottom',
+            zorder=16
+        )
+    
+    def _update_indicator_bars(self):
+        """Update the position and values of indicator bars."""
+        if self.ax is None or not hasattr(self, 'velocity_indicator'):
+            return
+        
+        x, y = self.X[0, 0], self.X[1, 0]
+        V = self.get_velocity()
+        v_max = self.robot_spec.get('v_max', 20.0)
+        
+        # Calculate base position (above the car)
+        base_y = y + 2.5  # Offset above the car
+        
+        # Velocity indicator (left side)
+        vel_base_x = x - self.max_indicator_width - self.indicator_spacing / 2
+        vel_ratio = min(V / v_max, 1.0)
+        vel_width = self.max_indicator_width * vel_ratio
+        
+        # Color based on speed (green -> yellow -> red)
+        cmap = plt.colormaps.get_cmap('RdYlGn_r')  # Reversed: green=low, red=high
+        vel_color = cmap(vel_ratio)
+        
+        self.velocity_indicator.set_xy((vel_base_x + 0.05, base_y + 0.05))
+        self.velocity_indicator.set_width(vel_width)
+        self.velocity_indicator.set_height(self.indicator_height)
+        self.velocity_indicator.set_color(vel_color)
+        
+        self.velocity_frame_h.set_data(
+            [vel_base_x, vel_base_x + self.max_indicator_width + 0.05],
+            [base_y, base_y]
+        )
+        self.velocity_frame_v.set_data(
+            [vel_base_x, vel_base_x],
+            [base_y, base_y + self.indicator_height + 0.05]
+        )
+        
+        self.velocity_text.set_position((
+            vel_base_x + self.max_indicator_width / 2,
+            base_y + self.indicator_height + 0.25
+        ))
+        self.velocity_text.set_text(f"{V:.1f} m/s")
+        
+        # Friction indicator (right side)
+        fric_base_x = x + self.indicator_spacing / 2
+        fric_ratio = min(self.current_friction / 1.0, 1.0)  # Friction from 0 to 1
+        fric_width = self.max_indicator_width * fric_ratio
+        
+        # Color based on friction (blue=low/slippery, gray=high/grippy)
+        if self.current_friction < 0.5:
+            fric_color = (0.2, 0.5, 0.9)  # Blue for low friction (slippery)
+        elif self.current_friction < 0.8:
+            fric_color = (0.9, 0.7, 0.2)  # Orange for medium friction
+        else:
+            fric_color = (0.3, 0.7, 0.3)  # Green for high friction (grippy)
+        
+        self.friction_indicator.set_xy((fric_base_x + 0.05, base_y + 0.05))
+        self.friction_indicator.set_width(fric_width)
+        self.friction_indicator.set_height(self.indicator_height)
+        self.friction_indicator.set_color(fric_color)
+        
+        self.friction_frame_h.set_data(
+            [fric_base_x, fric_base_x + self.max_indicator_width + 0.05],
+            [base_y, base_y]
+        )
+        self.friction_frame_v.set_data(
+            [fric_base_x, fric_base_x],
+            [base_y, base_y + self.indicator_height + 0.05]
+        )
+        
+        self.friction_text.set_position((
+            fric_base_x + self.max_indicator_width / 2,
+            base_y + self.indicator_height + 0.25
+        ))
+        self.friction_text.set_text(f"μ={self.current_friction:.2f}")
+    
+    # ==================== Friction control ====================
+    
+    def set_friction(self, mu):
+        """
+        Set the friction coefficient for the dynamics model.
+        
+        Args:
+            mu: New friction coefficient (0 to 1)
+        """
+        self.current_friction = mu
+        self.robot_spec['mu'] = mu
+        self.dynamics.robot_spec['mu'] = mu
+        # Also update the mu in the dynamics model directly if it has it
+        if hasattr(self.dynamics, 'mu'):
+            self.dynamics.mu = mu
+    
+    def get_friction(self):
+        """Return current friction coefficient."""
+        return self.current_friction
+    
+    def reset_friction(self):
+        """Reset friction to default value."""
+        self.set_friction(self.default_friction)
     
     # ==================== State accessors ====================
     
@@ -393,6 +569,9 @@ class DriftingCar:
             pred_x = self.mpc_predicted_states[0, :]
             pred_y = self.mpc_predicted_states[1, :]
             self.mpc_trajectory_line.set_data(pred_x, pred_y)
+        
+        # Update indicator bars
+        self._update_indicator_bars()
 
 
 class DriftingCarSimulator:
@@ -415,23 +594,36 @@ class DriftingCarSimulator:
         
         self.collision_detected = False
         self.collision_marker = None
+        self.collision_type = None  # 'boundary' or 'obstacle'
         
     def check_collision(self):
-        """Check for collision with environment boundaries."""
+        """Check for collision with environment boundaries and obstacles."""
         position = self.car.get_position()
         robot_radius = self.car.robot_spec.get('radius', 1.2)
         
+        # Check boundary collision
         if hasattr(self.env, 'check_collision_detailed'):
             result = self.env.check_collision_detailed(position, robot_radius)
-            collision = result['collision']
+            boundary_collision = result['collision']
         else:
-            collision = self.env.check_collision(position, robot_radius)
+            boundary_collision = self.env.check_collision(position, robot_radius)
         
-        if collision and not self.collision_detected:
+        if boundary_collision and not self.collision_detected:
             self.collision_detected = True
+            self.collision_type = 'boundary'
             self._draw_collision_marker()
+            return True
+        
+        # Check obstacle collision
+        if hasattr(self.env, 'check_obstacle_collision'):
+            obs_collision, obs_idx = self.env.check_obstacle_collision(position, robot_radius)
+            if obs_collision and not self.collision_detected:
+                self.collision_detected = True
+                self.collision_type = 'obstacle'
+                self._draw_collision_marker()
+                return True
             
-        return collision
+        return self.collision_detected
     
     def _draw_collision_marker(self):
         """Draw red exclamation mark at collision point."""
