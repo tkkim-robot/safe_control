@@ -1,13 +1,16 @@
 """
+Created on December 17th, 2025
+@author: Taekyung Kim
+
+@description:
 Model Predictive Contouring Control (MPCC) for path following.
+Jointly minimizes contouring, lag, heading errors and control effort
+using do-mpc framework with CasADi optimization.
 
-This controller implements contouring MPC which jointly minimizes:
-- Contouring error (perpendicular distance to path)
-- Lag error (distance along path)
-- Heading error
-- Control effort
+State: [x, y, theta, r, beta, V, delta, tau, psi]
+Input: [delta_dot, tau_dot, v_psi]
 
-State vector for MPC: [x, y, theta, r, beta, V, delta, tau, psi]
+@required-scripts: safe_control/robots/dynamic_bicycle2D.py
 """
 
 import numpy as np
@@ -37,7 +40,7 @@ class MPCC:
         self.dynamics = robot.dynamics
         
         # MPC parameters
-        self.horizon = 15
+        self.horizon = 10  # Short horizon to prevent cutting corners
         self.dt = robot.dt
         
         # State: [x, y, theta, r, beta, V, delta, tau, psi]
@@ -45,12 +48,17 @@ class MPCC:
         self.n_states = 9      # Full state with x, y, theta, psi
         self.n_controls = 3    # [delta_dot, tau_dot, v_psi]
         
-        # Cost function weights
-        self.Q_c = 200.0     # Contouring error
-        self.Q_l = 10.0      # Lag error  
-        self.Q_theta = 50.0  # Heading error
-        self.R = np.array([10.0, 0.0001, -2.0])  # Control weights
-        self.v_psi_ref = 5.0
+        # Cost function weights (tuned for smooth tracking)
+        self.Q_c = 100.0     # Contouring error (reduced for less aggressive correction)
+        self.Q_l = 5.0       # Lag error  
+        self.Q_theta = 30.0  # Heading error
+        self.Q_v = 20.0      # Velocity tracking
+        self.Q_r = 10.0      # Yaw rate penalty (to reduce oscillation)
+        self.v_ref = 5.0     # Target velocity [m/s]
+        # Control weights: [delta_dot, tau_dot, v_psi]
+        # Higher penalty on steering rate for smoother behavior
+        self.R = np.array([50.0, 0.01, -0.5])  # Increased tau_dot penalty
+        self.v_psi_ref = 2.0  # Slower progress rate
         
         # Reference path
         self.path_x = None
@@ -62,6 +70,7 @@ class MPCC:
         
         # Current path parameter
         self._current_psi = 0.0
+        self._psi_initialized = False  # Will be set True after first global search
         
         # MPC solution storage
         self.predicted_states = None
@@ -161,16 +170,23 @@ class MPCC:
         # Lag error (along path)
         e_l = -ca.cos(theta_ref) * dx - ca.sin(theta_ref) * dy
         
-        # Heading error
-        e_theta = theta - theta_ref
+        # Heading error (with proper angle wrapping using atan2)
+        # This ensures the error is always in [-pi, pi]
+        e_theta = ca.atan2(ca.sin(theta - theta_ref), ca.cos(theta - theta_ref))
+        
+        # Velocity error (keep velocity near target)
+        e_v = V - self.v_ref
         
         cost = (self.Q_c * e_c**2 + 
                 self.Q_l * e_l**2 + 
-                self.Q_theta * e_theta**2)
+                self.Q_theta * e_theta**2 +
+                self.Q_v * e_v**2 +
+                self.Q_r * r**2)  # Yaw rate penalty to reduce oscillation
         
         model.set_expression(expr_name='cost', expr=cost)
         model.set_expression('e_c', e_c)
         model.set_expression('e_l', e_l)
+        model.set_expression('e_v', e_v)
         
         model.setup()
         return model
@@ -189,18 +205,28 @@ class MPCC:
         }
         mpc.set_param(**setup_mpc)
         
+        # IPOPT solver options for faster and more robust solving
+        mpc.set_param(nlpsol_opts={
+            'ipopt.max_iter': 100,           # Limit iterations
+            'ipopt.print_level': 0,
+            'ipopt.acceptable_tol': 1e-4,    # Relaxed tolerance
+            'ipopt.acceptable_obj_change_tol': 1e-4,
+            'ipopt.warm_start_init_point': 'yes',
+            'print_time': 0,
+        })
+        
         mterm = self.model.aux['cost']
         lterm = self.model.aux['cost']
         mpc.set_objective(mterm=mterm, lterm=lterm)
         mpc.set_rterm(u=self.R)
         
-        # State bounds from robot_spec
-        v_max = self.robot_spec.get('v_max', 20.0)
-        v_min = self.robot_spec.get('v_min', 1.0)
-        delta_max = self.robot_spec.get('delta_max', np.deg2rad(30))
+        # State bounds from robot_spec (relaxed for better feasibility)
+        v_max = self.robot_spec.get('v_max', 15.0)
+        v_min = self.robot_spec.get('v_min', 0.5)
+        delta_max = self.robot_spec.get('delta_max', np.deg2rad(35))
         tau_max = self.robot_spec.get('tau_max', 3000.0)
-        r_max = self.robot_spec.get('r_max', 1.5)
-        beta_max = self.robot_spec.get('beta_max', np.deg2rad(30))
+        r_max = self.robot_spec.get('r_max', 2.0)  # More relaxed yaw rate
+        beta_max = self.robot_spec.get('beta_max', np.deg2rad(45))  # More relaxed slip angle
         
         mpc.bounds['lower', '_x', 'x', 3] = -r_max
         mpc.bounds['upper', '_x', 'x', 3] = r_max
@@ -274,7 +300,7 @@ class MPCC:
         self.path_s = np.concatenate([[0], np.cumsum(ds)])
         self.path_length = self.path_s[-1]
         
-        # Compute heading
+        # Compute heading - keep in [-pi, pi] range
         if path_theta is None:
             self.path_theta = np.arctan2(
                 np.gradient(self.path_y),
@@ -283,8 +309,11 @@ class MPCC:
         else:
             self.path_theta = np.array(path_theta)
         
-        # Compute curvature
-        dtheta = np.gradient(self.path_theta)
+        # Compute curvature - need to handle angle wrapping
+        dtheta = np.diff(self.path_theta)
+        # Wrap dtheta to [-pi, pi] for continuous curvature
+        dtheta = np.arctan2(np.sin(dtheta), np.cos(dtheta))
+        dtheta = np.concatenate([[dtheta[0]], dtheta])  # Pad to match length
         ds_safe = np.maximum(np.gradient(self.path_s), 0.01)
         self.path_curvature = dtheta / ds_safe
         
@@ -301,10 +330,83 @@ class MPCC:
         
         x_ref = np.interp(psi, self.path_s, self.path_x)
         y_ref = np.interp(psi, self.path_s, self.path_y)
-        theta_ref = np.interp(psi, self.path_s, self.path_theta)
+        
+        # Interpolate angle using sin/cos to handle wrapping properly
+        sin_theta = np.interp(psi, self.path_s, np.sin(self.path_theta))
+        cos_theta = np.interp(psi, self.path_s, np.cos(self.path_theta))
+        theta_ref = np.arctan2(sin_theta, cos_theta)
+        
         kappa = np.interp(psi, self.path_s, self.path_curvature)
         
         return x_ref, y_ref, theta_ref, kappa
+    
+    def _find_closest_path_point(self, x, y, search_window=None, force_global_search=False):
+        """
+        Find the arc length (psi) of the closest point on the path to (x, y).
+        Only searches in a local window around current psi to prevent jumping
+        to the other side of a closed track.
+        
+        Args:
+            x, y: Robot position
+            search_window: Search window size in meters (default: 30m ahead, 10m behind)
+            force_global_search: If True, search entire path (use for initialization)
+            
+        Returns:
+            psi: Arc length of closest point on path
+        """
+        if self.path_x is None:
+            return 0.0
+        
+        # For initialization or when explicitly requested, do global search
+        if force_global_search or not hasattr(self, '_psi_initialized') or not self._psi_initialized:
+            distances = np.sqrt((self.path_x - x)**2 + (self.path_y - y)**2)
+            closest_idx = np.argmin(distances)
+            self._psi_initialized = True
+            return self.path_s[closest_idx]
+        
+        if search_window is None:
+            search_window = 40.0  # Search within 40m of current position
+        
+        # Get current arc length
+        current_psi = self._current_psi
+        
+        # Create search range around current position
+        # For closed tracks, handle wrapping
+        n_points = len(self.path_s)
+        
+        # Find indices within the search window
+        if self.path_length > 0:
+            # Search forward and backward from current position
+            psi_min = current_psi - 10.0  # 10m behind
+            psi_max = current_psi + search_window  # search_window ahead
+            
+            # Handle wrapping for closed tracks
+            valid_mask = np.zeros(n_points, dtype=bool)
+            for i, s in enumerate(self.path_s):
+                # Check if this point is within search window
+                # Account for wrapping
+                dist_forward = (s - current_psi) % self.path_length
+                dist_backward = (current_psi - s) % self.path_length
+                
+                if dist_forward <= search_window or dist_backward <= 10.0:
+                    valid_mask[i] = True
+        else:
+            # Non-looped track - simple range check
+            valid_mask = (self.path_s >= current_psi - 10.0) & (self.path_s <= current_psi + search_window)
+        
+        # If no valid points, fall back to full search
+        if not np.any(valid_mask):
+            distances = np.sqrt((self.path_x - x)**2 + (self.path_y - y)**2)
+            closest_idx = np.argmin(distances)
+            return self.path_s[closest_idx]
+        
+        # Compute distances only for valid points
+        valid_indices = np.where(valid_mask)[0]
+        distances = np.sqrt((self.path_x[valid_indices] - x)**2 + (self.path_y[valid_indices] - y)**2)
+        closest_local_idx = np.argmin(distances)
+        closest_idx = valid_indices[closest_local_idx]
+        
+        return self.path_s[closest_idx]
     
     def solve_control_problem(self, robot_state, control_ref=None, nearest_obs=None):
         """
@@ -316,6 +418,12 @@ class MPCC:
         Returns:
             u: Control input [delta_dot, tau_dot]
         """
+        # Sync path parameter with robot's actual position
+        # This ensures reference doesn't run away from the robot
+        robot_x = robot_state[0, 0] if robot_state.ndim > 1 else robot_state[0]
+        robot_y = robot_state[1, 0] if robot_state.ndim > 1 else robot_state[1]
+        self._current_psi = self._find_closest_path_point(robot_x, robot_y)
+        
         # Build MPC state: [x, y, theta, r, beta, V, delta, tau, psi]
         mpc_state = np.vstack([robot_state[:8], [[self._current_psi]]])
         
@@ -329,10 +437,6 @@ class MPCC:
             print(f"MPC solve failed: {e}")
             self.status = 'infeasible'
             return np.zeros((2, 1))
-        
-        # Update path parameter
-        v_psi = u_mpc[2, 0]
-        self._current_psi += v_psi * self.dt
         
         # Store predictions
         self._store_predictions()
@@ -362,7 +466,7 @@ class MPCC:
         """Get reference path over the current horizon (for visualization)."""
         return self.reference_horizon
     
-    def set_cost_weights(self, Q_c=None, Q_l=None, Q_theta=None, R=None):
+    def set_cost_weights(self, Q_c=None, Q_l=None, Q_theta=None, Q_v=None, Q_r=None, R=None, v_ref=None):
         """Update cost weights and rebuild MPC."""
         if Q_c is not None:
             self.Q_c = Q_c
@@ -370,6 +474,12 @@ class MPCC:
             self.Q_l = Q_l
         if Q_theta is not None:
             self.Q_theta = Q_theta
+        if Q_v is not None:
+            self.Q_v = Q_v
+        if Q_r is not None:
+            self.Q_r = Q_r
+        if v_ref is not None:
+            self.v_ref = v_ref
         if R is not None:
             self.R = np.array(R)
         self.setup_control_problem()
