@@ -195,6 +195,43 @@ class DynamicBicycle2D:
                 
         return Fy
     
+    def _compute_longitudinal_force(self, tau, Fz, casadi=False):
+        """
+        Compute longitudinal tire force with soft saturation (tanh).
+        
+        This ensures the optimizer accounts for reduced braking/acceleration
+        capabilities on low-friction surfaces while preserving gradient info.
+        
+        F_x = F_lim * tanh(tau / (r_w * F_lim))
+        
+        Args:
+            tau: Wheel torque [Nm]
+            Fz: Normal force [N]
+            casadi: Use CasADi for symbolic computation
+            
+        Returns:
+            Fx: Longitudinal force [N]
+        """
+        mu = self.robot_spec['mu']
+        r_w = self.robot_spec['r_w']
+        
+        # Friction limit
+        F_lim = mu * Fz
+        
+        # Small epsilon to avoid division by zero
+        eps = 1.0
+        
+        if casadi:
+            # Soft saturation using tanh
+            # F_x = F_lim * tanh(tau / (r_w * F_lim))
+            F_lim_safe = ca.fmax(F_lim, eps)
+            Fx = F_lim * ca.tanh(tau / (r_w * F_lim_safe))
+        else:
+            F_lim_safe = max(F_lim, eps)
+            Fx = F_lim * np.tanh(tau / (r_w * F_lim_safe))
+        
+        return Fx
+    
     def _compute_tire_forces(self, r, beta, V, delta, tau, casadi=False):
         """
         Compute all tire forces.
@@ -206,16 +243,16 @@ class DynamicBicycle2D:
         Returns:
             Fx_f, Fy_f, Fx_r, Fy_r: Tire forces [N]
         """
-        r_w = self.robot_spec['r_w']
-        
         # Slip angles
         alpha_f, alpha_r = self._compute_slip_angles(r, beta, V, delta, casadi)
         
         # Longitudinal forces (rear wheel drive)
+        # Front: no drive torque
         Fx_f = 0.0
-        Fx_r = tau / r_w
+        # Rear: soft-saturated longitudinal force accounting for friction
+        Fx_r = self._compute_longitudinal_force(tau, self.Fz_r, casadi)
         
-        # Lateral forces
+        # Lateral forces (computed after Fx to properly account for friction circle)
         Fy_f = self._compute_lateral_force(alpha_f, self.robot_spec['Cc_f'], 
                                            self.Fz_f, Fx_f, casadi)
         Fy_r = self._compute_lateral_force(alpha_r, self.robot_spec['Cc_r'], 

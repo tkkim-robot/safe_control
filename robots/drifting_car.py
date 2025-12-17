@@ -145,7 +145,7 @@ class DriftingCar:
         # Indicator bar parameters
         self.max_indicator_width = 1.5  # Maximum width for indicator bars
         self.indicator_height = 0.2    # Height of indicator bars
-        self.indicator_spacing = 1.2   # Spacing between indicators (increased to prevent overlap)
+        self.indicator_spacing = 2.5   # Spacing between indicators (increased to prevent overlap)
         
     def _setup_plot_handles(self):
         """Initialize matplotlib plot handles for animation."""

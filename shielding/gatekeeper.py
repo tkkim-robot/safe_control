@@ -502,12 +502,13 @@ class Gatekeeper:
                     found_valid = True
                     break
             
-            # If no valid trajectory found, use pure backup
+            # If no valid trajectory found, DO NOT update committed trajectory
+            # Keep following the previously committed backup trajectory
+            # This prevents "creeping forward" when all candidates are invalid
             if not found_valid:
-                candidate_x_traj, candidate_u_traj, actual_steps = self._generate_candidate_trajectory(
-                    robot_state, 0, friction
-                )
-                self._update_committed_trajectory(0)
+                # Just reschedule the next event, don't change the committed trajectory
+                # This ensures we stay on the previously committed (safe) backup path
+                self.next_event_time = self.current_time_idx * self.dt + self.event_offset
         
         # Output control from committed trajectory using current index
         if self.current_time_idx < len(self.committed_u_traj):

@@ -251,6 +251,161 @@ class LaneChangeController(BackupController):
         return f"LaneChange_{self.direction}"
 
 
+class StoppingController(BackupController):
+    """
+    Stopping backup controller using PD control.
+    
+    This controller brings the vehicle to a complete stop by:
+    1. Applying negative torque proportional to velocity (braking)
+    2. Centering the steering wheel to maintain straight heading
+    3. Holding position once stopped
+    """
+    
+    def __init__(self, robot_spec, dt):
+        """
+        Initialize the stopping controller.
+        
+        Args:
+            robot_spec: Dictionary with robot specifications
+            dt: Time step for simulation
+        """
+        super().__init__(robot_spec, dt)
+        
+        # Braking control gains
+        self.Kp_v = 1000.0     # Proportional gain for velocity -> torque (braking)
+        
+        # Steering control gains (to straighten out)
+        self.Kp_theta = 2.0    # Proportional gain for heading correction
+        self.Kd_theta = 0.5    # Derivative gain (yaw rate damping)
+        self.Kp_delta = 3.0    # Proportional gain for steering rate
+        
+        # Limits
+        self.delta_max = robot_spec.get('delta_max', np.deg2rad(20))
+        self.delta_dot_max = robot_spec.get('delta_dot_max', np.deg2rad(15))
+        self.tau_max = robot_spec.get('tau_max', 4000.0)
+        self.tau_dot_max = robot_spec.get('tau_dot_max', 8000.0)
+        
+        # Velocity threshold for "stopped" (very small to ensure complete stop)
+        self.stop_velocity_threshold = 0.05  # m/s
+        
+        # Holding torque to keep vehicle stationary after stopping
+        self.holding_torque = -100.0  # Small negative torque to resist rolling
+    
+    def compute_control(self, state, target=None):
+        """
+        Compute control input for stopping.
+        
+        Args:
+            state: Current state [x, y, theta, r, beta, V, delta, tau]
+            target: Not used for stopping controller (can be None)
+            
+        Returns:
+            Control input [delta_dot, tau_dot]
+        """
+        # Extract state
+        x, y, theta, r, beta, V, delta, tau = state.flatten()
+        
+        # ===== Braking control =====
+        # Target velocity is 0
+        # Apply negative torque proportional to current velocity until stopped
+        if V > self.stop_velocity_threshold:
+            # Still moving - apply strong braking proportional to velocity
+            # Use maximum braking at high speeds, proportional at low speeds
+            tau_des = -self.Kp_v * V
+            # Ensure we're always applying significant braking when moving
+            tau_des = min(tau_des, -500.0)  # At least -500 Nm when moving
+        else:
+            # Stopped - apply small holding torque to prevent rolling
+            # This keeps the vehicle stationary
+            tau_des = self.holding_torque
+        
+        # Clamp desired torque
+        tau_des = np.clip(tau_des, -self.tau_max, self.tau_max)
+        
+        # Torque rate to reach desired torque - fast response for emergency braking
+        tau_error = tau_des - tau
+        tau_dot = 5000.0 * np.sign(tau_error) * min(abs(tau_error) / 50.0, 1.0)
+        tau_dot = np.clip(tau_dot, -self.tau_dot_max, self.tau_dot_max)
+        
+        # ===== Steering control =====
+        # Try to straighten out (theta -> 0 is not always desired, 
+        # but we want to reduce yaw rate and center steering)
+        
+        # Desired steering: reduce yaw rate, center steering
+        delta_des = -self.Kd_theta * r  # Damping on yaw rate
+        delta_des = np.clip(delta_des, -self.delta_max, self.delta_max)
+        
+        # Steering rate
+        delta_error = delta_des - delta
+        delta_dot = self.Kp_delta * delta_error
+        delta_dot = np.clip(delta_dot, -self.delta_dot_max, self.delta_dot_max)
+        
+        return np.array([[delta_dot], [tau_dot]])
+    
+    def simulate_trajectory(self, initial_state, target, horizon, friction=1.0):
+        """
+        Forward simulate the stopping trajectory.
+        
+        Args:
+            initial_state: Initial state [x, y, theta, r, beta, V, delta, tau]
+            target: Not used (can be None)
+            horizon: Number of steps to simulate
+            friction: Friction coefficient for simulation
+            
+        Returns:
+            trajectory: Array of states over the horizon (8 x horizon+1)
+        """
+        # Import dynamics model
+        try:
+            from robots.dynamic_bicycle2D import DynamicBicycle2D
+        except ImportError:
+            from safe_control.robots.dynamic_bicycle2D import DynamicBicycle2D
+        
+        # Create dynamics model with given friction
+        sim_spec = self.robot_spec.copy()
+        sim_spec['mu'] = friction
+        dynamics = DynamicBicycle2D(self.dt, sim_spec)
+        
+        # Initialize trajectory storage
+        state = initial_state.copy().reshape(-1, 1)
+        trajectory = np.zeros((8, horizon + 1))
+        trajectory[:, 0] = state.flatten()
+        
+        for i in range(horizon):
+            # Compute control
+            U = self.compute_control(state, target)
+            
+            # Extract dynamics state [r, beta, V, delta, tau]
+            X_dyn = state[3:8, :]
+            
+            # Step dynamics
+            X_dyn_next = dynamics.step(X_dyn, U)
+            
+            # Update global state
+            theta = state[2, 0]
+            V = X_dyn_next[2, 0]
+            beta = X_dyn_next[1, 0]
+            r = X_dyn_next[0, 0]
+            
+            # Velocity in global frame
+            vx_global = V * np.cos(theta + beta)
+            vy_global = V * np.sin(theta + beta)
+            
+            # Update state
+            state[0, 0] += vx_global * self.dt
+            state[1, 0] += vy_global * self.dt
+            state[2, 0] += r * self.dt
+            state[2, 0] = angle_normalize(state[2, 0])
+            state[3:8, :] = X_dyn_next
+            
+            trajectory[:, i + 1] = state.flatten()
+        
+        return trajectory
+    
+    def get_behavior_name(self):
+        return "Stopping"
+
+
 class BackupControllerManager:
     """
     Manager for backup controllers with trajectory visualization.
