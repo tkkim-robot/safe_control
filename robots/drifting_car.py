@@ -1,27 +1,16 @@
 """
+Created on December 17th, 2025
+@author: Taekyung Kim
+
+@description:
 Drifting Car - A car model for drift simulation with detailed visualization.
-
-This module provides a dynamic bicycle model based car with detailed
-visualization. The car uses the DynamicBicycle2D dynamics which includes
-nonlinear tire forces suitable for high-slip (drifting) maneuvers.
-
-The visualization is similar to the MATLAB drift_parking example with:
-- A body polygon with realistic shape
-- Four wheels (2 front that steer, 2 rear)
-- Trajectory tracking
+Uses DynamicBicycle2D dynamics with Fiala tire model for high-slip maneuvers.
+Inherits from BaseRobot for integration with safe_control framework.
 
 Global State: X_global = [x, y, theta, r, beta, V, delta, tau]^T
-    - x, y: Global position [m]
-    - theta: Global heading [rad]
-    - r: Yaw rate [rad/s]
-    - beta: Side slip angle [rad]
-    - V: Velocity magnitude [m/s]
-    - delta: Steering angle [rad]
-    - tau: Rear wheel torque [Nm]
-
 Input: U = [delta_dot, tau_dot]^T
-    - delta_dot: Steering rate [rad/s]
-    - tau_dot: Torque rate [Nm/s]
+
+@required-scripts: safe_control/robots/robot.py, safe_control/robots/dynamic_bicycle2D.py
 """
 
 import numpy as np
