@@ -1,22 +1,17 @@
 """
-Dynamic Bicycle Model for drift simulation.
+Created on December 17th, 2025
+@author: Taekyung Kim
 
-This model captures the full nonlinear dynamics of a vehicle including
-tire forces with the Fiala brush tire model. Suitable for high-slip
-(drifting) conditions.
+@description:
+Dynamic Bicycle Model for drift simulation with Fiala brush tire model.
+Captures full nonlinear dynamics including slip angles and tire saturation.
 
 State: x = [r, beta, V, delta, tau]^T
-    - r: yaw rate [rad/s]
-    - beta: side slip angle [rad]
-    - V: velocity magnitude [m/s]
-    - delta: steering angle [rad]
-    - tau: rear wheel torque [Nm]
-
 Input: u = [delta_dot, tau_dot]^T
-    - delta_dot: steering rate [rad/s]
-    - tau_dot: torque rate [Nm/s]
 
-Reference: Based on dynamic bicycle model with Fiala tire model
+Reference: Fiala tire model from Laurense thesis, combined with dynamic bicycle model.
+
+@required-scripts: None (standalone dynamics module)
 """
 
 import numpy as np
