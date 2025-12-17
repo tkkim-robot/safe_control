@@ -23,13 +23,15 @@ class MPCC:
     Model Predictive Contouring Controller.
     """
     
-    def __init__(self, robot, robot_spec, show_mpc_traj=False):
+    def __init__(self, robot, robot_spec, show_mpc_traj=False, horizon=None):
         """
         Initialize the MPCC controller.
         
         Args:
             robot: Robot instance (DriftingCar with DynamicBicycle2D dynamics)
             robot_spec: Robot specifications dictionary
+            show_mpc_traj: Whether to show MPC trajectory in plots
+            horizon: MPC prediction horizon in steps (default: 30 = 1.5s at dt=0.05)
         """
         self.robot = robot
         self.robot_spec = robot_spec
@@ -40,7 +42,7 @@ class MPCC:
         self.dynamics = robot.dynamics
         
         # MPC parameters
-        self.horizon = 10  # Short horizon to prevent cutting corners
+        self.horizon = horizon if horizon is not None else 30  # Default 1.5s at dt=0.05
         self.dt = robot.dt
         
         # State: [x, y, theta, r, beta, V, delta, tau, psi]
@@ -448,19 +450,43 @@ class MPCC:
         return u_mpc[:2]
     
     def _store_predictions(self):
-        """Store predictions for visualization."""
+        """Store predictions for visualization and gatekeeper."""
         try:
             x_pred = self.mpc.data.prediction(('_x', 'x'))
             if x_pred is not None and x_pred.size > 0:
                 if x_pred.ndim >= 3:
                     x_pred = x_pred[:, :, 0] if x_pred.ndim == 3 else x_pred[:, :, 0, 0]
-                self.predicted_states = x_pred[:2, :]  # x, y positions
+                self.predicted_states = x_pred[:2, :]  # x, y positions for visualization
+                
+                # Store full state trajectory for gatekeeper (8 states: x,y,theta,r,beta,V,delta,tau)
+                self.predicted_full_states = x_pred[:8, :]  # (8, horizon+1)
+        except:
+            pass
+        
+        try:
+            u_pred = self.mpc.data.prediction(('_u', 'u'))
+            if u_pred is not None and u_pred.size > 0:
+                if u_pred.ndim >= 3:
+                    u_pred = u_pred[:, :, 0] if u_pred.ndim == 3 else u_pred[:, :, 0, 0]
+                self.predicted_inputs = u_pred[:2, :]  # (2, horizon) - delta_dot, tau_dot
         except:
             pass
     
     def get_predictions(self):
         """Get stored predictions."""
         return self.predicted_states, self.predicted_inputs
+    
+    def get_full_predictions(self):
+        """
+        Get full state and control predictions for gatekeeper.
+        
+        Returns:
+            states: Full state trajectory (8, horizon+1) or None
+            controls: Control trajectory (2, horizon) or None
+        """
+        states = getattr(self, 'predicted_full_states', None)
+        controls = self.predicted_inputs
+        return states, controls
     
     def get_reference_horizon(self):
         """Get reference path over the current horizon (for visualization)."""
