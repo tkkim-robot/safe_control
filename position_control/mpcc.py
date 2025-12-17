@@ -56,8 +56,8 @@ class MPCC:
         self.Q_r = 10.0      # Yaw rate penalty (to reduce oscillation)
         self.v_ref = 5.0     # Target velocity [m/s]
         # Control weights: [delta_dot, tau_dot, v_psi]
-        # Higher penalty on steering rate for smoother behavior
-        self.R = np.array([50.0, 0.01, -0.5])  # Increased tau_dot penalty
+        # All weights must be non-negative for proper cost minimization
+        self.R = np.array([50.0, 0.01, 0.1])
         self.v_psi_ref = 2.0  # Slower progress rate
         
         # Reference path
