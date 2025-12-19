@@ -35,6 +35,8 @@ class Quad2D:
         '''
         self.dt = dt
         self.robot_spec = robot_spec
+        
+        self.robot_spec.setdefault('model', 'Quad2D')
 
         self.robot_spec.setdefault('mass', 1.0)
         self.robot_spec.setdefault('inertia', 0.01)

@@ -46,6 +46,8 @@ class Quad3D:
         self.dt = dt
         self.robot_spec = robot_spec
         
+        self.robot_spec.setdefault('model', 'Quad3D')
+        
         # Default physical parameters
         self.robot_spec.setdefault('mass', 3.0)  # m
         self.robot_spec.setdefault('Ix', 0.5)    # Moment of inertia around x-axis

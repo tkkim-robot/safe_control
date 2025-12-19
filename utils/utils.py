@@ -1,7 +1,7 @@
 import math
 import numpy as np
 
-import utils.env as env
+import safe_control.utils.env as env
 
 """
 Created on Jan 23, 2024
