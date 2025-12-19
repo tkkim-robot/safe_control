@@ -38,6 +38,8 @@ class KinematicBicycle2D:
         '''
         self.dt = dt
         self.robot_spec = robot_spec
+        
+        self.robot_spec.setdefault('model', 'KinematicBicycle2D')
 
         self.robot_spec.setdefault('wheel_base', 0.4)
         self.robot_spec.setdefault('body_width', 0.3)

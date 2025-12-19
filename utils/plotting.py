@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-import utils.env as env
-from utils.utils import calculate_fov_points, linewidth_from_data_units
+import safe_control.utils.env as env
+from safe_control.utils.utils import calculate_fov_points, linewidth_from_data_units
 import math
 import numpy as np
 

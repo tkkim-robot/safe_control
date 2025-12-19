@@ -34,6 +34,8 @@ class DoubleIntegrator2D:
         '''
         self.dt = dt
         self.robot_spec = robot_spec
+        
+        self.robot_spec.setdefault('model', 'DoubleIntegrator2D')
 
         self.robot_spec.setdefault('a_max', 1.0)
         self.robot_spec.setdefault('v_max', 1.0)

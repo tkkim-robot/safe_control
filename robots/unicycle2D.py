@@ -30,6 +30,8 @@ class Unicycle2D:
         '''
         self.dt = dt
         self.robot_spec = robot_spec # not used in this model
+        
+        self.robot_spec.setdefault('model', 'Unicycle2D')
       
         # for exp (CBF for unicycle)
         self.k1 = 0.5 #=#1.0

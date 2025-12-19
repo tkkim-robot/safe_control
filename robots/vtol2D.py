@@ -52,6 +52,8 @@ class VTOL2D:
     def __init__(self, dt, robot_spec):
         self.dt = dt
         self.spec = robot_spec
+        
+        self.spec.setdefault('model', 'VTOL2D')
 
         # Default or user-set parameters
         self.spec.setdefault('mass', 11.0)

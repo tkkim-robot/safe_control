@@ -4,7 +4,7 @@ import matplotlib.patches as patches
 
 from shapely.geometry import Polygon, Point, LineString
 from shapely import is_valid_reason
-from utils.geometry import custom_merge
+from safe_control.utils.geometry import custom_merge
 
 """
 Created on June 21st, 2024
@@ -63,7 +63,7 @@ class BaseRobot:
             try:
                 from single_integrator2D import SingleIntegrator2D
             except ImportError:
-                from robots.single_integrator2D import SingleIntegrator2D
+                from safe_control.robots.single_integrator2D import SingleIntegrator2D
             self.robot = SingleIntegrator2D(dt, robot_spec)
             # X0: [x, y]
             self.set_orientation(self.X[2, 0])
@@ -72,7 +72,7 @@ class BaseRobot:
             try:
                 from double_integrator2D import DoubleIntegrator2D
             except ImportError:
-                from robots.double_integrator2D import DoubleIntegrator2D
+                from safe_control.robots.double_integrator2D import DoubleIntegrator2D
             self.robot = DoubleIntegrator2D(dt, robot_spec)
             # X0: [x, y, vx, vy, theta]
             self.set_orientation(self.X[4, 0])
@@ -81,56 +81,56 @@ class BaseRobot:
             try:
                 from unicycle2D import Unicycle2D
             except ImportError:
-                from robots.unicycle2D import Unicycle2D
+                from safe_control.robots.unicycle2D import Unicycle2D
             self.robot = Unicycle2D(dt, robot_spec)
             self.yaw = self.X[2, 0]
         elif self.robot_spec['model'] == 'DynamicUnicycle2D':
             try:
                 from dynamic_unicycle2D import DynamicUnicycle2D
             except ImportError:
-                from robots.dynamic_unicycle2D import DynamicUnicycle2D
+                from safe_control.robots.dynamic_unicycle2D import DynamicUnicycle2D
             self.robot = DynamicUnicycle2D(dt, robot_spec)
             self.yaw = self.X[2, 0]
         elif self.robot_spec['model'] == 'KinematicBicycle2D':
             try:
                 from kinematic_bicycle2D import KinematicBicycle2D
             except ImportError:
-                from robots.kinematic_bicycle2D import KinematicBicycle2D
+                from safe_control.robots.kinematic_bicycle2D import KinematicBicycle2D
             self.robot = KinematicBicycle2D(dt, robot_spec)
             self.yaw = self.X[2, 0]
         elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
             try:
                 from kinematic_bicycle2D_c3bf import KinematicBicycle2D_C3BF
             except ImportError:
-                from dynamic_env.kinematic_bicycle2D_c3bf import KinematicBicycle2D_C3BF
+                from safe_control.dynamic_env.kinematic_bicycle2D_c3bf import KinematicBicycle2D_C3BF
             self.robot = KinematicBicycle2D_C3BF(dt, robot_spec)
             self.yaw = self.X[2, 0]
         elif self.robot_spec['model'] == 'KinematicBicycle2D_DPCBF':
             try:
                 from kinematic_bicycle2D_dpcbf import KinematicBicycle2D_DPCBF
             except ImportError:
-                from dynamic_env.kinematic_bicycle2D_dpcbf import KinematicBicycle2D_DPCBF
+                from safe_control.dynamic_env.kinematic_bicycle2D_dpcbf import KinematicBicycle2D_DPCBF
             self.robot = KinematicBicycle2D_DPCBF(dt, robot_spec)
             self.yaw = self.X[2, 0]
         elif self.robot_spec['model'] == 'Quad2D':
             try:
                 from quad2D import Quad2D
             except ImportError:
-                from robots.quad2D import Quad2D
+                from safe_control.robots.quad2D import Quad2D
             self.robot = Quad2D(dt, robot_spec)
             self.yaw = self.X[2, 0] # it's pitch in this case
         elif self.robot_spec['model'] == 'Quad3D':
             try:
                 from quad3D import Quad3D
             except ImportError:
-                from robots.quad3D import Quad3D
+                from safe_control.robots.quad3D import Quad3D
             self.robot = Quad3D(dt, robot_spec)
             self.yaw = self.X[5, 0]
         elif self.robot_spec['model'] == 'VTOL2D':
             try:
                 from vtol2D import VTOL2D
             except ImportError:
-                from robots.vtol2D import VTOL2D
+                from safe_control.robots.vtol2D import VTOL2D
             self.robot = VTOL2D(dt, robot_spec)
             self.yaw = self.X[2, 0] # it's pitch in this case
         else:

@@ -1,12 +1,12 @@
 # safe_control
 
-`safe_control` is a Python library that provides a unified codebase for safety controllers in robotic navigation. It implements various control barrier function (CBF) based controllers and other types of safety-critical controllers, such as CBF-QP, MPC-CBF, Optimal-Decay CBF, gatekeeper. It supports various robot systems such as integrators, unicycles, quadrotors, autonomous vehicles (bicycle model), and VTOL. It also supports dynamic environments (see `dynamic_env`).
+`safe_control` is a Python library that provides a unified codebase for safety controllers in robotic navigation. It implements various control barrier function (CBF) based controllers and other types of safety-critical controllers, such as CBF-QP, MPC-CBF, Optimal-Decay CBF, gatekeeper. It supports various robot systems such as integrators, unicycles, quadrotors, autonomous vehicles (kinematic/dynamic bicycle models), and VTOL. It also supports dynamic environments (see `dynamic_env`).
 
 ## Features
 
 - Implementation of various positional safety-critical controllers, including [`CBF-QP`](https://ieeexplore.ieee.org/document/8796030) and [`MPC-CBF`](https://ieeexplore.ieee.org/document/9483029)
-- Implementation of safety-critical attitude controller using [`gatekeeper`](https://ieeexplore.ieee.org/document/10341790)
-- Support for different robot dynamics models (e.g., unicycle, double integrator)
+- Implementation of safety filters using [`gatekeeper`](https://ieeexplore.ieee.org/document/10341790)
+- Support for different robot dynamics models
 - Support sensing and mapping simulation for RGB-D type camera sensors (limited FOV)
 - Support both single and multi agents navigation
 - Support dynamic obstacles and related CBFs, including [`C3BF`](https://arxiv.org/abs/2403.07043) and [`DPCBF`](https://www.taekyung.me/dpcbf)
@@ -14,7 +14,7 @@
 
 ## Installation
 
-To install `safe_control`, follow these steps:
+To install `safe_control` using [`uv`](https://github.com/astral-sh/uv):
 
 1. Clone the repository:
    ```bash
@@ -22,25 +22,34 @@ To install `safe_control`, follow these steps:
    cd safe_control
    ```
 
-2. (Optional) Create and activate a virtual environment:
-
-3. Install the package and its dependencie:
+2. Setup environment and install package:
    ```bash
-   python -m pip install -e .
+   uv pip install -e .
    ```
-   Or, install packages manually (see [`setup.py`](https://github.com/tkkim-robot/safe_control/blob/main/setup.py)).
 
 
 ## Getting Started
 
-Familiarize with APIs and examples with the scripts in [`tracking.py`](https://github.com/tkkim-robot/safe_control/blob/main/tracking.py)
+Familiarize with APIs and examples with the scripts in [`examples/`](https://github.com/tkkim-robot/safe_control/blob/main/examples/)
 
 ### Basic Example
 You can run our test example by:
 
 ```bash
-python tracking.py
+uv run python examples/test_tracking.py --model du
 ```
+Available models: `si` (SingleIntegrator2D), `di` (DoubleIntegrator2D), `un` (Unicycle2D), `du` (DynamicUnicycle2D), `kb` (KinematicBicycle2D), `quad` (Quad2D), `quad3d` (Quad3D).
+
+For VTOL:
+```bash
+uv run python examples/test_vtol.py
+```
+
+For Multi-Agent:
+```bash
+uv run python examples/test_multi_robot.py
+```
+
 
 Alternatively, you can import `LocalTrackingController` from [`tracking.py`](https://github.com/tkkim-robot/safe_control/blob/main/tracking.py).
 
@@ -119,7 +128,7 @@ known_obs = np.vstack((known_obs, np.array([12.0, 6.0, 1.0, 1.5, 10, np.pi/4, 1]
 | :-------------------------------: |
 |  <img src="https://github.com/user-attachments/assets/c2e9ffcd-30f4-4045-8f90-4e25868894be"  height="350px"> |
 
-### Multi-Robot Example
+## Multi-Robot Example
 
 You can simulate heterogeneous, multiple robots navigating in the same environment. 
 
@@ -149,11 +158,11 @@ First determine the specification of each robot (with different `id`), then run 
 | :------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: |
 |  <img src="https://github.com/user-attachments/assets/d55518d3-79ec-46ec-8cfb-3f78dd7d6e82"  height="200px"> | <img src="https://github.com/user-attachments/assets/7c3db292-f9fa-4734-8578-3034e85ab4fb"  height="200px"> |
 
-### Dynamic Environment Example
+## Dynamic Environment Example
 
 You can run one of the examples for dynamic obstacle collision avoidance by:
 ```bash
-python dynamic_env/main.py
+uv run python dynamic_env/main.py
 ```
 
 |      DPCBF implemented with CBF-QP            |
@@ -162,6 +171,20 @@ python dynamic_env/main.py
 
 
 For more details, please see [`dynamic_env`](https://github.com/tkkim-robot/safe_control/tree/main/dynamic_env).
+
+## Shielding
+
+### gatekeeper
+
+You can run the [gatekeeper](https://github.com/tkkim-robot/safe_control/blob/main/shielding/gatekeeper.py) algorithm, which uses MPCC as the nominal controller and a Lane Change PD controller as the backup.
+
+```bash
+uv run python examples/drift_car/test_gatekeeper.py
+```
+
+|      Gatekeeper Safety Shielding            |
+| :-------------------------------: |
+|  <img src="https://github.com/user-attachments/assets/0ac99513-33ef-40f5-91a0-3cd02be5921f"  height="350px"> |
 
 
 ## Module Breakdown
@@ -177,6 +200,7 @@ Supported robot dynamics can be found in the [`robots/`](https://github.com/tkki
 - `unicycle2D`
 - `dynamic_unicycle2D`: A unicycle model that uses velocity as state and acceleration as input.
 - `kinematic_bicycle2D`: need to use [`C3BF`](https://arxiv.org/abs/2403.07043) for valid CBF. See [`robots/kinematic_bicycle2D_c3bf.py](https://github.com/tkkim-robot/safe_control/blob/main/robots/kinematic_bicycle2D_c3bf.py) for more details.
+- `dynamic_bicycle2D`: A highly nonlinear dynamic model with Fiala Tire model with both longitudinal and lateral slip motions. Serves as the [drift_car](https://github.com/tkkim-robot/safe_control/blob/main/robots/drifting_car.py) example.
 - `quad2d`: x - forward, z - vertical
 - `quad3d`: 12 states, using [`RK4 Sampled Data CBF`](https://arxiv.org/pdf/2203.11470) to construct CBF for relative degree of 4 input.
 - `vtol2d`: x - forward, z - vertical
@@ -189,6 +213,7 @@ Supported positional controllers can be found in the [`position_control/`](https
 - `mpc_cbf`: An MPC controller using discrete-time CBF (ref: [[2]](https://ieeexplore.ieee.org/document/9483029))
 - `optimal_decay_cbf_qp`: A modified CBF-QP for point-wise feasibility guarantee (ref: [[3]](https://ieeexplore.ieee.org/document/9482626))
 - `optimal_decay_mpc_cbf`: The same technique applied to MPC-CBF (ref: [[4]](https://ieeexplore.ieee.org/document/9683174))
+- `mpcc`: Model Predictive Contouring Control for drift_car example (ref: [[5]](https://ieeexplore.ieee.org/document/5717042))
 
 To use a specific control algorithm, specify it when initializing the `LocalTrackingController`:
 

@@ -1,4 +1,4 @@
-from robots.kinematic_bicycle2D import KinematicBicycle2D
+from safe_control.robots.kinematic_bicycle2D import KinematicBicycle2D
 import numpy as np
 import casadi as ca
 

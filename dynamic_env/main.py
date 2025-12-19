@@ -1,4 +1,4 @@
-from tracking import LocalTrackingController
+from safe_control.tracking import LocalTrackingController
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -46,7 +46,7 @@ class LocalTrackingControllerDyn(LocalTrackingController):
     
 
     def setup_robot(self, X0):
-        from dynamic_env.robot import BaseRobotDyn
+        from safe_control.dynamic_env.robot import BaseRobotDyn
         self.robot = BaseRobotDyn(
             X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
         
@@ -348,8 +348,8 @@ def single_agent_main(controller_type):
     unexpected_beh = tracking_controller.run_all_steps(tf=100)
 
 if __name__ == "__main__":
-    from utils import plotting
-    from utils import env
+    from safe_control.utils import plotting
+    from safe_control.utils import env
     import math
 
     single_agent_main(controller_type={'pos': 'cbf_qp'})

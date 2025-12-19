@@ -32,6 +32,8 @@ class DynamicUnicycle2D:
         '''
         self.dt = dt
         self.robot_spec = robot_spec
+        
+        self.robot_spec.setdefault('model', 'DynamicUnicycle2D')
 
         self.robot_spec.setdefault('a_max', 0.5)
         self.robot_spec.setdefault('w_max', 0.5)
