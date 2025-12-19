@@ -1,11 +1,11 @@
-from robots.robot import BaseRobot
+from safe_control.robots.robot import BaseRobot
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
 from shapely.geometry import Polygon, Point, LineString
 from shapely import is_valid_reason
-from utils.geometry import custom_merge
+from safe_control.utils.geometry import custom_merge
 
 class BaseRobotDyn(BaseRobot):
 

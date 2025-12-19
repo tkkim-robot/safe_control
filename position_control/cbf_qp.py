@@ -84,6 +84,13 @@ class CBFQP:
         self.cbf_controller = cp.Problem(objective, constraints)
 
     def solve_control_problem(self, robot_state, control_ref, obs_list):
+        if obs_list is None:
+            self.u_ref.value = control_ref['u_ref']
+            if self.robot_spec['model'] in ['Quad3D']:
+                 self.u_ref.value = np.vstack((self.u_ref.value, self.u_ref.value)) # Hack for Quad3D dimension mismatch if any
+            self.status = 'optimal'
+            return self.u_ref.value
+
         for i in range(min(self.num_obs, len(obs_list))):
             obs = obs_list[i]
             # 3. Update the CBF constraints
