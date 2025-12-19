@@ -19,7 +19,7 @@ import matplotlib.patches as patches
 from matplotlib.patches import Polygon as MplPolygon
 
 try:
-    from robots.dynamic_bicycle2D import DynamicBicycle2D, angle_normalize
+    from safe_control.robots.dynamic_bicycle2D import DynamicBicycle2D, angle_normalize
 except ImportError:
     from safe_control.robots.dynamic_bicycle2D import DynamicBicycle2D, angle_normalize
 
@@ -48,6 +48,7 @@ class DriftingCar:
         self.dt = dt
         self.ax = ax
         self.robot_spec = robot_spec.copy()
+        self.robot_spec['model'] = 'DriftingCar' # overwrite it
         
         # Initialize dynamics model
         self.dynamics = DynamicBicycle2D(dt, self.robot_spec)
