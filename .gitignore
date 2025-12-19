@@ -6,6 +6,7 @@ __pycache__/
 *.csv
 *.egg-info/
 .DS_Store
+uv.lock
 
 # Ignore directories and files with "images" in their name
 output/

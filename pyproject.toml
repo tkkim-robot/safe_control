@@ -1,0 +1,27 @@
+[project]
+name = "safe_control"
+version = "0.1.0"
+description = "Safe Control Library"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy==1.26.4",
+    "scipy",
+    "matplotlib",
+    "cvxpy",
+    "casadi",
+    "do-mpc[full]>=5.1.1",
+    "shapely>=2.0.7",
+    "gurobipy",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["safe_control", "safe_control.utils", "safe_control.robots", "safe_control.position_control", "safe_control.attitude_control", "safe_control.shielding", "safe_control.envs"]
+package-dir = {"safe_control" = "."}
+
+[tool.uv]
+dev-dependencies = []
