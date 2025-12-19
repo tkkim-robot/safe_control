@@ -250,7 +250,7 @@ class LocalTrackingController:
     def set_unknown_obs(self, unknown_obs):
         unknown_obs = np.array(unknown_obs)
         if unknown_obs.shape[1] == 3:
-            zeros = np.zeors((unknown_obs.shape[0], 2))
+            zeros = np.zeros((unknown_obs.shape[0], 4))
             unknown_obs = np.hstack((unknown_obs, zeros))
         self.unknown_obs = unknown_obs
         for obs_info in self.unknown_obs:

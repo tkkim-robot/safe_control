@@ -689,7 +689,7 @@ class BaseRobot:
         center = (leftmost_most + rightmost_point) / 2
         radius = np.linalg.norm(rightmost_point - leftmost_most) / 2
 
-        self.detected_obs = [center[0], center[1], radius]
+        self.detected_obs = [center[0], center[1], radius, 0, 0, 0, 0]
         return self.detected_obs
 
     def calculate_fov_points(self):
