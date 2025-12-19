@@ -47,6 +47,7 @@ class DynamicBicycle2D:
         """
         self.dt = dt
         self.robot_spec = robot_spec
+        self.robot_spec.setdefault('model', 'DynamicBicycle2D')
         
         # Vehicle geometry
         self.robot_spec.setdefault('a', 1.6)  # Front axle to CG [m]
