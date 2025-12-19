@@ -122,16 +122,16 @@ class LocalTrackingController:
         self.setup_robot(X0)
         self.num_constraints = 5 # number of max obstacle constraints to consider in the controller
         if self.pos_controller_type == 'cbf_qp':
-            from position_control.cbf_qp import CBFQP
+            from safe_control.position_control.cbf_qp import CBFQP
             self.pos_controller = CBFQP(self.robot, self.robot_spec)
         elif self.pos_controller_type == 'mpc_cbf':
-            from position_control.mpc_cbf import MPCCBF
+            from safe_control.position_control.mpc_cbf import MPCCBF
             self.pos_controller = MPCCBF(self.robot, self.robot_spec, show_mpc_traj=self.show_mpc_traj)
         elif self.pos_controller_type == 'optimal_decay_cbf_qp':
-            from position_control.optimal_decay_cbf_qp import OptimalDecayCBFQP
+            from safe_control.position_control.optimal_decay_cbf_qp import OptimalDecayCBFQP
             self.pos_controller = OptimalDecayCBFQP(self.robot, self.robot_spec)
         elif self.pos_controller_type == 'optimal_decay_mpc_cbf':
-            from position_control.optimal_decay_mpc_cbf import OptimalDecayMPCCBF
+            from safe_control.position_control.optimal_decay_mpc_cbf import OptimalDecayMPCCBF
             self.pos_controller = OptimalDecayMPCCBF(self.robot, self.robot_spec)
         else:
             raise ValueError(
@@ -139,23 +139,23 @@ class LocalTrackingController:
             
         if self.enable_rotation and self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
             if self.att_controller_type == 'simple':
-                from attitude_control.simple_attitude import SimpleAtt
+                from safe_control.attitude_control.simple_attitude import SimpleAtt
                 self.att_controller = SimpleAtt(self.robot, self.robot_spec)
             elif self.att_controller_type == 'velocity_tracking_yaw':
-                from attitude_control.velocity_tracking_yaw import VelocityTrackingYaw
+                from safe_control.attitude_control.velocity_tracking_yaw import VelocityTrackingYaw
                 self.att_controller = VelocityTrackingYaw(self.robot, self.robot_spec)
             elif self.att_controller_type == 'visibility_raycast':
                 from safe_control.attitude_control.visibility_raycast import VisibilityRayCastAtt
                 self.att_controller = VisibilityRayCastAtt(self.robot, self.robot_spec)
             elif self.att_controller_type == 'visibility_area':
-                from attitude_control.visibility_area import VisibilityAreaAtt
+                from safe_control.attitude_control.visibility_area import VisibilityAreaAtt
                 self.att_controller = VisibilityAreaAtt(self.robot, self.robot_spec)
             elif self.att_controller_type == 'gatekeeper':
-                from attitude_control.gatekeeper_attitude import GatekeeperAtt
+                from safe_control.attitude_control.gatekeeper_attitude import GatekeeperAtt
                 self.att_controller = GatekeeperAtt(self.robot, self.robot_spec)
                 self.att_controller.setup_pos_controller(self.pos_controller)
             elif self.att_controller_type == 'visibility':
-                from attitude_control.visibility_promoting_yaw import VisibilityAtt
+                from safe_control.attitude_control.visibility_promoting_yaw import VisibilityAtt
                 self.att_controller = VisibilityAtt(self.robot, self.robot_spec)
                 
             else:
@@ -190,7 +190,7 @@ class LocalTrackingController:
             [], [], s=10, facecolors='g', edgecolors='g', alpha=0.5)
 
     def setup_robot(self, X0):
-        from robots.robot import BaseRobot
+        from safe_control.robots.robot import BaseRobot
         self.robot = BaseRobot(
             X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
 
@@ -637,235 +637,5 @@ class LocalTrackingController:
         return unexpected_beh
 
 
-def single_agent_main(controller_type):
-    dt = 0.05
-    model = 'DynamicUnicycle2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
-    waypoints = [
-        [2, 2, math.pi/2],
-        [2, 12, 0],
-        [12, 12, 0],
-        [12, 2, 0]
-    ]
-
-    # Define static obs
-    known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
-                        [10.0, 7.3, 0.4],
-                        [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
-
-    env_width = 14.0
-    env_height = 14.0
-    if model == 'SingleIntegrator2D':
-        robot_spec = {
-            'model': 'SingleIntegrator2D',
-            'v_max': 1.0,
-            'radius': 0.25
-        }
-    elif model == 'DoubleIntegrator2D':
-        robot_spec = {
-            'model': 'DoubleIntegrator2D',
-            'v_max': 1.0,
-            'a_max': 1.0,
-            'radius': 0.25,
-            'sensor': 'rgbd'
-        }
-    elif model == 'DynamicUnicycle2D':
-        robot_spec = {
-            'model': 'DynamicUnicycle2D',
-            'w_max': 0.5,
-            'a_max': 0.5,
-            'sensor': 'rgbd',
-            'radius': 0.25
-        }
-    elif model == 'KinematicBicycle2D':
-        robot_spec = {
-            'model': 'KinematicBicycle2D',
-            'a_max': 0.5,
-            'sensor': 'rgbd',
-            'radius': 0.5
-        }
-    elif model == 'Quad2D':
-        robot_spec = {
-            'model': 'Quad2D',
-            'f_min': 3.0,
-            'f_max': 10.0,
-            'sensor': 'rgbd',
-            'radius': 0.25
-        }
-    elif model == 'Quad3D':
-        robot_spec = {
-            'model': 'Quad3D',
-            'radius': 0.25
-        }
-        # override the waypoints with z axis
-        waypoints = [
-            [2, 2, 0, math.pi/2],
-            [2, 12, 1, 0],
-            [12, 12, -1, 0],
-            [12, 2, 0, 0]
-        ]
-    elif model == 'VTOL2D':
-        # VTOL has pretty different dynacmis, so create a special test case
-        robot_spec = {
-            'model': 'VTOL2D',
-            'radius': 0.6,
-            'v_max': 20.0,
-            'reached_threshold': 1.0 # meter
-        }
-        # override the waypoints and known_obs
-        waypoints = [
-            [2, 10],
-            [70, 10],
-            [70, 0.5]
-        ]
-        pillar_1_x = 67.0
-        pillar_2_x = 73.0
-        known_obs = np.array([
-            # [pillar_1_x, 1.0, 0.5],
-            # [pillar_1_x, 2.0, 0.5],
-            # [pillar_1_x, 3.0, 0.5],
-            # [pillar_1_x, 4.0, 0.5],
-            # [pillar_1_x, 5.0, 0.5],
-            [pillar_1_x, 6.0, 0.5],
-            [pillar_1_x, 7.0, 0.5],
-            [pillar_1_x, 8.0, 0.5],
-            [pillar_1_x, 9.0, 0.5],
-            [pillar_2_x, 1.0, 0.5],
-            [pillar_2_x, 2.0, 0.5],
-            [pillar_2_x, 3.0, 0.5],
-            [pillar_2_x, 4.0, 0.5],
-            [pillar_2_x, 5.0, 0.5],
-            [pillar_2_x, 6.0, 0.5],
-            [pillar_2_x, 7.0, 0.5],
-            [pillar_2_x, 8.0, 0.5],
-            [pillar_2_x, 9.0, 0.5],
-            [pillar_2_x, 10.0, 0.5],
-            [pillar_2_x, 11.0, 0.5],
-            [pillar_2_x, 12.0, 0.5],
-            [pillar_2_x, 13.0, 0.5],
-            [pillar_2_x, 14.0, 0.5],
-            [pillar_2_x, 15.0, 0.5],
-            [60.0, 12.0, 1.5]
-        ])
-
-        env_width = 75.0
-        env_height = 20.0
-        plt.rcParams['figure.figsize'] = [12, 5]
-
-    waypoints = np.array(waypoints, dtype=np.float64)
-
-    if model in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'Quad2D', 'Quad3D']:
-        x_init = waypoints[0]
-    elif model == 'VTOL2D':
-        v_init = robot_spec['v_max'] # m/s
-        x_init = np.hstack((waypoints[0][0:2], 0.0, v_init, 0.0, 0.0))
-    else:
-        x_init = np.append(waypoints[0], 1.0)
-    
-    if len(known_obs) > 0 and known_obs.shape[1] != 7:
-        known_obs = np.hstack((known_obs, np.zeros((known_obs.shape[0], 4)))) # Set static obs velocity 0.0 at (5, 5)
-
-    plot_handler = plotting.Plotting(width=env_width, height=env_height, known_obs=known_obs)
-    ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here
-    env_handler = env.Env()
-
-    tracking_controller = LocalTrackingController(x_init, robot_spec,
-                                                  controller_type=controller_type,
-                                                  dt=dt,
-                                                  show_animation=True,
-                                                  save_animation=False,
-                                                  show_mpc_traj=False,
-                                                  ax=ax, fig=fig,
-                                                  env=env_handler)
-
-    # Set obstacles
-    tracking_controller.obs = known_obs
-    # tracking_controller.set_unknown_obs(unknown_obs)
-    tracking_controller.set_waypoints(waypoints)
-    unexpected_beh = tracking_controller.run_all_steps(tf=100)
-
-def multi_agent_main(controller_type, save_animation=False):
-    dt = 0.05
-
-    # temporal
-    waypoints = [
-        [2, 2, 0],
-        [2, 12, 0],
-        [12, 12, 0],
-        [12, 2, 0]
-    ]
-    waypoints = np.array(waypoints, dtype=np.float64)
-
-    x_init = waypoints[0]
-    x_goal = waypoints[-1]
-
-    plot_handler = plotting.Plotting()
-    ax, fig = plot_handler.plot_grid("")
-    env_handler = env.Env()
-
-    robot_spec = {
-        'model': 'DynamicUnicycle2D', #'DoubleIntegrator2D'
-        'w_max': 0.5,
-        'a_max': 0.5,
-        'sensor': 'rgbd',
-        'fov_angle': 45.0,
-        'cam_range': 3.0,
-        'radius': 0.25
-    }
-
-    robot_spec['robot_id'] = 0
-    controller_0 = LocalTrackingController(x_init, robot_spec,
-                                           controller_type=controller_type,
-                                           dt=dt,
-                                           show_animation=True,
-                                           save_animation=save_animation,
-                                           ax=ax, fig=fig,
-                                           env=env_handler)
-
-    robot_spec = {
-        'model': 'DynamicUnicycle2D', #'DoubleIntegrator2D'
-        'w_max': 1.0,
-        'a_max': 1.5,
-        'v_max': 2.0,
-        'sensor': 'rgbd',
-        'fov_angle': 90.0,
-        'cam_range': 5.0,
-        'radius': 0.25
-    }
-
-    robot_spec['robot_id'] = 1
-    controller_1 = LocalTrackingController(x_goal, robot_spec,
-                                           controller_type=controller_type,
-                                           dt=dt,
-                                           show_animation=True,
-                                           save_animation=False,
-                                           ax=ax, fig=fig,
-                                           env=env_handler)
-
-    # unknown_obs = np.array([[9.0, 8.8, 0.3]])
-    # tracking_controller.set_unknown_obs(unknown_obs)
-    controller_0.set_waypoints(waypoints)
-    controller_1.set_waypoints(waypoints[::-1])
-    tf = 50
-    for _ in range(int(tf / dt)):
-        ret_list = []
-        ret_list.append(controller_0.control_step())
-        ret_list.append(controller_1.control_step())
-        controller_0.draw_plot()
-        # if all elements of ret_list are -1, break
-        if all([ret == -1 for ret in ret_list]):
-            break
-
-    if save_animation:
-        controller_0.export_video()
-
-
-if __name__ == "__main__":
-    from utils import plotting
-    from utils import env
-    import math
-
-    #single_agent_main(controller_type={'pos': 'cbf_qp'})
-    single_agent_main(controller_type={'pos': 'mpc_cbf'})
-    # single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'gatekeeper'}) # only Integrators have attitude controller, otherwise ignored
     
