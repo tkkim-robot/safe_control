@@ -35,6 +35,8 @@ class MPCC:
         """
         self.robot = robot
         self.robot_spec = robot_spec
+        if self.robot_spec.get('model') != 'DriftingCar':
+             raise NotImplementedError("MPCC is only implemented for DriftingCar model.")
         self.status = 'optimal'
         self.show_mpc_traj = show_mpc_traj
         
