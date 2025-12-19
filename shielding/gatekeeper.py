@@ -194,10 +194,7 @@ class Gatekeeper:
         Returns:
             next_state: State after one timestep
         """
-        try:
-            from robots.dynamic_bicycle2D import DynamicBicycle2D
-        except ImportError:
-            from safe_control.robots.dynamic_bicycle2D import DynamicBicycle2D
+        from safe_control.robots.dynamic_bicycle2D import DynamicBicycle2D
         
         state = np.array(state).flatten()
         control = np.array(control).flatten()

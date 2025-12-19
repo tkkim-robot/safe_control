@@ -95,6 +95,8 @@ class LaneChangeController(BackupController):
             direction: 'left' or 'right' lane change direction
         """
         super().__init__(robot_spec, dt)
+        if self.robot_spec.get('model') != 'DriftingCar':
+            raise NotImplementedError("LaneChangeController is only implemented for DriftingCar model.")
         self.direction = direction
         
         # Cascaded control gains (tuned for smooth lane change)
@@ -270,6 +272,9 @@ class StoppingController(BackupController):
             dt: Time step for simulation
         """
         super().__init__(robot_spec, dt)
+        if self.robot_spec.get('model') != 'DriftingCar':
+            raise NotImplementedError("StoppingController is only implemented for DriftingCar model.")
+
         
         # Braking control gains
         self.Kp_v = 1000.0     # Proportional gain for velocity -> torque (braking)
@@ -405,108 +410,4 @@ class StoppingController(BackupController):
     def get_behavior_name(self):
         return "Stopping"
 
-
-class BackupControllerManager:
-    """
-    Manager for backup controllers with trajectory visualization.
-    """
-    
-    def __init__(self, robot_spec, dt, ax=None):
-        """
-        Initialize the backup controller manager.
-        
-        Args:
-            robot_spec: Dictionary with robot specifications
-            dt: Time step
-            ax: Matplotlib axis for visualization (optional)
-        """
-        self.robot_spec = robot_spec
-        self.dt = dt
-        self.ax = ax
-        
-        # Available backup controllers
-        self.controllers = {}
-        
-        # Visualization handles
-        self.backup_traj_line = None
-        self.backup_traj_points = None
-        
-        # Default backup horizon
-        self.backup_horizon = 100  # steps
-        
-        if ax is not None:
-            self._setup_visualization()
-    
-    def _setup_visualization(self):
-        """Setup visualization handles for backup trajectory."""
-        # Backup trajectory line (distinct color - orange/yellow)
-        self.backup_traj_line, = self.ax.plot(
-            [], [], 'o-', color='orange', linewidth=2, alpha=0.7,
-            markersize=3, markerfacecolor='yellow', markeredgecolor='orange',
-            label='Backup trajectory', zorder=7
-        )
-    
-    def add_controller(self, name, controller):
-        """
-        Add a backup controller.
-        
-        Args:
-            name: Name/identifier for the controller
-            controller: BackupController instance
-        """
-        self.controllers[name] = controller
-    
-    def create_lane_change_controller(self, direction='left'):
-        """
-        Create and add a lane change controller.
-        
-        Args:
-            direction: 'left' or 'right'
-            
-        Returns:
-            The created controller
-        """
-        name = f'lane_change_{direction}'
-        controller = LaneChangeController(self.robot_spec, self.dt, direction)
-        self.add_controller(name, controller)
-        return controller
-    
-    def simulate_backup(self, controller_name, current_state, target, horizon=None, friction=1.0):
-        """
-        Simulate backup trajectory using specified controller.
-        
-        Args:
-            controller_name: Name of the controller to use
-            current_state: Current robot state
-            target: Target for the controller
-            horizon: Simulation horizon (uses default if None)
-            friction: Current friction coefficient
-            
-        Returns:
-            trajectory: Simulated trajectory (8 x horizon+1)
-        """
-        if controller_name not in self.controllers:
-            raise ValueError(f"Unknown controller: {controller_name}")
-        
-        controller = self.controllers[controller_name]
-        horizon = horizon or self.backup_horizon
-        
-        return controller.simulate_trajectory(current_state, target, horizon, friction)
-    
-    def update_visualization(self, trajectory):
-        """
-        Update the backup trajectory visualization.
-        
-        Args:
-            trajectory: Trajectory to visualize (8 x N)
-        """
-        if self.backup_traj_line is not None:
-            # Extract x, y positions
-            x = trajectory[0, :]
-            y = trajectory[1, :]
-            self.backup_traj_line.set_data(x, y)
-    
-    def set_backup_horizon(self, horizon):
-        """Set the backup trajectory horizon."""
-        self.backup_horizon = horizon
 
