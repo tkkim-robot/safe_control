@@ -77,6 +77,10 @@ class Gatekeeper:
         # Environment for collision checking (will be set externally)
         self.env = None
         
+        # Moving obstacles (for forward simulation during validation)
+        # Each obstacle: {'x': x, 'y': y, 'vx': vx, 'vy': vy, 'radius': r} or similar
+        self.moving_obstacles = None  # Set via set_moving_obstacles()
+        
         # Timing
         self.next_event_time = 0.0
         self.current_time_idx = int(backup_horizon / dt)  # Start from backup (safe init)
@@ -365,13 +369,27 @@ class Gatekeeper:
         
         return self.candidate_x_traj, self.candidate_u_traj, actual_nominal_steps
     
-    def _is_collision(self, state, safety_margin=0.0):
+    def set_moving_obstacles(self, obstacles):
+        """
+        Set moving obstacles for forward simulation during validation.
+        
+        Args:
+            obstacles: List of obstacle state dicts or callable that returns them.
+                       Each dict should have: 'x', 'y', 'vx', 'vy', and size info.
+                       If callable, will be called each validation step.
+        """
+        self.moving_obstacles = obstacles
+    
+    def _is_collision(self, state, safety_margin=0.0, obstacle_state=None):
         """
         Check if a state collides with obstacles or boundaries.
         
         Args:
-            state: State vector [x, y, theta, ...]
+            state: State vector [x, y, theta, ...] or [x, y, vx, vy]
             safety_margin: Additional buffer distance for conservative checking
+            obstacle_state: Optional dict with obstacle position at this timestep
+                           {'x': x, 'y': y, 'length': l, 'width': w} for rectangular
+                           or {'x': x, 'y': y, 'radius': r} for circular
             
         Returns:
             bool: True if collision detected
@@ -387,21 +405,97 @@ class Gatekeeper:
             if self.env.check_collision(position, robot_radius):
                 return True
         
-        # Check obstacle collision
+        # Check static obstacle collision (from environment)
         if hasattr(self.env, 'check_obstacle_collision'):
             collision, _ = self.env.check_obstacle_collision(position, robot_radius)
             if collision:
                 return True
         
+        # Check moving obstacle collision (if provided)
+        if obstacle_state is not None:
+            collision = self._check_moving_obstacle_collision(
+                position, robot_radius, obstacle_state
+            )
+            if collision:
+                return True
+        
         return False
     
-    def _is_candidate_valid(self, candidate_x_traj, safety_margin=1.0):
+    def _check_moving_obstacle_collision(self, position, robot_radius, obstacle):
+        """
+        Check collision with a moving obstacle at a specific state.
+        
+        Args:
+            position: Robot position [x, y]
+            robot_radius: Robot collision radius
+            obstacle: Dict with obstacle state at this timestep
+            
+        Returns:
+            bool: True if collision detected
+        """
+        x, y = position[0], position[1]
+        obs_x = obstacle.get('x', 0)
+        obs_y = obstacle.get('y', 0)
+        
+        # Check for rectangular obstacle (like bullet bill)
+        if 'length' in obstacle and 'width' in obstacle:
+            obs_length = obstacle['length']
+            obs_width = obstacle['width']
+            
+            # Rectangular hitbox
+            obs_x_min = obs_x - obs_length / 2
+            obs_x_max = obs_x + obs_length / 2
+            obs_y_min = obs_y - obs_width / 2
+            obs_y_max = obs_y + obs_width / 2
+            
+            # Check rectangle-circle collision
+            closest_x = np.clip(x, obs_x_min, obs_x_max)
+            closest_y = np.clip(y, obs_y_min, obs_y_max)
+            dist = np.sqrt((x - closest_x)**2 + (y - closest_y)**2)
+            
+            return dist < robot_radius
+        else:
+            # Circular obstacle
+            obs_radius = obstacle.get('radius', 1.0)
+            dist = np.sqrt((x - obs_x)**2 + (y - obs_y)**2)
+            return dist < (robot_radius + obs_radius)
+    
+    def _forward_simulate_obstacle(self, obstacle_state, n_steps):
+        """
+        Forward simulate obstacle positions for n_steps.
+        
+        Args:
+            obstacle_state: Initial obstacle state dict with 'x', 'y', 'vx', 'vy'
+            n_steps: Number of timesteps to simulate
+            
+        Returns:
+            list: List of obstacle state dicts for each timestep
+        """
+        states = []
+        obs = obstacle_state.copy()
+        
+        for i in range(n_steps):
+            # Create state dict for this timestep
+            step_state = obs.copy()
+            states.append(step_state)
+            
+            # Advance position
+            obs = obs.copy()
+            obs['x'] = obs.get('x', 0) + obs.get('vx', 0) * self.dt
+            obs['y'] = obs.get('y', 0) + obs.get('vy', 0) * self.dt
+        
+        return states
+    
+    def _is_candidate_valid(self, candidate_x_traj, safety_margin=1.0, obstacle_state=None):
         """
         Check if the candidate trajectory is valid (collision-free).
         
         Args:
             candidate_x_traj: Trajectory to validate (n_steps, n_states)
             safety_margin: Additional buffer distance for conservative checking
+            obstacle_state: Optional initial obstacle state for forward simulation.
+                           If provided, obstacle will be forward-simulated alongside
+                           the robot trajectory for time-synchronized collision checking.
             
         Returns:
             bool: True if trajectory is valid (collision-free)
@@ -409,8 +503,17 @@ class Gatekeeper:
         if candidate_x_traj is None or len(candidate_x_traj) == 0:
             return True
         
-        for state in candidate_x_traj:
-            if self._is_collision(state, safety_margin):
+        # Forward simulate obstacle if provided
+        obstacle_states = None
+        if obstacle_state is not None:
+            obstacle_states = self._forward_simulate_obstacle(
+                obstacle_state, len(candidate_x_traj)
+            )
+        
+        # Check each timestep
+        for i, state in enumerate(candidate_x_traj):
+            obs_at_t = obstacle_states[i] if obstacle_states else None
+            if self._is_collision(state, safety_margin, obs_at_t):
                 return False
         
         return True
