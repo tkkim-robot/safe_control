@@ -431,17 +431,67 @@ def is_trajectory_valid(x_traj: np.ndarray, obstacle_state: Dict,
     return True
 
 
+def find_first_collision_step(x_traj: np.ndarray, obstacle_state: Dict,
+                               env: EvadeEnv, robot_radius: float, 
+                               dt: float, safety_margin: float = 0.5) -> int:
+    """Find the first step where collision occurs. Returns -1 if no collision."""
+    radius = robot_radius + safety_margin
+    
+    for i, state in enumerate(x_traj):
+        pos = state[:2]
+        
+        # Check boundary collision
+        if env.check_collision(pos, radius):
+            return i
+        
+        # Check moving obstacle collision
+        obs_x = obstacle_state['x'] + obstacle_state.get('vx', 0) * i * dt
+        obs_y = obstacle_state['y'] + obstacle_state.get('vy', 0) * i * dt
+        
+        # Handle multiple respawns
+        hallway_length = env.hallway_length
+        bullet_length = obstacle_state['length']
+        respawn_threshold = hallway_length + bullet_length
+        bullet_start = env.bullet_start_x
+        cycle_length = respawn_threshold - bullet_start
+        
+        if obs_x > respawn_threshold:
+            obs_x = bullet_start + (obs_x - bullet_start) % cycle_length
+        
+        # Rectangle-circle collision
+        obs_length = obstacle_state['length']
+        obs_width = obstacle_state['width']
+        obs_x_min = obs_x - obs_length / 2
+        obs_x_max = obs_x + obs_length / 2 + obs_length / 3
+        obs_y_min = obs_y - obs_width / 2
+        obs_y_max = obs_y + obs_width / 2
+        
+        closest_x = np.clip(pos[0], obs_x_min, obs_x_max)
+        closest_y = np.clip(pos[1], obs_y_min, obs_y_max)
+        dist = np.sqrt((pos[0] - closest_x)**2 + (pos[1] - closest_y)**2)
+        
+        if dist < radius:
+            return i
+    
+    return -1  # No collision
+
+
 def solve_gatekeeper(robot_state: np.ndarray, obstacle_state: Dict,
                      state: ShieldingState, config: TestConfig, env: EvadeEnv,
                      pocket_center: np.ndarray, pocket_bounds: Dict, 
                      goal_bounds: Dict, ax: plt.Axes) -> np.ndarray:
     """
-    Gatekeeper algorithm with backward search for maximum valid nominal horizon.
+    Gatekeeper algorithm with OPTIMIZED backward search.
+    
+    Optimization:
+    1. First try full nominal horizon - if valid, done in 1 iteration
+    2. If collision found, start backward search from collision step
     """
     robot_state = np.array(robot_state).flatten()
     robot_spec = config.robot.to_dict()
     dt = config.simulation.dt
     backup_steps = int(config.simulation.backup_horizon_time / dt)
+    nominal_horizon_steps = backup_steps  # Use full backup horizon as max nominal
     
     # Initialize committed trajectory if needed
     if state.committed_x_traj is None:
@@ -460,49 +510,75 @@ def solve_gatekeeper(robot_state: np.ndarray, obstacle_state: Dict,
                       state.current_time_idx >= len(state.committed_u_traj))
     
     if should_evaluate:
-        # Try nominal+backup trajectory with backward search
-        found_valid = False
-        max_nominal_steps = backup_steps  # Use full backup horizon for nominal search
+        # STEP 1: Try full nominal horizon first (most common case - should be valid)
+        nominal_x, nominal_u = forward_simulate(
+            robot_state, 'nominal', nominal_horizon_steps, robot_spec, dt, pocket_center, pocket_bounds, goal_bounds
+        )
+        backup_x, backup_u = forward_simulate(
+            nominal_x[-1], 'backup', backup_steps, robot_spec, dt, pocket_center, pocket_bounds, goal_bounds
+        )
+        candidate_x = np.vstack([nominal_x, backup_x[1:]])
+        candidate_u = np.vstack([nominal_u, backup_u])
         
-        for nominal_steps in range(max_nominal_steps, -1, -1):
-            nominal_x, nominal_u = forward_simulate(
-                robot_state, 'nominal', nominal_steps, robot_spec, dt, pocket_center, pocket_bounds, goal_bounds
-            )
-            
-            # Append backup from end of nominal
-            if len(nominal_x) > 0:
-                backup_x, backup_u = forward_simulate(
-                    nominal_x[-1], 'backup', backup_steps, robot_spec, dt, pocket_center, pocket_bounds, goal_bounds
-                )
-                candidate_x = np.vstack([nominal_x, backup_x[1:]])
-                candidate_u = np.vstack([nominal_u, backup_u])
-            else:
-                candidate_x = nominal_x
-                candidate_u = nominal_u
-            
-            # Validate candidate
-            if is_trajectory_valid(candidate_x, obstacle_state, env, config.robot.radius, dt):
-                # Valid candidate found - commit to it
-                state.committed_x_traj = candidate_x
-                state.committed_u_traj = candidate_u
-                state.committed_horizon = nominal_steps * dt
-                state.current_time_idx = 0
-                state.next_event_time = config.simulation.event_offset
-                state.using_backup = (nominal_steps == 0)
-                found_valid = True
-                break
+        # Check for collision
+        collision_step = find_first_collision_step(candidate_x, obstacle_state, env, config.robot.radius, dt)
         
-        if not found_valid:
-            # No valid trajectory found - commit pure backup from current position
-            backup_x, backup_u = forward_simulate(
-                robot_state, 'backup', backup_steps, robot_spec, dt, pocket_center, pocket_bounds, goal_bounds
-            )
-            state.committed_x_traj = backup_x
-            state.committed_u_traj = backup_u
-            state.committed_horizon = 0.0
+        if collision_step == -1:
+            # No collision - full nominal is valid! Commit immediately (fast path)
+            state.committed_x_traj = candidate_x
+            state.committed_u_traj = candidate_u
+            state.committed_horizon = nominal_horizon_steps * dt
             state.current_time_idx = 0
             state.next_event_time = config.simulation.event_offset
-            state.using_backup = True
+            state.using_backup = False
+        else:
+            # STEP 2: Collision found - search backward from collision point
+            # Start search from just before collision in the NOMINAL portion
+            search_start = min(collision_step, nominal_horizon_steps) - 1
+            found_valid = False
+            
+            for nominal_steps in range(search_start, -1, -1):
+                # Reuse already-computed nominal trajectory up to this step
+                if nominal_steps > 0:
+                    truncated_nominal_x = nominal_x[:nominal_steps + 1]
+                    truncated_nominal_u = nominal_u[:nominal_steps]
+                    
+                    # Compute backup from this switching point
+                    backup_x2, backup_u2 = forward_simulate(
+                        truncated_nominal_x[-1], 'backup', backup_steps, robot_spec, dt, 
+                        pocket_center, pocket_bounds, goal_bounds
+                    )
+                    candidate_x2 = np.vstack([truncated_nominal_x, backup_x2[1:]])
+                    candidate_u2 = np.vstack([truncated_nominal_u, backup_u2])
+                else:
+                    # Pure backup
+                    candidate_x2, candidate_u2 = forward_simulate(
+                        robot_state, 'backup', backup_steps, robot_spec, dt, 
+                        pocket_center, pocket_bounds, goal_bounds
+                    )
+                
+                # Validate this candidate
+                if is_trajectory_valid(candidate_x2, obstacle_state, env, config.robot.radius, dt):
+                    state.committed_x_traj = candidate_x2
+                    state.committed_u_traj = candidate_u2
+                    state.committed_horizon = nominal_steps * dt
+                    state.current_time_idx = 0
+                    state.next_event_time = config.simulation.event_offset
+                    state.using_backup = (nominal_steps == 0)
+                    found_valid = True
+                    break
+            
+            if not found_valid:
+                # Fallback to pure backup
+                backup_x, backup_u = forward_simulate(
+                    robot_state, 'backup', backup_steps, robot_spec, dt, pocket_center, pocket_bounds, goal_bounds
+                )
+                state.committed_x_traj = backup_x
+                state.committed_u_traj = backup_u
+                state.committed_horizon = 0.0
+                state.current_time_idx = 0
+                state.next_event_time = config.simulation.event_offset
+                state.using_backup = True
     
     # Get control from committed trajectory
     if state.current_time_idx < len(state.committed_u_traj):
