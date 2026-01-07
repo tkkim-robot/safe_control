@@ -3,14 +3,18 @@ Created on December 17th, 2025
 @author: Taekyung Kim
 
 @description:
-Test script for Gatekeeper safety shielding with MPCC.
-Contains modular test cases to validate gatekeeper behavior under different conditions:
+Test script for safety shielding algorithms (Gatekeeper and MPS) in the drift_car environment.
+Contains modular test cases to validate shielding behavior under different conditions.
+
+Algorithms:
+- gatekeeper: Searches backward for maximum valid nominal horizon
+- mps: Model Predictive Shielding - uses single-step nominal horizon
 
 Test Cases:
-1. High Friction - Normal conditions, gatekeeper should avoid obstacle
-2. Low Friction - Slippery surface everywhere, gatekeeper should still avoid obstacle
-3. Puddle Surprise - Puddle in front of obstacle causes gatekeeper to fail
-   (demonstrates limitation: gatekeeper plans with current friction estimate)
+1. High Friction - Normal conditions, algorithm should avoid obstacle
+2. Low Friction - Slippery surface everywhere, algorithm should still avoid obstacle
+3. Puddle Surprise - Puddle in front of obstacle causes algorithm to fail
+   (demonstrates limitation: algorithm plans with current friction estimate)
 
 Backup Controllers:
 - lane_change: Lane change to left lane (avoids obstacle by changing lanes)
@@ -21,35 +25,46 @@ Number of Obstacles:
 - 2: Two obstacles - one in middle lane, one in left lane (blocks lane change backup)
 
 Usage:
-    uv run python mpcbf/examples/test_gatekeeper.py [--test TEST] [--backup BACKUP] [--obs NUM] [--save]
+    uv run python examples/drift_car/test_drift.py [--test TEST] [--algo ALGO] [--backup BACKUP] [--obs NUM] [--save]
 
 Examples:
-    # Test with lane change backup (default)
-    uv run python mpcbf/examples/test_gatekeeper.py --test high_friction --backup lane_change
+    # Test with gatekeeper (default)
+    uv run python examples/drift_car/test_drift.py --test high_friction --algo gatekeeper
+    
+    # Test with MPS algorithm
+    uv run python examples/drift_car/test_drift.py --test high_friction --algo mps
     
     # Test with stopping backup (expected to fail in puddle scenario)
-    uv run python mpcbf/examples/test_gatekeeper.py --test puddle_surprise --backup stop
+    uv run python examples/drift_car/test_drift.py --test puddle_surprise --backup stop
     
     # Test with 2 obstacles (lane change will fail due to blocked left lane)
-    uv run python mpcbf/examples/test_gatekeeper.py --test high_friction --backup lane_change --obs 2
+    uv run python examples/drift_car/test_drift.py --test high_friction --backup lane_change --obs 2
     
     # Save animation
-    uv run python mpcbf/examples/test_gatekeeper.py --test high_friction --save
+    uv run python examples/drift_car/test_drift.py --test high_friction --save
 
-@required-scripts: safe_control/shielding/gatekeeper.py, safe_control/position_control/mpcc.py
+@required-scripts: safe_control/shielding/gatekeeper.py, safe_control/shielding/mps.py
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
 from dataclasses import dataclass
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional, Tuple, Dict, Any, Union
 
 from safe_control.envs.drifting_env import DriftingEnv
 from safe_control.robots.drifting_car import DriftingCar, DriftingCarSimulator
 from safe_control.position_control.mpcc import MPCC
 from safe_control.position_control.backup_controller import LaneChangeController, StoppingController
 from safe_control.shielding.gatekeeper import Gatekeeper
+from safe_control.shielding.mps import MPS
 from safe_control.utils.animation import AnimationSaver
+
+
+# =============================================================================
+# Algorithm Types
+# =============================================================================
+
+ALGO_TYPES = ['gatekeeper', 'mps']
 
 
 # =============================================================================
@@ -176,6 +191,7 @@ class TestConfig:
     save_animation: bool = False  # Whether to save animation as video
     backup_type: str = 'lane_change'  # Backup controller type: 'lane_change' or 'stop'
     num_obstacles: int = 1  # Number of obstacles to use
+    algo_type: str = 'gatekeeper'  # Algorithm type: 'gatekeeper' or 'mps'
 
 
 # =============================================================================
@@ -196,7 +212,8 @@ def setup_environment(config: TestConfig) -> Tuple[DriftingEnv, plt.Axes, plt.Fi
     
     plt.ion()
     ax, fig = env.setup_plot()
-    fig.canvas.manager.set_window_title(f'Gatekeeper Test: {config.name}')
+    algo_name = config.algo_type.upper()
+    fig.canvas.manager.set_window_title(f'{algo_name} Test: {config.name}')
     
     return env, ax, fig
 
@@ -230,8 +247,8 @@ def setup_controllers(
     middle_lane_y: float,
     left_lane_y: float,
     ax: plt.Axes
-) -> Tuple[MPCC, Gatekeeper]:
-    """Setup MPCC and Gatekeeper controllers."""
+) -> Tuple[MPCC, Union[Gatekeeper, MPS]]:
+    """Setup MPCC and shielding controller (Gatekeeper or MPS)."""
     sim = config.simulation
     robot_spec = config.vehicle.to_dict()
     
@@ -264,19 +281,32 @@ def setup_controllers(
         backup_target = left_lane_y
         print(f"  Using LANE CHANGE backup controller (target y={left_lane_y:.2f})")
     
-    # Gatekeeper
-    gatekeeper = Gatekeeper(
-        robot=car,
-        robot_spec=car.robot_spec,
-        dt=sim.dt,
-        backup_horizon=sim.backup_horizon_time,
-        event_offset=sim.event_offset,
-        ax=ax
-    )
-    gatekeeper.set_backup_controller(backup_controller, target=backup_target)
-    gatekeeper.set_environment(env)
+    # Shielding algorithm - choose based on config
+    if config.algo_type == 'mps':
+        shielding = MPS(
+            robot=car,
+            robot_spec=car.robot_spec,
+            dt=sim.dt,
+            backup_horizon=sim.backup_horizon_time,
+            event_offset=sim.event_offset,
+            ax=ax
+        )
+        print(f"  Using MPS algorithm (one-step nominal horizon)")
+    else:  # 'gatekeeper' (default)
+        shielding = Gatekeeper(
+            robot=car,
+            robot_spec=car.robot_spec,
+            dt=sim.dt,
+            backup_horizon=sim.backup_horizon_time,
+            event_offset=sim.event_offset,
+            ax=ax
+        )
+        print(f"  Using GATEKEEPER algorithm (backward search)")
     
-    return mpcc, gatekeeper
+    shielding.set_backup_controller(backup_controller, target=backup_target)
+    shielding.set_environment(env)
+    
+    return mpcc, shielding
 
 
 def setup_obstacles_and_puddles(
@@ -343,7 +373,7 @@ def run_simulation(
     car: DriftingCar,
     env: DriftingEnv,
     mpcc: MPCC,
-    gatekeeper: Gatekeeper,
+    shielding: Union[Gatekeeper, MPS],
     simulator: DriftingCarSimulator,
     ref_horizon_line,
     mpc_pred_line,
@@ -388,16 +418,16 @@ def run_simulation(
             pred_states, pred_controls = mpcc.get_full_predictions()
             
             if pred_states is not None and pred_controls is not None:
-                gatekeeper.set_nominal_trajectory(pred_states, pred_controls)
+                shielding.set_nominal_trajectory(pred_states, pred_controls)
         except Exception as e:
             print(f"MPCC error: {e}")
             pred_states, pred_controls = None, None
         
-        # Gatekeeper validates and returns committed control
-        U = gatekeeper.solve_control_problem(state, friction=car.get_friction())
+        # Shielding validates and returns committed control
+        U = shielding.solve_control_problem(state, friction=car.get_friction())
         
         # Track mode
-        if gatekeeper.is_using_backup():
+        if shielding.is_using_backup():
             backup_steps += 1
         else:
             nominal_steps += 1
@@ -424,7 +454,7 @@ def run_simulation(
         # Status output
         if step % 50 == 0:
             V = car.get_velocity()
-            status = gatekeeper.get_status()
+            status = shielding.get_status()
             mode = "BACKUP" if status['using_backup'] else "NOMINAL"
             print(f"Step {step:4d}: x={pos[0]:6.2f}, y={pos[1]:6.2f}, V={V:5.2f} m/s, mode={mode}")
         
@@ -472,7 +502,7 @@ def run_test(config: TestConfig) -> Dict[str, Any]:
     # Setup
     env, ax, fig = setup_environment(config)
     car, X0, middle_lane_y, left_lane_y = setup_vehicle(config, env, ax)
-    mpcc, gatekeeper = setup_controllers(config, car, env, middle_lane_y, left_lane_y, ax)
+    mpcc, shielding = setup_controllers(config, car, env, middle_lane_y, left_lane_y, ax)
     setup_obstacles_and_puddles(config, env, middle_lane_y, left_lane_y)
     ref_horizon_line, mpc_pred_line = setup_visualization(ax, env, middle_lane_y, left_lane_y)
     
@@ -489,6 +519,7 @@ def run_test(config: TestConfig) -> Dict[str, Any]:
     
     # Print configuration
     print(f"\nConfiguration:")
+    print(f"  Algorithm: {config.algo_type}")
     print(f"  Friction: μ = {config.vehicle.mu}")
     print(f"  Obstacles: {config.num_obstacles}")
     print(f"  Puddles: {len(config.puddles)}")
@@ -497,7 +528,7 @@ def run_test(config: TestConfig) -> Dict[str, Any]:
     
     # Run simulation
     results = run_simulation(
-        config, car, env, mpcc, gatekeeper, simulator,
+        config, car, env, mpcc, shielding, simulator,
         ref_horizon_line, mpc_pred_line, ax, fig, animation_saver
     )
     
@@ -600,10 +631,13 @@ def create_puddle_surprise_test() -> TestConfig:
 def main():
     import argparse
     
-    parser = argparse.ArgumentParser(description='Test Gatekeeper safety shielding')
+    parser = argparse.ArgumentParser(description='Test safety shielding algorithms (Gatekeeper/MPS)')
     parser.add_argument('--test', type=str, default='high_friction',
                         choices=['high_friction', 'low_friction', 'puddle_surprise', 'all'],
                         help='Which test to run')
+    parser.add_argument('--algo', type=str, default='gatekeeper',
+                        choices=ALGO_TYPES,
+                        help='Shielding algorithm: gatekeeper (default) or mps')
     parser.add_argument('--backup', type=str, default='lane_change',
                         choices=BACKUP_TYPES,
                         help='Backup controller type: lane_change (default) or stop')
@@ -648,24 +682,25 @@ def main():
     
     if args.test == 'all':
         print("\n" + "=" * 70)
-        print(f"  RUNNING ALL GATEKEEPER TESTS (backup: {args.backup}, obstacles: {args.obs})")
+        print(f"  RUNNING ALL {args.algo.upper()} TESTS (backup: {args.backup}, obstacles: {args.obs})")
         print("=" * 70)
         
         for name, create_config in test_configs.items():
             config = create_config()
             config.save_animation = args.save
+            config.algo_type = args.algo
             config.backup_type = args.backup
             config.num_obstacles = args.obs
             # Update expected collision based on configuration
             config.expected_collision = get_expected_collision(name, args.backup, args.obs)
-            # Update name to include backup type and obstacle count
-            config.name = f"{config.name} ({args.backup}, {args.obs} obs)"
+            # Update name to include algo, backup type and obstacle count
+            config.name = f"{config.name} ({args.algo}, {args.backup}, {args.obs} obs)"
             results[name] = run_test(config)
             input("\nPress Enter to continue to next test...")
         
         # Summary
         print("\n" + "=" * 70)
-        print(f"  TEST SUMMARY (backup: {args.backup}, obstacles: {args.obs})")
+        print(f"  TEST SUMMARY ({args.algo}, backup: {args.backup}, obstacles: {args.obs})")
         print("=" * 70)
         for name, result in results.items():
             status = "✓ PASSED" if result['passed'] else "✗ FAILED"
@@ -679,12 +714,13 @@ def main():
     else:
         config = test_configs[args.test]()
         config.save_animation = args.save
+        config.algo_type = args.algo
         config.backup_type = args.backup
         config.num_obstacles = args.obs
         # Update expected collision based on configuration
         config.expected_collision = get_expected_collision(args.test, args.backup, args.obs)
-        # Update name to include backup type and obstacle count
-        config.name = f"{config.name} ({args.backup}, {args.obs} obs)"
+        # Update name to include algo, backup type and obstacle count
+        config.name = f"{config.name} ({args.algo}, {args.backup}, {args.obs} obs)"
         results[args.test] = run_test(config)
     
     return results
