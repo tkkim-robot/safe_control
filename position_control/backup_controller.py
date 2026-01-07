@@ -411,3 +411,156 @@ class StoppingController(BackupController):
         return "Stopping"
 
 
+class EvadeBackupController(BackupController):
+    """
+    Evade backup controller for double integrator model.
+    
+    This controller steers the robot to the center of a safe pocket using PD control.
+    The evade_bullet_bill scenario uses this to hide from a fast-moving obstacle.
+    Uses two-phase control:
+    1. First, move toward the safe x-range if outside it
+    2. Then, move toward the safe y position (into the pocket)
+    """
+    
+    def __init__(self, robot_spec, dt, safe_pocket_center, safe_pocket_bounds):
+        """
+        Initialize the evade backup controller.
+        
+        Args:
+            robot_spec: Dictionary with robot specifications (for DoubleIntegrator2D)
+            dt: Time step for simulation
+            safe_pocket_center: [x, y] center of the safe pocket
+            safe_pocket_bounds: Dict with x_min, x_max, y_min, y_max
+        """
+        super().__init__(robot_spec, dt)
+        
+        self.safe_center = np.array(safe_pocket_center).flatten()
+        self.safe_bounds = safe_pocket_bounds
+        
+        # PD control gains
+        self.Kp = 2.0  # Position gain
+        self.Kd = 2.0  # Velocity damping
+        
+        # Limits
+        self.a_max = robot_spec.get('a_max', 1.0)
+        self.v_max = robot_spec.get('v_max', 1.0)
+        
+    def compute_control(self, state, target=None):
+        """
+        Compute control input to reach safe pocket.
+        
+        The controller uses a multi-phase approach:
+        1. If already inside safe pocket: stay put (zero velocity)
+        2. If within safe x-range: move vertically into the pocket
+        3. If outside safe x-range: move along center line (y=0) toward pocket x-range
+        
+        Args:
+            state: Current state [x, y, vx, vy]
+            target: Not used (safe pocket is set in constructor)
+            
+        Returns:
+            Control input [ax, ay]
+        """
+        state = np.array(state).flatten()
+        x, y, vx, vy = state[0], state[1], state[2], state[3]
+        
+        # Safe pocket bounds
+        x_min = self.safe_bounds['x_min']
+        x_max = self.safe_bounds['x_max']
+        y_min = self.safe_bounds['y_min']  # Bottom of pocket (top of hallway)
+        y_max = self.safe_bounds['y_max']  # Top of pocket
+        
+        pocket_center_y = self.safe_center[1]
+        pocket_center_x = self.safe_center[0]
+        
+        # Margin for "inside pocket" check
+        margin = 0.3
+        
+        # Phase 1: Check if inside safe pocket - stay put
+        if (x_min + margin <= x <= x_max - margin and 
+            y_min + margin <= y <= y_max - margin):
+            # Inside pocket - brake to stop
+            ax = -self.Kd * vx
+            ay = -self.Kd * vy
+        
+        # Phase 2: Check if within x-range of pocket - move into pocket (both x and y)
+        elif x_min - 2.0 <= x <= x_max + 2.0:
+            # Near pocket x-range - move toward pocket center (both x and y)
+            error_x = pocket_center_x - x
+            error_y = pocket_center_y - y
+            
+            ax = self.Kp * error_x - self.Kd * vx
+            ay = self.Kp * error_y - self.Kd * vy
+        
+        # Phase 3: Outside pocket x-range - move along center line (y=0) toward pocket x
+        else:
+            # First, correct y to center line (y=0), then move x toward pocket
+            target_y = 0.0  # Center of hallway
+            target_x = pocket_center_x  # Move toward pocket center x
+            
+            error_x = target_x - x
+            error_y = target_y - y
+            
+            # Full PD control for both axes, but x moves toward pocket
+            ax = self.Kp * np.sign(error_x) * min(abs(error_x), 3.0) - self.Kd * vx
+            ay = self.Kp * error_y - self.Kd * vy
+        
+        # Clamp accelerations
+        a_mag = np.sqrt(ax**2 + ay**2)
+        if a_mag > self.a_max:
+            ax = ax * self.a_max / a_mag
+            ay = ay * self.a_max / a_mag
+        
+        return np.array([[ax], [ay]])
+    
+    def simulate_trajectory(self, initial_state, target, horizon, friction=1.0):
+        """
+        Forward simulate the evade trajectory.
+        
+        Args:
+            initial_state: Initial state [x, y, vx, vy]
+            target: Not used
+            horizon: Number of steps to simulate
+            friction: Not used (for interface compatibility)
+            
+        Returns:
+            trajectory: Array of states over the horizon (4 x horizon+1)
+        """
+        # Initialize trajectory storage
+        state = np.array(initial_state).flatten().reshape(-1, 1)
+        trajectory = np.zeros((4, horizon + 1))
+        trajectory[:, 0] = state.flatten()
+        
+        for i in range(horizon):
+            # Compute control
+            U = self.compute_control(state)
+            
+            # Simple double integrator dynamics
+            # x' = x + vx * dt
+            # y' = y + vy * dt  
+            # vx' = vx + ax * dt
+            # vy' = vy + ay * dt
+            
+            ax, ay = U[0, 0], U[1, 0]
+            
+            # Clamp velocities
+            vx_new = state[2, 0] + ax * self.dt
+            vy_new = state[3, 0] + ay * self.dt
+            v_mag = np.sqrt(vx_new**2 + vy_new**2)
+            if v_mag > self.v_max:
+                vx_new = vx_new * self.v_max / v_mag
+                vy_new = vy_new * self.v_max / v_mag
+            
+            # Update state
+            state[0, 0] += state[2, 0] * self.dt
+            state[1, 0] += state[3, 0] * self.dt
+            state[2, 0] = vx_new
+            state[3, 0] = vy_new
+            
+            trajectory[:, i + 1] = state.flatten()
+        
+        return trajectory
+    
+    def get_behavior_name(self):
+        return "EvadeToPocket"
+
