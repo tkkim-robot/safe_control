@@ -22,6 +22,7 @@ from typing import Optional, Dict, Any, Tuple
 from safe_control.envs.evade_env import EvadeEnv
 from safe_control.robots.double_integrator2D import DoubleIntegrator2D
 from safe_control.position_control.backup_controller import EvadeBackupController
+from safe_control.utils.animation import AnimationSaver
 
 
 # =============================================================================
@@ -437,7 +438,7 @@ class RobotVisualizer:
 # Simulation
 # =============================================================================
 
-def run_simulation(config: TestConfig) -> Dict[str, Any]:
+def run_simulation(config: TestConfig, animation_saver: Optional['AnimationSaver'] = None) -> Dict[str, Any]:
     """Run the evade simulation."""
     print("\n" + "=" * 70)
     print(f"  TEST: {config.name}")
@@ -544,6 +545,10 @@ def run_simulation(config: TestConfig) -> Dict[str, Any]:
         plt.pause(0.001)
         fig.canvas.flush_events()
         
+        # Save animation frame
+        if animation_saver is not None:
+            animation_saver.save_frame(fig)
+        
         # Check collision with bullet
         collision, _ = env.check_obstacle_collision(pos, config.robot.radius)
         if collision:
@@ -551,6 +556,8 @@ def run_simulation(config: TestConfig) -> Dict[str, Any]:
             env.show_collision(pos)
             print(f"\n*** COLLISION at step {step} ***")
             print(f"  Position: ({pos[0]:.2f}, {pos[1]:.2f})")
+            if animation_saver is not None:
+                animation_saver.save_frame(fig, force=True)
             plt.pause(2.0)
             break
         
@@ -560,6 +567,8 @@ def run_simulation(config: TestConfig) -> Dict[str, Any]:
             env.show_goal_reached(pos)
             print(f"\n*** GOAL REACHED at step {step} ***")
             print(f"  Position: ({pos[0]:.2f}, {pos[1]:.2f})")
+            if animation_saver is not None:
+                animation_saver.save_frame(fig, force=True)
             plt.pause(2.0)
             break
         
@@ -621,7 +630,19 @@ def main():
     config = TestConfig()
     config.save_animation = args.save
     
-    results = run_simulation(config)
+    # Setup animation saver if enabled
+    animation_saver = None
+    if config.save_animation:
+        safe_name = config.name.lower().replace(' ', '_')
+        output_dir = f"output/animations/{safe_name}"
+        animation_saver = AnimationSaver(output_dir=output_dir, save_per_frame=1, fps=30)
+        print(f"\n  Animation saving enabled -> {output_dir}/")
+    
+    results = run_simulation(config, animation_saver)
+    
+    # Export video if animation was saved
+    if animation_saver is not None:
+        animation_saver.export_video(output_name=f"{config.name.lower().replace(' ', '_')}.mp4")
     
     return results
 
