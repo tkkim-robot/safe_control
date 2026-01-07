@@ -35,6 +35,7 @@ from typing import Optional, Dict, Any, List, Union
 
 from safe_control.envs.evade_env import EvadeEnv
 from safe_control.robots.double_integrator2D import DoubleIntegrator2D
+from safe_control.position_control.backup_controller import EvadeBackupController
 from safe_control.shielding.gatekeeper import Gatekeeper
 from safe_control.shielding.mps import MPS
 from safe_control.utils.animation import AnimationSaver
@@ -62,7 +63,7 @@ class EnvironmentConfig:
     goal_length: float = 5.0
     bullet_speed: float = 3.0  # Slower bullet (robot v_max=1.5)
     bullet_length: float = 3.0
-    bullet_start_x: float = 0.0  # Start closer to hallway for faster respawn
+    bullet_start_x: float = -10.0  # Start closer to hallway for faster respawn
 
 
 @dataclass
@@ -84,9 +85,10 @@ class RobotConfig:
 @dataclass
 class SimulationConfig:
     """Simulation configuration parameters."""
-    dt: float = 0.05
+    dt: float = 0.1
     tf: float = 60.0
-    backup_horizon_time: float = 12.0  
+    backup_horizon_time: float = 12.0
+    nominal_horizon_time: float = 10.0
     event_offset: float = 0.2
     safety_margin: float = 0.5
     initial_x: float = 20.0  # Start ahead of bullet
@@ -164,121 +166,7 @@ class EvadeNominalController:
     def __call__(self, state: np.ndarray) -> np.ndarray:
         return self.compute_control(state)
 
-class EvadeBackupController:
-    """
-    Backup controller for evade scenario.
-    Goes to pocket center OR stays in goal zone if reached.
-    """
-    
-    def __init__(self, robot_spec: Dict, pocket_center: np.ndarray, 
-                 pocket_bounds: Dict, goal_bounds: Dict = None):
-        self.robot_spec = robot_spec
-        self.pocket_center = pocket_center
-        self.pocket_bounds = pocket_bounds
-        self.goal_bounds = goal_bounds
-        self.a_max = robot_spec.get('a_max', 1.0)
-    
-    def compute_control(self, state: np.ndarray, target=None) -> np.ndarray:
-        """
-        Compute backup control.
-        
-        Priority:
-        1. If in GOAL ZONE: stay there (brake to stop) - this is also safe!
-        2. If in hallway and outside pocket x-range: first move x toward pocket center
-        3. If in hallway and within pocket x-range: move up into pocket
-        4. If in pocket: move to pocket center
-        """
-        state = np.array(state).flatten()
-        x, y, vx, vy = state[0], state[1], state[2], state[3]
-        
-        # Safe pocket bounds
-        x_min = self.pocket_bounds['x_min']
-        x_max = self.pocket_bounds['x_max']
-        y_min = self.pocket_bounds['y_min']
-        y_max = self.pocket_bounds['y_max']
-        
-        pocket_center_x = self.pocket_center[0]
-        pocket_center_y = self.pocket_center[1]
-        
-        # PD control gains
-        Kp = 2.0
-        Kd = 2.0
-        
-        # PRIORITY 1: Check if in GOAL ZONE - stay there (also safe!)
-        if self.goal_bounds is not None:
-            goal_x_min = self.goal_bounds['x_min']
-            goal_x_max = self.goal_bounds['x_max']
-            goal_y_min = self.goal_bounds['y_min']
-            goal_y_max = self.goal_bounds['y_max']
-            
-            in_goal = (goal_x_min <= x <= goal_x_max and 
-                       goal_y_min <= y <= goal_y_max)
-            
-            if in_goal:
-                # In goal zone - brake to stop and stay!
-                ax = -Kd * vx
-                ay = -Kd * vy
-                
-                # Clamp and return early
-                a_mag = np.sqrt(ax**2 + ay**2)
-                if a_mag > self.a_max:
-                    ax = ax * self.a_max / a_mag
-                    ay = ay * self.a_max / a_mag
-                return np.array([[ax], [ay]])
-        
-        # Margin for "in pocket" check
-        inside_margin = 0.5
-        
-        # Check if robot is IN the pocket (y > y_min and x in range)
-        in_pocket = (x_min - inside_margin <= x <= x_max + inside_margin and 
-                     y >= y_min - inside_margin)
-        
-        # Check if close enough to pocket center
-        dist_to_center = np.sqrt((x - pocket_center_x)**2 + (y - pocket_center_y)**2)
-        
-        if dist_to_center < 1.0:
-            # Very close to pocket center - brake to stop
-            ax = -Kd * vx
-            ay = -Kd * vy
-        
-        elif in_pocket:
-            # Robot is in the pocket - move toward pocket center
-            error_x = pocket_center_x - x
-            error_y = pocket_center_y - y
-            
-            ax = Kp * error_x - Kd * vx
-            ay = Kp * error_y - Kd * vy
-        
-        elif x_min <= x <= x_max:
-            # Robot is in hallway but within pocket x-range - safe to go up
-            target_x = pocket_center_x
-            target_y = pocket_center_y
-            
-            error_x = target_x - x
-            error_y = target_y - y
-            
-            ax = Kp * error_x - Kd * vx
-            ay = Kp * error_y - Kd * vy
-        
-        else:
-            # Robot is in hallway OUTSIDE pocket x-range
-            # First move x toward pocket center WHILE staying in hallway (y=0)
-            target_x = pocket_center_x
-            target_y = 0.0
-            
-            error_x = target_x - x
-            error_y = target_y - y
-            
-            ax = Kp * error_x - Kd * vx
-            ay = Kp * error_y - Kd * vy
-        
-        # Clamp accelerations
-        a_mag = np.sqrt(ax**2 + ay**2)
-        if a_mag > self.a_max:
-            ax = ax * self.a_max / a_mag
-            ay = ay * self.a_max / a_mag
-        
-        return np.array([[ax], [ay]])
+
 
 
 
@@ -386,7 +274,13 @@ def run_simulation(config: TestConfig, animation_saver: Optional['AnimationSaver
     
     # Create controllers
     nominal_controller = EvadeNominalController(robot_spec)
-    backup_controller = EvadeBackupController(robot_spec, pocket_center, pocket_bounds, goal_bounds)
+    backup_controller = EvadeBackupController(
+        robot_spec, 
+        config.simulation.dt,
+        pocket_center, 
+        pocket_bounds, 
+        goal_bounds
+    )
     
     # Dynamics model for simulation
     dynamics = DoubleIntegrator2D(config.simulation.dt, robot_spec)
@@ -411,16 +305,52 @@ def run_simulation(config: TestConfig, animation_saver: Optional['AnimationSaver
             robot_spec=robot_spec,
             dt=config.simulation.dt,
             backup_horizon=backup_horizon_time,
-            nominal_horizon=backup_horizon_time, # Use full backup horizon as nominal for Gatekeeper
+            nominal_horizon=config.simulation.nominal_horizon_time,
             event_offset=config.simulation.event_offset,
             ax=ax
         )
     
     # Configure shielding
-    shielding.set_nominal_controller(nominal_controller)
+    # shielding.set_nominal_controller(nominal_controller)  # Removed for optimization
     shielding.set_backup_controller(backup_controller)
     shielding.set_environment(env) 
-    shielding.set_moving_obstacles(env.get_bullet_state) # Callable that returns obstacle list/dict
+    
+    def get_obstacles(t=0.0):
+        # Return state of moving obstacles at time t (relative to now)
+        bullet_state = env.get_bullet_state()
+        if not bullet_state['active']:
+            return None
+            
+        # Predict future position: x = x0 + v*t
+        # This assumes constant velocity, which is true for the bullet
+        future_state = bullet_state.copy()
+        future_state['x'] = bullet_state['x'] + bullet_state['vx'] * t
+        return future_state
+        
+    shielding.set_moving_obstacles(get_obstacles)
+    
+    def rollout_nominal(start_state, horizon_time):
+        """Rollout nominal controller from start_state for horizon_time."""
+        steps = int(horizon_time / config.simulation.dt)
+        x_traj = [start_state.flatten()]
+        u_traj = []
+        
+        curr_state = start_state.reshape(-1, 1)
+        for _ in range(steps):
+            u = nominal_controller.compute_control(curr_state)
+            # Clip control if needed (though double integrator handles it?)
+            # dynamics.step handles it if limit inside? No, dynamics is raw.
+            # But double integrator usually doesn't clip unless specified?
+            # Actually Gatekeeper simulation assumes ideal dynamics.
+            
+            next_state = dynamics.step(curr_state, u)
+            
+            x_traj.append(next_state.flatten())
+            u_traj.append(u.flatten())
+            
+            curr_state = next_state
+            
+        return np.array(x_traj), np.array(u_traj)
     
     # Setup visualization
     robot_viz = RobotVisualizer(ax, config.robot.radius, 'orange')
@@ -443,7 +373,10 @@ def run_simulation(config: TestConfig, animation_saver: Optional['AnimationSaver
         pos = state[:2, 0]
         
         # Shielding control
-        # Note: shielding.solve_control_problem calls get_bullet_state internally via moving_obstacles callback
+        # Optimization: Rollout nominal trajectory and pass to Gatekeeper
+        nom_x, nom_u = rollout_nominal(state, config.simulation.nominal_horizon_time)
+        shielding.set_nominal_trajectory(nom_x, nom_u)
+        
         control = shielding.solve_control_problem(state)
         
         # Track mode

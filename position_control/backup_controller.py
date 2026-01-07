@@ -422,7 +422,7 @@ class EvadeBackupController(BackupController):
     2. Then, move toward the safe y position (into the pocket)
     """
     
-    def __init__(self, robot_spec, dt, safe_pocket_center, safe_pocket_bounds):
+    def __init__(self, robot_spec, dt, safe_pocket_center, safe_pocket_bounds, goal_bounds=None):
         """
         Initialize the evade backup controller.
         
@@ -431,11 +431,13 @@ class EvadeBackupController(BackupController):
             dt: Time step for simulation
             safe_pocket_center: [x, y] center of the safe pocket
             safe_pocket_bounds: Dict with x_min, x_max, y_min, y_max
+            goal_bounds: Optional dict with goal zone bounds. If provided, staying in goal is safe.
         """
         super().__init__(robot_spec, dt)
         
         self.safe_center = np.array(safe_pocket_center).flatten()
         self.safe_bounds = safe_pocket_bounds
+        self.goal_bounds = goal_bounds
         
         # PD control gains
         self.Kp = 2.0  # Position gain
@@ -450,9 +452,10 @@ class EvadeBackupController(BackupController):
         Compute control input to reach safe pocket.
         
         The controller uses a multi-phase approach:
-        1. If already inside safe pocket: stay put (zero velocity)
-        2. If within safe x-range: move vertically into the pocket
-        3. If outside safe x-range: move along center line (y=0) toward pocket x-range
+        1. If in GOAL ZONE (and goal_bounds provided): stay put
+        2. If already inside safe pocket: stay put (zero velocity)
+        3. If within safe x-range: move vertically into the pocket
+        4. If outside safe x-range: move along center line (y=0) toward pocket x-range
         
         Args:
             state: Current state [x, y, vx, vy]
@@ -464,6 +467,22 @@ class EvadeBackupController(BackupController):
         state = np.array(state).flatten()
         x, y, vx, vy = state[0], state[1], state[2], state[3]
         
+        # Check priority 1: Goal Zone
+        if self.goal_bounds is not None:
+            # Check if in goal zone
+            if (self.goal_bounds['x_min'] <= x <= self.goal_bounds['x_max'] and 
+                self.goal_bounds['y_min'] <= y <= self.goal_bounds['y_max']):
+                # In goal zone - brake to stop
+                ax = -self.Kd * vx
+                ay = -self.Kd * vy
+                
+                # Clamp and return
+                a_mag = np.sqrt(ax**2 + ay**2)
+                if a_mag > self.a_max:
+                    ax = ax * self.a_max / a_mag
+                    ay = ay * self.a_max / a_mag
+                return np.array([[ax], [ay]])
+        
         # Safe pocket bounds
         x_min = self.safe_bounds['x_min']
         x_max = self.safe_bounds['x_max']
@@ -473,26 +492,45 @@ class EvadeBackupController(BackupController):
         pocket_center_y = self.safe_center[1]
         pocket_center_x = self.safe_center[0]
         
-        # Margin for "inside pocket" check
-        margin = 0.3
+        # Margin for "inside pocket" check - ensure robot is fully inside
+        margin = self.robot_spec.get('radius', 0.5) + 0.1
         
-        # Phase 1: Check if inside safe pocket - stay put
+        # Phase 2: Check if inside safe pocket - stay put
         if (x_min + margin <= x <= x_max - margin and 
             y_min + margin <= y <= y_max - margin):
             # Inside pocket - brake to stop
             ax = -self.Kd * vx
             ay = -self.Kd * vy
         
-        # Phase 2: Check if within x-range of pocket - move into pocket (both x and y)
+        # Phase 3: Approach pocket carefully
+        # Strategy: Align X with pocket center first, THEN enter Y
+        # This prevents "cutting corners" and hitting the wall
         elif x_min - 2.0 <= x <= x_max + 2.0:
-            # Near pocket x-range - move toward pocket center (both x and y)
-            error_x = pocket_center_x - x
-            error_y = pocket_center_y - y
+            # We are near the pocket x-range
             
-            ax = self.Kp * error_x - self.Kd * vx
-            ay = self.Kp * error_y - self.Kd * vy
+            # Check if we are safe to enter Y (strictly within x bounds with margin)
+            safe_x_entry = (x_min + margin <= x <= x_max - margin)
+            
+            if safe_x_entry:
+                # X is safe, now we can move Y into pocket
+                # Align X to center, Move Y to center
+                error_x = pocket_center_x - x
+                error_y = pocket_center_y - y
+                
+                # Full control on Y, weaker on X to maintain safety
+                ax = self.Kp * error_x - self.Kd * vx
+                ay = self.Kp * error_y - self.Kd * vy
+            else:
+                # Not fully X-aligned yet, stay in hallway center (y=0) and align X
+                error_x = pocket_center_x - x
+                target_y = 0.0
+                error_y = target_y - y
+                
+                ax = self.Kp * error_x - self.Kd * vx
+                ay = self.Kp * error_y - self.Kd * vy
         
-        # Phase 3: Outside pocket x-range - move along center line (y=0) toward pocket x
+        
+        # Phase 4: Outside pocket x-range - move along center line (y=0) toward pocket x
         else:
             # First, correct y to center line (y=0), then move x toward pocket
             target_y = 0.0  # Center of hallway

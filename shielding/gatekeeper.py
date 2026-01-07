@@ -42,7 +42,7 @@ class Gatekeeper:
     
     def __init__(self, robot, robot_spec, dt=0.05, 
                  backup_horizon=2.0, event_offset=0.5, ax=None,
-                 nominal_horizon=None):
+                 nominal_horizon=None, horizon_discount=None):
         """
         Initialize the Gatekeeper controller.
 
@@ -54,6 +54,7 @@ class Gatekeeper:
             event_offset: Time offset before next candidate generation event
             ax: Matplotlib axis for visualization (optional)
             nominal_horizon: Max nominal horizon (seconds). If None, uses backup_horizon.
+            horizon_discount: Discount step size for binary search (seconds). Default: 5*dt.
             
         Note: nominal_horizon is automatically determined from MPCC's trajectory length
               if using external trajectory mode, otherwise uses the nominal_horizon param.
@@ -63,7 +64,7 @@ class Gatekeeper:
         self.dt = dt
         self.backup_horizon = backup_horizon
         self.event_offset = event_offset
-        self.horizon_discount = dt * 2  # Discount step for binary search (finer granularity)
+        self.horizon_discount = horizon_discount if horizon_discount is not None else dt * 5  # Coarser search for speed
         self.nominal_horizon = nominal_horizon if nominal_horizon is not None else backup_horizon
         
         # Infer state/control dimensions from robot model
@@ -132,20 +133,20 @@ class Gatekeeper:
         # Committed nominal portion (green = following MPCC)
         self.committed_nominal_line, = self.ax.plot(
             [], [], '-', color='lime', linewidth=3, alpha=0.9,
-            label='Committed nominal', zorder=8
+            label='Committed nominal', zorder=20
         )
         
         # Committed backup portion (blue = lane change)
         self.committed_backup_line, = self.ax.plot(
             [], [], '-', color='dodgerblue', linewidth=3, alpha=0.9,
-            label='Committed backup', zorder=8
+            label='Committed backup', zorder=20
         )
         
         # Switching point marker
         self.switching_point_marker, = self.ax.plot(
             [], [], 'mo', markersize=12, markerfacecolor='magenta',
             markeredgecolor='white', markeredgewidth=2,
-            label='Switching point', zorder=9
+            label='Switching point', zorder=25
         )
     
     def set_nominal_controller(self, nominal_controller):
@@ -198,81 +199,31 @@ class Gatekeeper:
     
     def _dynamics_step(self, state, control, friction=None):
         """
-        Single step of dynamics integration.
+        Single step of dynamics integration using the robot model.
         
         Args:
             state: Current state (model-dependent)
-                   - DynamicBicycle2D: [x, y, theta, r, beta, V, delta, tau]
-                   - DoubleIntegrator2D: [x, y, vx, vy]
             control: Control input (model-dependent)
-            friction: Friction coefficient (uses robot default if None)
+            friction: Friction coefficient (for DynamicBicycle2D)
             
         Returns:
             next_state: State after one timestep
         """
-        state = np.array(state).flatten()
-        control = np.array(control).flatten()
+        state = np.array(state).reshape(-1, 1)
+        control = np.array(control).reshape(-1, 1)
         
-        model = self.robot_spec.get('model', 'DynamicBicycle2D')
+        # If possible, pass friction to robot model (for DynamicBicycle2D)
+        # However, step() usually doesn't take friction directly unless 
+        # we re-instantiate or if the model supports it.
+        # Given existing codebase pattern, we assume the robot instance handles it
+        # or we might need to recreate it if friction changes dynamically.
         
-        if model in ['DoubleIntegrator2D', 'double_integrator']:
-            # Double Integrator: state = [x, y, vx, vy], control = [ax, ay]
-            x, y, vx, vy = state[0], state[1], state[2], state[3]
-            ax, ay = control[0], control[1]
-            
-            # Apply acceleration
-            vx_new = vx + ax * self.dt
-            vy_new = vy + ay * self.dt
-            
-            # Clamp velocity to v_max if specified
-            v_max = self.robot_spec.get('v_max', float('inf'))
-            v_mag = np.sqrt(vx_new**2 + vy_new**2)
-            if v_mag > v_max:
-                vx_new = vx_new * v_max / v_mag
-                vy_new = vy_new * v_max / v_mag
-            
-            # Update position
-            next_state = np.zeros(4)
-            next_state[0] = x + vx * self.dt
-            next_state[1] = y + vy * self.dt
-            next_state[2] = vx_new
-            next_state[3] = vy_new
-            
+        # For simple integration: use the robot's step method
+        if self.robot is not None:
+             next_state = self.robot.step(state, control)
+             return next_state.flatten()
         else:
-            # DynamicBicycle2D model
-            from safe_control.robots.dynamic_bicycle2D import DynamicBicycle2D
-            
-            # Create dynamics model with appropriate friction
-            sim_spec = self.robot_spec.copy()
-            if friction is not None:
-                sim_spec['mu'] = friction
-            dynamics = DynamicBicycle2D(self.dt, sim_spec)
-            
-            # Extract dynamics state [r, beta, V, delta, tau]
-            X_dyn = state[3:8].reshape(-1, 1)
-            U = control.reshape(-1, 1)
-            
-            # Step dynamics
-            X_dyn_next = dynamics.step(X_dyn, U)
-            
-            # Update global state
-            theta = state[2]
-            V = X_dyn_next[2, 0]
-            beta = X_dyn_next[1, 0]
-            r = X_dyn_next[0, 0]
-            
-            # Velocity in global frame
-            vx_global = V * np.cos(theta + beta)
-            vy_global = V * np.sin(theta + beta)
-            
-            # Update state
-            next_state = np.zeros(8)
-            next_state[0] = state[0] + vx_global * self.dt
-            next_state[1] = state[1] + vy_global * self.dt
-            next_state[2] = angle_normalize(state[2] + r * self.dt)
-            next_state[3:8] = X_dyn_next.flatten()
-        
-        return next_state
+             raise ValueError("Robot model not initialized in Gatekeeper")
     
     def _forward_simulate_nominal(self, initial_state, horizon_steps, friction=None):
         """
@@ -419,7 +370,7 @@ class Gatekeeper:
         """
         self.moving_obstacles = obstacles
     
-    def _is_collision(self, state, safety_margin=0.0, obstacle_state=None):
+    def _is_collision(self, state, safety_margin=0.0, obstacle_state=None, return_reason=False):
         """
         Check if a state collides with obstacles or boundaries.
         
@@ -434,7 +385,7 @@ class Gatekeeper:
             bool: True if collision detected
         """
         if self.env is None:
-            return False
+            return (False, "No Env") if return_reason else False
         
         position = state[:2]
         robot_radius = self.robot_spec.get('radius', 1.5) + safety_margin
@@ -442,13 +393,13 @@ class Gatekeeper:
         # Check boundary collision
         if hasattr(self.env, 'check_collision'):
             if self.env.check_collision(position, robot_radius):
-                return True
+                return (True, "Environment Boundary") if return_reason else True
         
         # Check static obstacle collision (from environment)
         if hasattr(self.env, 'check_obstacle_collision'):
             collision, _ = self.env.check_obstacle_collision(position, robot_radius)
             if collision:
-                return True
+                return (True, "Static Obstacle") if return_reason else True
         
         # Check moving obstacle collision (if provided)
         if obstacle_state is not None:
@@ -456,9 +407,9 @@ class Gatekeeper:
                 position, robot_radius, obstacle_state
             )
             if collision:
-                return True
+                return (True, "Moving Obstacle") if return_reason else True
         
-        return False
+        return (False, "None") if return_reason else False
     
     def _check_moving_obstacle_collision(self, position, robot_radius, obstacle):
         """
@@ -525,16 +476,15 @@ class Gatekeeper:
         
         return states
     
-    def _is_candidate_valid(self, candidate_x_traj, safety_margin=1.0, obstacle_state=None):
+    def _is_candidate_valid(self, candidate_x_traj, safety_margin=1.0, obstacle_states=None):
         """
         Check if the candidate trajectory is valid (collision-free).
         
         Args:
             candidate_x_traj: Trajectory to validate (n_steps, n_states)
             safety_margin: Additional buffer distance for conservative checking
-            obstacle_state: Optional initial obstacle state for forward simulation.
-                           If provided, obstacle will be forward-simulated alongside
-                           the robot trajectory for time-synchronized collision checking.
+            obstacle_states: Optional list of obstacle state dicts for each timestep.
+                             If provided, will be used for time-synchronized collision checking.
             
         Returns:
             bool: True if trajectory is valid (collision-free)
@@ -542,17 +492,16 @@ class Gatekeeper:
         if candidate_x_traj is None or len(candidate_x_traj) == 0:
             return True
         
-        # Forward simulate obstacle if provided
-        obstacle_states = None
-        if obstacle_state is not None:
-            obstacle_states = self._forward_simulate_obstacle(
-                obstacle_state, len(candidate_x_traj)
-            )
+        # Backward compatibility or internal usage if needed:
+        # If obstacle_states is not passed, but we have some other mechanism?
+        # For now, rely on passed argument.
         
         # Check each timestep
         for i, state in enumerate(candidate_x_traj):
             obs_at_t = obstacle_states[i] if obstacle_states else None
-            if self._is_collision(state, safety_margin, obs_at_t):
+            collision, reason = self._is_collision(state, safety_margin, obs_at_t, return_reason=True)
+            if collision:
+                print(f"Invalid candidate at step {i}: {reason}")
                 return False
         
         return True
@@ -639,16 +588,32 @@ class Gatekeeper:
                     robot_state, nominal_horizon_steps, friction
                 )
                 
-                # Get moving obstacle state for validation
-                obstacle_state = None
+                # Get moving obstacle states for validation
+                obstacle_states = None
                 if self.moving_obstacles is not None:
                     if callable(self.moving_obstacles):
-                        obstacle_state = self.moving_obstacles()
+                        # Generate obstacle states over the horizon
+                        obstacle_states = []
+                        for k in range(len(candidate_x_traj)):
+                            t = k * self.dt
+                            # Pass time t to callable to get prediction
+                            # If callable doesn't accept args, handle it (though it should for dynamic)
+                            try:
+                                obs_state = self.moving_obstacles(t)
+                            except TypeError:
+                                # Fallback for no-arg callable (static snapshot)
+                                obs_state = self.moving_obstacles()
+                            obstacle_states.append(obs_state)
+                    elif isinstance(self.moving_obstacles, list) and len(self.moving_obstacles) == len(candidate_x_traj):
+                        # Already a list of states over time
+                         obstacle_states = self.moving_obstacles
                     else:
-                        obstacle_state = self.moving_obstacles
+                        # Static obstacle or single state?
+                        # Assuming single state for now, replicated
+                         obstacle_states = [self.moving_obstacles] * len(candidate_x_traj)
                 
                 # Check validity with safety margin (conservative)
-                if self._is_candidate_valid(candidate_x_traj, safety_margin=1.0, obstacle_state=obstacle_state):
+                if self._is_candidate_valid(candidate_x_traj, safety_margin=1.0, obstacle_states=obstacle_states):
                     self._update_committed_trajectory(actual_steps)
                     found_valid = True
                     break

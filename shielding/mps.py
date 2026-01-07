@@ -94,16 +94,26 @@ class MPS(Gatekeeper):
                 robot_state, nominal_horizon_steps, friction
             )
             
-            # Get moving obstacle state for validation
-            obstacle_state = None
+            # Get moving obstacle states for validation
+            obstacle_states = None
             if self.moving_obstacles is not None:
                 if callable(self.moving_obstacles):
-                    obstacle_state = self.moving_obstacles()
+                    # Generate obstacle states over the horizon
+                    obstacle_states = []
+                    for k in range(len(candidate_x_traj)):
+                        t = k * self.dt
+                        try:
+                            obs_state = self.moving_obstacles(t)
+                        except TypeError:
+                            obs_state = self.moving_obstacles()
+                        obstacle_states.append(obs_state)
+                elif isinstance(self.moving_obstacles, list) and len(self.moving_obstacles) == len(candidate_x_traj):
+                     obstacle_states = self.moving_obstacles
                 else:
-                    obstacle_state = self.moving_obstacles
+                     obstacle_states = [self.moving_obstacles] * len(candidate_x_traj)
             
             # Check validity with safety margin (conservative)
-            if self._is_candidate_valid(candidate_x_traj, safety_margin=1.0, obstacle_state=obstacle_state):
+            if self._is_candidate_valid(candidate_x_traj, safety_margin=1.0, obstacle_states=obstacle_states):
                 # Valid: commit the one-step nominal + backup trajectory
                 self._update_committed_trajectory(actual_steps)
             else:
