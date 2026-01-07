@@ -24,17 +24,19 @@ Examples:
     # Save animation
     uv run python examples/evade/test_evade.py --save
 
-@required-scripts: safe_control/envs/evade_env.py
+@required-scripts: safe_control/shielding/gatekeeper.py, safe_control/shielding/mps.py
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 
 from safe_control.envs.evade_env import EvadeEnv
 from safe_control.robots.double_integrator2D import DoubleIntegrator2D
+from safe_control.shielding.gatekeeper import Gatekeeper
+from safe_control.shielding.mps import MPS
 from safe_control.utils.animation import AnimationSaver
 
 
@@ -60,7 +62,7 @@ class EnvironmentConfig:
     goal_length: float = 5.0
     bullet_speed: float = 3.0  # Slower bullet (robot v_max=1.5)
     bullet_length: float = 3.0
-    bullet_start_x: float = 5.0  # Start closer to hallway for faster respawn
+    bullet_start_x: float = 0.0  # Start closer to hallway for faster respawn
 
 
 @dataclass
@@ -110,563 +112,175 @@ class TestConfig:
         if self.simulation is None:
             self.simulation = SimulationConfig()
 
-@dataclass
-class ShieldingState:
-    """State for shielding algorithm (function-based approach)."""
-    committed_x_traj: Optional[np.ndarray] = None
-    committed_u_traj: Optional[np.ndarray] = None
-    current_time_idx: int = 0
-    next_event_time: float = 0.0
-    committed_horizon: float = 0.0
-    using_backup: bool = True
-    
-    # Visualization handles
-    committed_line: Any = None
-    backup_line: Any = None
-    switching_marker: Any = None
+
+
+
 
 
 # =============================================================================
-# Shielding Functions
+# Controllers for Evade Scenario
 # =============================================================================
 
-def setup_visualization(ax: plt.Axes, state: ShieldingState):
-    """Setup visualization handles for trajectory display."""
-    if ax is None:
-        return
-    
-    # Committed nominal portion (lime = following nominal controller)
-    # Use high zorder (20+) to draw above robot which is at zorder=15
-    state.committed_line, = ax.plot(
-        [], [], '-', color='lime', linewidth=3, alpha=0.9,
-        label='Committed nominal', zorder=20
-    )
-    
-    # Committed backup portion (dodgerblue = evade to pocket)
-    state.backup_line, = ax.plot(
-        [], [], '-', color='dodgerblue', linewidth=3, alpha=0.9,
-        label='Committed backup', zorder=20
-    )
-    
-    # Switching point marker (magenta)
-    state.switching_marker, = ax.plot(
-        [], [], 'mo', markersize=12, markerfacecolor='magenta',
-        markeredgecolor='white', markeredgewidth=2,
-        label='Switching point', zorder=25
-    )
-
-
-def update_visualization(ax: plt.Axes, state: ShieldingState, dt: float):
-    """Update trajectory visualization."""
-    if ax is None or state.committed_x_traj is None:
-        return
-    
-    nominal_end = int(state.committed_horizon / dt) + 1
-    
-    # Update committed nominal portion (lime)
-    if state.committed_line is not None:
-        if nominal_end > 0:
-            state.committed_line.set_data(
-                state.committed_x_traj[:nominal_end, 0],
-                state.committed_x_traj[:nominal_end, 1]
-            )
-        else:
-            state.committed_line.set_data([], [])
-    
-    # Update committed backup portion (dodgerblue)
-    if state.backup_line is not None:
-        backup_start = max(0, nominal_end - 1)  # Overlap at switching point
-        if backup_start < len(state.committed_x_traj):
-            state.backup_line.set_data(
-                state.committed_x_traj[backup_start:, 0],
-                state.committed_x_traj[backup_start:, 1]
-            )
-        else:
-            state.backup_line.set_data([], [])
-    
-    # Update switching point marker (magenta)
-    if state.switching_marker is not None:
-        switch_idx = int(state.committed_horizon / dt)
-        if 0 <= switch_idx < len(state.committed_x_traj):
-            switch_state = state.committed_x_traj[switch_idx]
-            state.switching_marker.set_data([switch_state[0]], [switch_state[1]])
-        else:
-            state.switching_marker.set_data([], [])
-
-
-def forward_simulate(initial_state: np.ndarray, controller_type: str, horizon_steps: int,
-                     robot_spec: Dict, dt: float, pocket_center: np.ndarray, 
-                     pocket_bounds: Dict, goal_bounds: Dict = None) -> tuple:
-    """Forward simulate trajectory with given controller."""
-    state = np.array(initial_state).flatten().reshape(-1, 1)
-    x_traj = np.zeros((horizon_steps + 1, 4))
-    u_traj = np.zeros((horizon_steps, 2))
-    x_traj[0] = state.flatten()
-    
-    a_max = robot_spec.get('a_max', 1.0)
-    v_max = robot_spec.get('v_max', 1.0)
-    
-    for i in range(horizon_steps):
-        if controller_type == 'nominal':
-            U = compute_nominal_control(state, robot_spec)
-        else:
-            U = compute_backup_control(state, robot_spec, pocket_center, pocket_bounds, goal_bounds)
-        
-        u_traj[i] = U.flatten()
-        
-        # Double integrator dynamics
-        ax, ay = U[0, 0], U[1, 0]
-        vx_new = state[2, 0] + ax * dt
-        vy_new = state[3, 0] + ay * dt
-        v_mag = np.sqrt(vx_new**2 + vy_new**2)
-        if v_mag > v_max:
-            vx_new = vx_new * v_max / v_mag
-            vy_new = vy_new * v_max / v_mag
-        
-        state[0, 0] += state[2, 0] * dt
-        state[1, 0] += state[3, 0] * dt
-        state[2, 0] = vx_new
-        state[3, 0] = vy_new
-        
-        x_traj[i + 1] = state.flatten()
-    
-    return x_traj, u_traj
-
-
-def compute_nominal_control(state: np.ndarray, robot_spec: Dict) -> np.ndarray:
-    """Nominal PD controller: track center of hallway heading to goal."""
-    state = np.array(state).flatten()
-    x, y, vx, vy = state[0], state[1], state[2], state[3]
-    
-    v_max = robot_spec.get('v_max', 1.0)
-    a_max = robot_spec.get('a_max', 1.0)
-    
-    # Target: center of hallway (y=0), moving forward (x -> hallway_length)
-    target_y = 0.0
-    target_vx = v_max  # Move forward at max speed
-    target_vy = 0.0
-    
-    # PD control
-    Kp_y = 2.0
-    Kd = 2.0
-    
-    error_y = target_y - y
-    error_vx = target_vx - vx
-    error_vy = target_vy - vy
-    
-    ax = Kd * error_vx  # Accelerate to target speed
-    ay = Kp_y * error_y + Kd * error_vy  # Track center line
-    
-    # Clamp
-    a_mag = np.sqrt(ax**2 + ay**2)
-    if a_mag > a_max:
-        ax = ax * a_max / a_mag
-        ay = ay * a_max / a_mag
-    
-    return np.array([[ax], [ay]])
-
-
-def compute_backup_control(state: np.ndarray, robot_spec: Dict, 
-                           pocket_center: np.ndarray, pocket_bounds: Dict,
-                           goal_bounds: Dict = None) -> np.ndarray:
+class EvadeNominalController:
     """
-    Backup controller: go to pocket center OR stay in goal zone if reached.
-    
-    Priority:
-    1. If in GOAL ZONE: stay there (brake to stop) - this is also safe!
-    2. If in hallway and outside pocket x-range: first move x toward pocket center
-    3. If in hallway and within pocket x-range: move up into pocket
-    4. If in pocket: move to pocket center
+    Nominal controller for evade scenario.
+    Tracks center of hallway (y=0) while moving forward to goal.
     """
-    state = np.array(state).flatten()
-    x, y, vx, vy = state[0], state[1], state[2], state[3]
     
-    a_max = robot_spec.get('a_max', 1.0)
+    def __init__(self, robot_spec: Dict):
+        self.robot_spec = robot_spec
+        self.v_max = robot_spec.get('v_max', 1.0)
+        self.a_max = robot_spec.get('a_max', 1.0)
     
-    # Safe pocket bounds
-    x_min = pocket_bounds['x_min']  # 25
-    x_max = pocket_bounds['x_max']  # 35
-    y_min = pocket_bounds['y_min']  # 2 (top of hallway, bottom of pocket)
-    y_max = pocket_bounds['y_max']  # 6
-    
-    pocket_center_x = pocket_center[0]  # 30
-    pocket_center_y = pocket_center[1]  # 4
-    
-    # PD control gains
-    Kp = 2.0
-    Kd = 2.0
-    
-    # PRIORITY 1: Check if in GOAL ZONE - stay there (also safe!)
-    if goal_bounds is not None:
-        goal_x_min = goal_bounds['x_min']
-        goal_x_max = goal_bounds['x_max']
-        goal_y_min = goal_bounds['y_min']
-        goal_y_max = goal_bounds['y_max']
+    def compute_control(self, state: np.ndarray, target=None) -> np.ndarray:
+        """Compute nominal control - PD controller to track y=0 and move forward."""
+        state = np.array(state).flatten()
+        x, y, vx, vy = state[0], state[1], state[2], state[3]
         
-        in_goal = (goal_x_min <= x <= goal_x_max and 
-                   goal_y_min <= y <= goal_y_max)
+        # Target: center of hallway (y=0), moving forward at max speed
+        target_y = 0.0
+        target_vx = self.v_max
+        target_vy = 0.0
         
-        if in_goal:
-            # In goal zone - brake to stop and stay!
+        # PD control
+        Kp_y = 2.0
+        Kd = 2.0
+        
+        error_y = target_y - y
+        error_vx = target_vx - vx
+        error_vy = target_vy - vy
+        
+        ax = Kd * error_vx  # Accelerate to target speed
+        ay = Kp_y * error_y + Kd * error_vy  # Track center line
+        
+        # Clamp
+        a_mag = np.sqrt(ax**2 + ay**2)
+        if a_mag > self.a_max:
+            ax = ax * self.a_max / a_mag
+            ay = ay * self.a_max / a_mag
+        
+        return np.array([[ax], [ay]])
+    
+    def __call__(self, state: np.ndarray) -> np.ndarray:
+        return self.compute_control(state)
+
+class EvadeBackupController:
+    """
+    Backup controller for evade scenario.
+    Goes to pocket center OR stays in goal zone if reached.
+    """
+    
+    def __init__(self, robot_spec: Dict, pocket_center: np.ndarray, 
+                 pocket_bounds: Dict, goal_bounds: Dict = None):
+        self.robot_spec = robot_spec
+        self.pocket_center = pocket_center
+        self.pocket_bounds = pocket_bounds
+        self.goal_bounds = goal_bounds
+        self.a_max = robot_spec.get('a_max', 1.0)
+    
+    def compute_control(self, state: np.ndarray, target=None) -> np.ndarray:
+        """
+        Compute backup control.
+        
+        Priority:
+        1. If in GOAL ZONE: stay there (brake to stop) - this is also safe!
+        2. If in hallway and outside pocket x-range: first move x toward pocket center
+        3. If in hallway and within pocket x-range: move up into pocket
+        4. If in pocket: move to pocket center
+        """
+        state = np.array(state).flatten()
+        x, y, vx, vy = state[0], state[1], state[2], state[3]
+        
+        # Safe pocket bounds
+        x_min = self.pocket_bounds['x_min']
+        x_max = self.pocket_bounds['x_max']
+        y_min = self.pocket_bounds['y_min']
+        y_max = self.pocket_bounds['y_max']
+        
+        pocket_center_x = self.pocket_center[0]
+        pocket_center_y = self.pocket_center[1]
+        
+        # PD control gains
+        Kp = 2.0
+        Kd = 2.0
+        
+        # PRIORITY 1: Check if in GOAL ZONE - stay there (also safe!)
+        if self.goal_bounds is not None:
+            goal_x_min = self.goal_bounds['x_min']
+            goal_x_max = self.goal_bounds['x_max']
+            goal_y_min = self.goal_bounds['y_min']
+            goal_y_max = self.goal_bounds['y_max']
+            
+            in_goal = (goal_x_min <= x <= goal_x_max and 
+                       goal_y_min <= y <= goal_y_max)
+            
+            if in_goal:
+                # In goal zone - brake to stop and stay!
+                ax = -Kd * vx
+                ay = -Kd * vy
+                
+                # Clamp and return early
+                a_mag = np.sqrt(ax**2 + ay**2)
+                if a_mag > self.a_max:
+                    ax = ax * self.a_max / a_mag
+                    ay = ay * self.a_max / a_mag
+                return np.array([[ax], [ay]])
+        
+        # Margin for "in pocket" check
+        inside_margin = 0.5
+        
+        # Check if robot is IN the pocket (y > y_min and x in range)
+        in_pocket = (x_min - inside_margin <= x <= x_max + inside_margin and 
+                     y >= y_min - inside_margin)
+        
+        # Check if close enough to pocket center
+        dist_to_center = np.sqrt((x - pocket_center_x)**2 + (y - pocket_center_y)**2)
+        
+        if dist_to_center < 1.0:
+            # Very close to pocket center - brake to stop
             ax = -Kd * vx
             ay = -Kd * vy
+        
+        elif in_pocket:
+            # Robot is in the pocket - move toward pocket center
+            error_x = pocket_center_x - x
+            error_y = pocket_center_y - y
             
-            # Clamp and return early
-            a_mag = np.sqrt(ax**2 + ay**2)
-            if a_mag > a_max:
-                ax = ax * a_max / a_mag
-                ay = ay * a_max / a_mag
-            return np.array([[ax], [ay]])
-    
-    # Margin for "in pocket" check
-    inside_margin = 0.5
-    
-    # Check if robot is IN the pocket (y > y_min and x in range)
-    in_pocket = (x_min - inside_margin <= x <= x_max + inside_margin and 
-                 y >= y_min - inside_margin)
-    
-    # Check if close enough to pocket center
-    dist_to_center = np.sqrt((x - pocket_center_x)**2 + (y - pocket_center_y)**2)
-    
-    if dist_to_center < 1.0:
-        # Very close to pocket center - brake to stop
-        ax = -Kd * vx
-        ay = -Kd * vy
-    
-    elif in_pocket:
-        # Robot is in the pocket - move toward pocket center
-        error_x = pocket_center_x - x
-        error_y = pocket_center_y - y
+            ax = Kp * error_x - Kd * vx
+            ay = Kp * error_y - Kd * vy
         
-        ax = Kp * error_x - Kd * vx
-        ay = Kp * error_y - Kd * vy
-    
-    elif x_min <= x <= x_max:
-        # Robot is in hallway but within pocket x-range - safe to go up
-        # Move toward pocket entrance first, then center
-        target_x = pocket_center_x
-        target_y = pocket_center_y
+        elif x_min <= x <= x_max:
+            # Robot is in hallway but within pocket x-range - safe to go up
+            target_x = pocket_center_x
+            target_y = pocket_center_y
+            
+            error_x = target_x - x
+            error_y = target_y - y
+            
+            ax = Kp * error_x - Kd * vx
+            ay = Kp * error_y - Kd * vy
         
-        error_x = target_x - x
-        error_y = target_y - y
-        
-        ax = Kp * error_x - Kd * vx
-        ay = Kp * error_y - Kd * vy
-    
-    else:
-        # Robot is in hallway OUTSIDE pocket x-range
-        # CRITICAL: First move x toward pocket center WHILE staying in hallway (y=0)
-        # This avoids cutting through the corner at (35, 2) or (25, 2)
-        target_x = pocket_center_x  # Move x toward center of pocket
-        target_y = 0.0  # Stay in hallway center
-        
-        error_x = target_x - x
-        error_y = target_y - y
-        
-        # Strong x control to get back to pocket range quickly
-        ax = Kp * error_x - Kd * vx
-        ay = Kp * error_y - Kd * vy
-    
-    # Clamp accelerations
-    a_mag = np.sqrt(ax**2 + ay**2)
-    if a_mag > a_max:
-        ax = ax * a_max / a_mag
-        ay = ay * a_max / a_mag
-    
-    return np.array([[ax], [ay]])
-
-
-def is_trajectory_valid(x_traj: np.ndarray, obstacle_state: Dict, 
-                        env: EvadeEnv, robot_radius: float, 
-                        dt: float, safety_margin: float = 0.5,
-                        debug: bool = False) -> bool:
-    """Check if trajectory is collision-free considering moving obstacle."""
-    radius = robot_radius + safety_margin
-    
-    for i, state in enumerate(x_traj):
-        pos = state[:2]
-        
-        # Check boundary collision
-        if env.check_collision(pos, radius):
-            if debug:
-                print(f"    INVALID: boundary collision at step {i}, pos=({pos[0]:.2f}, {pos[1]:.2f})")
-            return False
-        
-        # Check moving obstacle collision (at simulated time)
-        # Obstacle position at timestep i
-        obs_x = obstacle_state['x'] + obstacle_state.get('vx', 0) * i * dt
-        obs_y = obstacle_state['y'] + obstacle_state.get('vy', 0) * i * dt
-        
-        # Handle multiple respawns (bullet can pass through multiple times)
-        hallway_length = env.hallway_length
-        bullet_length = obstacle_state['length']
-        respawn_threshold = hallway_length + bullet_length
-        bullet_start = env.bullet_start_x
-        cycle_length = respawn_threshold - bullet_start  # Total distance per cycle
-        
-        # Wrap bullet position using modulo for proper multi-cycle handling
-        if obs_x > respawn_threshold:
-            cycles = (obs_x - bullet_start) / cycle_length
-            obs_x = bullet_start + (obs_x - bullet_start) % cycle_length
-        
-        # Rectangle-circle collision
-        obs_length = obstacle_state['length']
-        obs_width = obstacle_state['width']
-        obs_x_min = obs_x - obs_length / 2
-        obs_x_max = obs_x + obs_length / 2 + obs_length / 3  # Include nose
-        obs_y_min = obs_y - obs_width / 2
-        obs_y_max = obs_y + obs_width / 2
-        
-        closest_x = np.clip(pos[0], obs_x_min, obs_x_max)
-        closest_y = np.clip(pos[1], obs_y_min, obs_y_max)
-        dist = np.sqrt((pos[0] - closest_x)**2 + (pos[1] - closest_y)**2)
-        
-        if dist < radius:
-            if debug:
-                print(f"    INVALID: bullet collision at step {i}, "
-                      f"pos=({pos[0]:.2f}, {pos[1]:.2f}), "
-                      f"bullet_x={obs_x:.2f}, dist={dist:.2f} < radius={radius:.2f}")
-            return False
-    
-    return True
-
-
-def find_first_collision_step(x_traj: np.ndarray, obstacle_state: Dict,
-                               env: EvadeEnv, robot_radius: float, 
-                               dt: float, safety_margin: float = 0.5) -> int:
-    """Find the first step where collision occurs. Returns -1 if no collision."""
-    radius = robot_radius + safety_margin
-    
-    for i, state in enumerate(x_traj):
-        pos = state[:2]
-        
-        # Check boundary collision
-        if env.check_collision(pos, radius):
-            return i
-        
-        # Check moving obstacle collision
-        obs_x = obstacle_state['x'] + obstacle_state.get('vx', 0) * i * dt
-        obs_y = obstacle_state['y'] + obstacle_state.get('vy', 0) * i * dt
-        
-        # Handle multiple respawns
-        hallway_length = env.hallway_length
-        bullet_length = obstacle_state['length']
-        respawn_threshold = hallway_length + bullet_length
-        bullet_start = env.bullet_start_x
-        cycle_length = respawn_threshold - bullet_start
-        
-        if obs_x > respawn_threshold:
-            obs_x = bullet_start + (obs_x - bullet_start) % cycle_length
-        
-        # Rectangle-circle collision
-        obs_length = obstacle_state['length']
-        obs_width = obstacle_state['width']
-        obs_x_min = obs_x - obs_length / 2
-        obs_x_max = obs_x + obs_length / 2 + obs_length / 3
-        obs_y_min = obs_y - obs_width / 2
-        obs_y_max = obs_y + obs_width / 2
-        
-        closest_x = np.clip(pos[0], obs_x_min, obs_x_max)
-        closest_y = np.clip(pos[1], obs_y_min, obs_y_max)
-        dist = np.sqrt((pos[0] - closest_x)**2 + (pos[1] - closest_y)**2)
-        
-        if dist < radius:
-            return i
-    
-    return -1  # No collision
-
-
-def solve_gatekeeper(robot_state: np.ndarray, obstacle_state: Dict,
-                     state: ShieldingState, config: TestConfig, env: EvadeEnv,
-                     pocket_center: np.ndarray, pocket_bounds: Dict, 
-                     goal_bounds: Dict, ax: plt.Axes) -> np.ndarray:
-    """
-    Gatekeeper algorithm with OPTIMIZED backward search.
-    
-    Optimization:
-    1. First try full nominal horizon - if valid, done in 1 iteration
-    2. If collision found, start backward search from collision step
-    """
-    robot_state = np.array(robot_state).flatten()
-    robot_spec = config.robot.to_dict()
-    dt = config.simulation.dt
-    backup_steps = int(config.simulation.backup_horizon_time / dt)
-    nominal_horizon_steps = backup_steps  # Use full backup horizon as max nominal
-    
-    # Initialize committed trajectory if needed
-    if state.committed_x_traj is None:
-        backup_x, backup_u = forward_simulate(
-            robot_state, 'backup', backup_steps, robot_spec, dt, pocket_center, pocket_bounds, goal_bounds
-        )
-        state.committed_x_traj = backup_x
-        state.committed_u_traj = backup_u
-        state.committed_horizon = 0.0
-        state.current_time_idx = 0
-        state.next_event_time = 0.0
-        state.using_backup = True
-    
-    # Check if we should re-evaluate (at event times OR in fallback mode)
-    should_evaluate = (state.current_time_idx >= state.next_event_time / dt or
-                      state.current_time_idx >= len(state.committed_u_traj))
-    
-    if should_evaluate:
-        # STEP 1: Try full nominal horizon first (most common case - should be valid)
-        nominal_x, nominal_u = forward_simulate(
-            robot_state, 'nominal', nominal_horizon_steps, robot_spec, dt, pocket_center, pocket_bounds, goal_bounds
-        )
-        backup_x, backup_u = forward_simulate(
-            nominal_x[-1], 'backup', backup_steps, robot_spec, dt, pocket_center, pocket_bounds, goal_bounds
-        )
-        candidate_x = np.vstack([nominal_x, backup_x[1:]])
-        candidate_u = np.vstack([nominal_u, backup_u])
-        
-        # Check for collision
-        collision_step = find_first_collision_step(candidate_x, obstacle_state, env, config.robot.radius, dt)
-        
-        if collision_step == -1:
-            # No collision - full nominal is valid! Commit immediately (fast path)
-            state.committed_x_traj = candidate_x
-            state.committed_u_traj = candidate_u
-            state.committed_horizon = nominal_horizon_steps * dt
-            state.current_time_idx = 0
-            state.next_event_time = config.simulation.event_offset
-            state.using_backup = False
         else:
-            # STEP 2: Collision found - search backward from collision point
-            # Start search from just before collision in the NOMINAL portion
-            search_start = min(collision_step, nominal_horizon_steps) - 1
-            found_valid = False
+            # Robot is in hallway OUTSIDE pocket x-range
+            # First move x toward pocket center WHILE staying in hallway (y=0)
+            target_x = pocket_center_x
+            target_y = 0.0
             
-            for nominal_steps in range(search_start, -1, -1):
-                # Reuse already-computed nominal trajectory up to this step
-                if nominal_steps > 0:
-                    truncated_nominal_x = nominal_x[:nominal_steps + 1]
-                    truncated_nominal_u = nominal_u[:nominal_steps]
-                    
-                    # Compute backup from this switching point
-                    backup_x2, backup_u2 = forward_simulate(
-                        truncated_nominal_x[-1], 'backup', backup_steps, robot_spec, dt, 
-                        pocket_center, pocket_bounds, goal_bounds
-                    )
-                    candidate_x2 = np.vstack([truncated_nominal_x, backup_x2[1:]])
-                    candidate_u2 = np.vstack([truncated_nominal_u, backup_u2])
-                else:
-                    # Pure backup
-                    candidate_x2, candidate_u2 = forward_simulate(
-                        robot_state, 'backup', backup_steps, robot_spec, dt, 
-                        pocket_center, pocket_bounds, goal_bounds
-                    )
-                
-                # Validate this candidate
-                if is_trajectory_valid(candidate_x2, obstacle_state, env, config.robot.radius, dt):
-                    state.committed_x_traj = candidate_x2
-                    state.committed_u_traj = candidate_u2
-                    state.committed_horizon = nominal_steps * dt
-                    state.current_time_idx = 0
-                    state.next_event_time = config.simulation.event_offset
-                    state.using_backup = (nominal_steps == 0)
-                    found_valid = True
-                    break
+            error_x = target_x - x
+            error_y = target_y - y
             
-            if not found_valid:
-                # Fallback to pure backup
-                backup_x, backup_u = forward_simulate(
-                    robot_state, 'backup', backup_steps, robot_spec, dt, pocket_center, pocket_bounds, goal_bounds
-                )
-                state.committed_x_traj = backup_x
-                state.committed_u_traj = backup_u
-                state.committed_horizon = 0.0
-                state.current_time_idx = 0
-                state.next_event_time = config.simulation.event_offset
-                state.using_backup = True
-    
-    # Get control from committed trajectory
-    if state.current_time_idx < len(state.committed_u_traj):
-        control = state.committed_u_traj[state.current_time_idx].reshape(-1, 1)
-    else:
-        # Fallback to backup controller (should not happen now)
-        control = compute_backup_control(robot_state.reshape(-1, 1), robot_spec, pocket_center, pocket_bounds)
-        state.using_backup = True
-    
-    state.current_time_idx += 1
-    
-    # Update visualization
-    update_visualization(ax, state, dt)
-    
-    return control
+            ax = Kp * error_x - Kd * vx
+            ay = Kp * error_y - Kd * vy
+        
+        # Clamp accelerations
+        a_mag = np.sqrt(ax**2 + ay**2)
+        if a_mag > self.a_max:
+            ax = ax * self.a_max / a_mag
+            ay = ay * self.a_max / a_mag
+        
+        return np.array([[ax], [ay]])
 
 
-def solve_mps(robot_state: np.ndarray, obstacle_state: Dict,
-              state: ShieldingState, config: TestConfig, env: EvadeEnv,
-              pocket_center: np.ndarray, pocket_bounds: Dict,
-              goal_bounds: Dict, ax: plt.Axes) -> np.ndarray:
-    """
-    MPS (Model Predictive Shielding) algorithm with one-step nominal horizon.
-    
-    Key difference from Gatekeeper:
-    - Only tries 1 step of nominal + full backup
-    - Re-evaluates EVERY step (not at intervals)
-    - When valid: applies nominal control (toward goal)
-    - When invalid: applies backup control (toward pocket)
-    """
-    robot_state = np.array(robot_state).flatten()
-    robot_spec = config.robot.to_dict()
-    dt = config.simulation.dt
-    backup_steps = int(config.simulation.backup_horizon_time / dt)
-    
-    # MPS re-evaluates EVERY step
-    # Try ONE step of nominal + backup
-    nominal_steps = 1
-    nominal_x, nominal_u = forward_simulate(
-        robot_state, 'nominal', nominal_steps, robot_spec, dt, pocket_center, pocket_bounds, goal_bounds
-    )
-    
-    # Append backup from end of nominal
-    backup_x, backup_u = forward_simulate(
-        nominal_x[-1], 'backup', backup_steps, robot_spec, dt, pocket_center, pocket_bounds, goal_bounds
-    )
-    candidate_x = np.vstack([nominal_x, backup_x[1:]])
-    candidate_u = np.vstack([nominal_u, backup_u])
-    
-    # Validate candidate trajectory
-    is_valid = is_trajectory_valid(candidate_x, obstacle_state, env, config.robot.radius, dt)
-    
-    # Debug output
-    obs_x = obstacle_state['x']
-    if state.current_time_idx % 20 == 0:  # Print every 20 steps (1 second)
-        print(f"  MPS: robot=({robot_state[0]:.1f}, {robot_state[1]:.1f}), "
-              f"bullet_x={obs_x:.1f}, valid={is_valid}")
-        # If invalid, show why
-        if not is_valid:
-            is_trajectory_valid(candidate_x, obstacle_state, env, config.robot.radius, dt, debug=True)
-    
-    if is_valid:
-        # Valid: apply NOMINAL control (first control from trajectory)
-        # This makes the robot move toward the goal
-        control = nominal_u[0].reshape(-1, 1)
-        state.using_backup = False
-        
-        # Update committed trajectory for visualization
-        state.committed_x_traj = candidate_x
-        state.committed_u_traj = candidate_u
-        state.committed_horizon = nominal_steps * dt
-    else:
-        # Invalid: apply BACKUP control directly
-        # This makes the robot move toward the pocket (goal zone not reachable with 1-step nominal)
-        control = compute_backup_control(robot_state.reshape(-1, 1), robot_spec, pocket_center, pocket_bounds, goal_bounds)
-        state.using_backup = True
-        
-        # Update committed trajectory for visualization (pure backup)
-        state.committed_x_traj = backup_x
-        state.committed_u_traj = backup_u
-        state.committed_horizon = 0.0
-    
-    state.current_time_idx += 1
-    
-    # Update visualization
-    update_visualization(ax, state, dt)
-    
-    return control
 
 
 # =============================================================================
@@ -770,28 +384,52 @@ def run_simulation(config: TestConfig, animation_saver: Optional['AnimationSaver
     print(f"  Goal bounds: x=[{goal_bounds['x_min']:.1f}, {goal_bounds['x_max']:.1f}], "
           f"y=[{goal_bounds['y_min']:.1f}, {goal_bounds['y_max']:.1f}]")
     
-    # Setup shielding state and visualization
-    shielding_state = ShieldingState()
-    setup_visualization(ax, shielding_state)
+    # Create controllers
+    nominal_controller = EvadeNominalController(robot_spec)
+    backup_controller = EvadeBackupController(robot_spec, pocket_center, pocket_bounds, goal_bounds)
     
-    # Select algorithm
+    # Dynamics model for simulation
+    dynamics = DoubleIntegrator2D(config.simulation.dt, robot_spec)
+    
+    # Setup shielding algorithm
+    backup_horizon_time = config.simulation.backup_horizon_time
+    
     if config.algo_type == 'mps':
-        solve_func = solve_mps
         print(f"  Algorithm: MPS (one-step nominal horizon)")
+        shielding = MPS(
+            robot=dynamics,
+            robot_spec=robot_spec,
+            dt=config.simulation.dt,
+            backup_horizon=backup_horizon_time,
+            event_offset=config.simulation.event_offset,
+            ax=ax
+        )
     else:
-        solve_func = solve_gatekeeper
         print(f"  Algorithm: GATEKEEPER (backward search)")
+        shielding = Gatekeeper(
+            robot=dynamics,
+            robot_spec=robot_spec,
+            dt=config.simulation.dt,
+            backup_horizon=backup_horizon_time,
+            nominal_horizon=backup_horizon_time, # Use full backup horizon as nominal for Gatekeeper
+            event_offset=config.simulation.event_offset,
+            ax=ax
+        )
+    
+    # Configure shielding
+    shielding.set_nominal_controller(nominal_controller)
+    shielding.set_backup_controller(backup_controller)
+    shielding.set_environment(env) 
+    shielding.set_moving_obstacles(env.get_bullet_state) # Callable that returns obstacle list/dict
     
     # Setup visualization
     robot_viz = RobotVisualizer(ax, config.robot.radius, 'orange')
-    
-    # Dynamics model
-    dynamics = DoubleIntegrator2D(config.simulation.dt, robot_spec)
     
     # Simulation loop
     state = initial_state.reshape(-1, 1)
     num_steps = int(config.simulation.tf / config.simulation.dt)
     
+    # For stats
     collision_occurred = False
     goal_reached = False
     nominal_steps = 0
@@ -804,15 +442,12 @@ def run_simulation(config: TestConfig, animation_saver: Optional['AnimationSaver
     for step in range(num_steps):
         pos = state[:2, 0]
         
-        # Get bullet state
-        bullet_state = env.get_bullet_state()
-        
         # Shielding control
-        control = solve_func(state.flatten(), bullet_state, shielding_state, 
-                            config, env, pocket_center, pocket_bounds, goal_bounds, ax)
+        # Note: shielding.solve_control_problem calls get_bullet_state internally via moving_obstacles callback
+        control = shielding.solve_control_problem(state)
         
         # Track mode
-        if shielding_state.using_backup:
+        if shielding.is_using_backup():
             backup_steps += 1
         else:
             nominal_steps += 1
@@ -820,7 +455,7 @@ def run_simulation(config: TestConfig, animation_saver: Optional['AnimationSaver
         # Apply control (double integrator dynamics)
         state = dynamics.step(state, control)
         
-        # Clamp velocity
+        # Clamp velocity (simple model constraint)
         vx, vy = state[2, 0], state[3, 0]
         v_mag = np.sqrt(vx**2 + vy**2)
         if v_mag > config.robot.v_max:
@@ -839,9 +474,9 @@ def run_simulation(config: TestConfig, animation_saver: Optional['AnimationSaver
         
         # Save animation frame
         if animation_saver is not None:
-            animation_saver.save_frame(fig)
-        
-        # Check collision with bullet
+             animation_saver.save_frame(fig)
+             
+        # Check collision
         collision, _ = env.check_obstacle_collision(pos, config.robot.radius)
         if collision:
             collision_occurred = True
@@ -852,7 +487,7 @@ def run_simulation(config: TestConfig, animation_saver: Optional['AnimationSaver
                 animation_saver.save_frame(fig, force=True)
             plt.pause(2.0)
             break
-        
+            
         # Check goal
         if env.check_goal_reached(pos):
             goal_reached = True
@@ -863,13 +498,21 @@ def run_simulation(config: TestConfig, animation_saver: Optional['AnimationSaver
                 animation_saver.save_frame(fig, force=True)
             plt.pause(2.0)
             break
-        
+
         # Status output
-        if step % 100 == 0:
-            mode = "BACKUP" if shielding_state.using_backup else "NOMINAL"
+        if step % 20 == 0:
+            status = shielding.get_status()
+            mode = "BACKUP" if status['using_backup'] else "NOMINAL"
             in_pocket = env.is_in_safe_pocket(pos)
             pocket_str = " [IN POCKET]" if in_pocket else ""
             print(f"Step {step:4d}: x={pos[0]:6.2f}, y={pos[1]:6.2f}, mode={mode}{pocket_str}")
+    
+    # Export video if requested
+    if animation_saver is not None:
+        animation_saver.export_video()
+    
+    plt.ioff()
+    plt.close()
     
     # Results
     total_steps = nominal_steps + backup_steps
@@ -899,9 +542,6 @@ def run_simulation(config: TestConfig, animation_saver: Optional['AnimationSaver
         results['passed'] = False
     
     print("-" * 50)
-    
-    plt.ioff()
-    plt.show()
     
     return results
 
@@ -936,10 +576,6 @@ def main():
         print(f"\n  Animation saving enabled -> {output_dir}/")
     
     results = run_simulation(config, animation_saver)
-    
-    # Export video if animation was saved
-    if animation_saver is not None:
-        animation_saver.export_video(output_name=f"{config.name.lower().replace(' ', '_').replace('(', '').replace(')', '')}.mp4")
     
     return results
 

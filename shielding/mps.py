@@ -62,7 +62,7 @@ class MPS(Gatekeeper):
             friction: Current friction coefficient (for dynamics simulation)
             
         Returns:
-            control_input: Control output for current timestep [delta_dot, tau_dot]
+            control_input: Control output for current timestep
         """
         robot_state = np.array(robot_state).flatten()
         
@@ -80,27 +80,34 @@ class MPS(Gatekeeper):
             self.current_time_idx = 0
             self.next_event_time = 0.0  # Trigger event immediately on next call
         
-        # Try updating committed trajectory if event triggered
-        if self.current_time_idx >= self.next_event_time / self.dt:
-            # MPS: Only try ONE step of nominal
-            nominal_horizon_steps = 1
+        # MPS: Re-evaluate EVERY step (key difference from Gatekeeper)
+        # MPS: Only try ONE step of nominal
+        nominal_horizon_steps = 1
+        
+        # Check if we can generate a trajectory (either external or via controller)
+        can_generate = (self.nominal_x_traj is not None and len(self.nominal_x_traj) > 1) or \
+                       (self.nominal_controller is not None)
+        
+        if can_generate:
+            # Generate candidate trajectory with one-step nominal + backup
+            candidate_x_traj, candidate_u_traj, actual_steps = self._generate_candidate_trajectory(
+                robot_state, nominal_horizon_steps, friction
+            )
             
-            # Check if we have at least one step of nominal trajectory
-            if self.nominal_x_traj is not None and len(self.nominal_x_traj) > 1:
-                # Generate candidate trajectory with one-step nominal + backup
-                candidate_x_traj, candidate_u_traj, actual_steps = self._generate_candidate_trajectory(
-                    robot_state, nominal_horizon_steps, friction
-                )
-                
-                # Check validity with safety margin (conservative)
-                if self._is_candidate_valid(candidate_x_traj, safety_margin=1.5):
-                    # Valid: commit the one-step nominal + backup trajectory
-                    self._update_committed_trajectory(actual_steps)
+            # Get moving obstacle state for validation
+            obstacle_state = None
+            if self.moving_obstacles is not None:
+                if callable(self.moving_obstacles):
+                    obstacle_state = self.moving_obstacles()
                 else:
-                    # Invalid: keep previously committed trajectory, reschedule event
-                    self.next_event_time = self.current_time_idx * self.dt + self.event_offset
+                    obstacle_state = self.moving_obstacles
+            
+            # Check validity with safety margin (conservative)
+            if self._is_candidate_valid(candidate_x_traj, safety_margin=1.0, obstacle_state=obstacle_state):
+                # Valid: commit the one-step nominal + backup trajectory
+                self._update_committed_trajectory(actual_steps)
             else:
-                # No nominal trajectory available, reschedule event
+                # Invalid: keep previously committed trajectory, reschedule event
                 self.next_event_time = self.current_time_idx * self.dt + self.event_offset
         
         # Output control from committed trajectory using current index

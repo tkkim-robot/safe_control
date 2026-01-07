@@ -41,20 +41,22 @@ class Gatekeeper:
     """
     
     def __init__(self, robot, robot_spec, dt=0.05, 
-                 backup_horizon=2.0, event_offset=0.5, ax=None):
+                 backup_horizon=2.0, event_offset=0.5, ax=None,
+                 nominal_horizon=None):
         """
         Initialize the Gatekeeper controller.
 
         Args:
-            robot: Robot instance (e.g., DriftingCar) with dynamics
+            robot: Robot instance (e.g., DriftingCar, DoubleIntegrator2D) with dynamics
             robot_spec: Robot specification dictionary
             dt: Simulation timestep
             backup_horizon: Duration (seconds) for backup trajectory (TB in paper)
             event_offset: Time offset before next candidate generation event
             ax: Matplotlib axis for visualization (optional)
+            nominal_horizon: Max nominal horizon (seconds). If None, uses backup_horizon.
             
-        Note: nominal_horizon is automatically determined from MPCC's trajectory length,
-              not a separate tuning parameter.
+        Note: nominal_horizon is automatically determined from MPCC's trajectory length
+              if using external trajectory mode, otherwise uses the nominal_horizon param.
         """
         self.robot = robot
         self.robot_spec = robot_spec
@@ -62,12 +64,20 @@ class Gatekeeper:
         self.backup_horizon = backup_horizon
         self.event_offset = event_offset
         self.horizon_discount = dt * 2  # Discount step for binary search (finer granularity)
+        self.nominal_horizon = nominal_horizon if nominal_horizon is not None else backup_horizon
         
-        # State dimensions for the drifting car model
-        # State: [x, y, theta, r, beta, V, delta, tau] (8 states)
-        # Control: [delta_dot, tau_dot] (2 inputs)
-        self.n_states = 8
-        self.n_controls = 2
+        # Infer state/control dimensions from robot model
+        model = robot_spec.get('model', 'DynamicBicycle2D')
+        if model in ['DoubleIntegrator2D', 'double_integrator']:
+            # Double Integrator: [x, y, vx, vy] (4 states), [ax, ay] (2 controls)
+            self.n_states = 4
+            self.n_controls = 2
+        else:
+            # Default: Drifting car model
+            # State: [x, y, theta, r, beta, V, delta, tau] (8 states)
+            # Control: [delta_dot, tau_dot] (2 inputs)
+            self.n_states = 8
+            self.n_controls = 2
         
         # Controllers (will be set externally)
         self.nominal_controller = None  # Function: state -> control
@@ -191,47 +201,76 @@ class Gatekeeper:
         Single step of dynamics integration.
         
         Args:
-            state: Current state [x, y, theta, r, beta, V, delta, tau]
-            control: Control input [delta_dot, tau_dot]
+            state: Current state (model-dependent)
+                   - DynamicBicycle2D: [x, y, theta, r, beta, V, delta, tau]
+                   - DoubleIntegrator2D: [x, y, vx, vy]
+            control: Control input (model-dependent)
             friction: Friction coefficient (uses robot default if None)
             
         Returns:
             next_state: State after one timestep
         """
-        from safe_control.robots.dynamic_bicycle2D import DynamicBicycle2D
-        
         state = np.array(state).flatten()
         control = np.array(control).flatten()
         
-        # Create dynamics model with appropriate friction
-        sim_spec = self.robot_spec.copy()
-        if friction is not None:
-            sim_spec['mu'] = friction
-        dynamics = DynamicBicycle2D(self.dt, sim_spec)
+        model = self.robot_spec.get('model', 'DynamicBicycle2D')
         
-        # Extract dynamics state [r, beta, V, delta, tau]
-        X_dyn = state[3:8].reshape(-1, 1)
-        U = control.reshape(-1, 1)
-        
-        # Step dynamics
-        X_dyn_next = dynamics.step(X_dyn, U)
-        
-        # Update global state
-        theta = state[2]
-        V = X_dyn_next[2, 0]
-        beta = X_dyn_next[1, 0]
-        r = X_dyn_next[0, 0]
-        
-        # Velocity in global frame
-        vx_global = V * np.cos(theta + beta)
-        vy_global = V * np.sin(theta + beta)
-        
-        # Update state
-        next_state = np.zeros(8)
-        next_state[0] = state[0] + vx_global * self.dt
-        next_state[1] = state[1] + vy_global * self.dt
-        next_state[2] = angle_normalize(state[2] + r * self.dt)
-        next_state[3:8] = X_dyn_next.flatten()
+        if model in ['DoubleIntegrator2D', 'double_integrator']:
+            # Double Integrator: state = [x, y, vx, vy], control = [ax, ay]
+            x, y, vx, vy = state[0], state[1], state[2], state[3]
+            ax, ay = control[0], control[1]
+            
+            # Apply acceleration
+            vx_new = vx + ax * self.dt
+            vy_new = vy + ay * self.dt
+            
+            # Clamp velocity to v_max if specified
+            v_max = self.robot_spec.get('v_max', float('inf'))
+            v_mag = np.sqrt(vx_new**2 + vy_new**2)
+            if v_mag > v_max:
+                vx_new = vx_new * v_max / v_mag
+                vy_new = vy_new * v_max / v_mag
+            
+            # Update position
+            next_state = np.zeros(4)
+            next_state[0] = x + vx * self.dt
+            next_state[1] = y + vy * self.dt
+            next_state[2] = vx_new
+            next_state[3] = vy_new
+            
+        else:
+            # DynamicBicycle2D model
+            from safe_control.robots.dynamic_bicycle2D import DynamicBicycle2D
+            
+            # Create dynamics model with appropriate friction
+            sim_spec = self.robot_spec.copy()
+            if friction is not None:
+                sim_spec['mu'] = friction
+            dynamics = DynamicBicycle2D(self.dt, sim_spec)
+            
+            # Extract dynamics state [r, beta, V, delta, tau]
+            X_dyn = state[3:8].reshape(-1, 1)
+            U = control.reshape(-1, 1)
+            
+            # Step dynamics
+            X_dyn_next = dynamics.step(X_dyn, U)
+            
+            # Update global state
+            theta = state[2]
+            V = X_dyn_next[2, 0]
+            beta = X_dyn_next[1, 0]
+            r = X_dyn_next[0, 0]
+            
+            # Velocity in global frame
+            vx_global = V * np.cos(theta + beta)
+            vy_global = V * np.sin(theta + beta)
+            
+            # Update state
+            next_state = np.zeros(8)
+            next_state[0] = state[0] + vx_global * self.dt
+            next_state[1] = state[1] + vy_global * self.dt
+            next_state[2] = angle_normalize(state[2] + r * self.dt)
+            next_state[3:8] = X_dyn_next.flatten()
         
         return next_state
     
@@ -555,7 +594,7 @@ class Gatekeeper:
             friction: Current friction coefficient (for dynamics simulation)
             
         Returns:
-            control_input: Control output for current timestep [delta_dot, tau_dot]
+            control_input: Control output for current timestep
         """
         robot_state = np.array(robot_state).flatten()
         
@@ -575,9 +614,13 @@ class Gatekeeper:
         
         # Try updating committed trajectory if event triggered
         if self.current_time_idx >= self.next_event_time / self.dt:
-            # Determine max nominal steps from available MPCC trajectory
+            # Determine max nominal steps from available trajectory or controller
             if self.nominal_x_traj is not None:
+                # Use externally provided trajectory
                 max_nominal_steps = len(self.nominal_x_traj) - 1  # -1 because states include initial
+            elif self.nominal_controller is not None:
+                # Use nominal_horizon with forward simulation
+                max_nominal_steps = int(self.nominal_horizon / self.dt)
             else:
                 max_nominal_steps = 0
             
@@ -596,8 +639,16 @@ class Gatekeeper:
                     robot_state, nominal_horizon_steps, friction
                 )
                 
+                # Get moving obstacle state for validation
+                obstacle_state = None
+                if self.moving_obstacles is not None:
+                    if callable(self.moving_obstacles):
+                        obstacle_state = self.moving_obstacles()
+                    else:
+                        obstacle_state = self.moving_obstacles
+                
                 # Check validity with safety margin (conservative)
-                if self._is_candidate_valid(candidate_x_traj, safety_margin=1.5):
+                if self._is_candidate_valid(candidate_x_traj, safety_margin=1.0, obstacle_state=obstacle_state):
                     self._update_committed_trajectory(actual_steps)
                     found_valid = True
                     break
