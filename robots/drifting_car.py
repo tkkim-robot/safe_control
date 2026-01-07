@@ -410,27 +410,41 @@ class DriftingCar:
         """Return CasADi input matrix g(x)."""
         return self.dynamics.g(X_dyn, casadi=True)
     
-    def step(self, U):
+    def step(self, state_or_input, input_val=None):
         """
         Step the car dynamics forward.
         
+        Supports two signatures:
+        1. step(U): Stateful update. Advances internal simulation.
+        2. step(X, U): Stateless update. Returns next state without modifying internal state.
+        
         Args:
-            U: Control input [delta_dot, tau_dot]^T (2x1)
+            state_or_input: Control input U (if input_val is None) OR State X (if input_val is not None)
+            input_val: Control input U (only for case 2)
             
         Returns:
             New state X
         """
-        self.U = np.array(U).reshape(-1, 1)
+        if input_val is None:
+            # Case 1: step(U) - Stateful
+            U = np.array(state_or_input).reshape(-1, 1)
+            X = self.X
+            stateful = True
+        else:
+            # Case 2: step(X, U) - Stateless
+            X = np.array(state_or_input).reshape(-1, 1)
+            U = np.array(input_val).reshape(-1, 1)
+            stateful = False
         
-        # Get current dynamics state
-        X_dyn = self.get_dynamics_state()
+        # Get dynamics state [r, beta, V, delta, tau]
+        X_dyn = X[3:8, :]
         
         # Step dynamics
-        X_dyn_next = self.dynamics.step(X_dyn, self.U)
+        X_dyn_next = self.dynamics.step(X_dyn, U)
         
         # Update global state
         # Global position update using body velocities
-        theta = self.X[2, 0]
+        theta = X[2, 0]
         V = X_dyn_next[2, 0]
         beta = X_dyn_next[1, 0]
         r = X_dyn_next[0, 0]
@@ -439,19 +453,20 @@ class DriftingCar:
         vx_global = V * np.cos(theta + beta)
         vy_global = V * np.sin(theta + beta)
         
-        # Update global position
-        self.X[0, 0] += vx_global * self.dt
-        self.X[1, 0] += vy_global * self.dt
-        self.X[2, 0] += r * self.dt
-        self.X[2, 0] = angle_normalize(self.X[2, 0])
+        # Next global state
+        X_next = np.zeros_like(X)
+        X_next[0, 0] = X[0, 0] + vx_global * self.dt
+        X_next[1, 0] = X[1, 0] + vy_global * self.dt
+        X_next[2, 0] = angle_normalize(X[2, 0] + r * self.dt)
+        X_next[3:8, :] = X_dyn_next
         
-        # Update dynamics states
-        self.X[3:8, :] = X_dyn_next
+        if stateful:
+            self.U = U
+            self.X = X_next
+            self.trajectory.append(self.X[:2, 0].copy())
+            return self.X.copy()
         
-        # Record trajectory
-        self.trajectory.append(self.X[:2, 0].copy())
-        
-        return self.X.copy()
+        return X_next
     
     def nominal_input(self, goal, d_min=0.5):
         """
