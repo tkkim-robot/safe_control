@@ -58,9 +58,9 @@ class EnvironmentConfig:
     pocket_length: float = 10.0
     pocket_width: float = 4.0
     goal_length: float = 5.0
-    bullet_speed: float = 2.5  # Slower bullet (robot v_max=1.5)
+    bullet_speed: float = 3.0  # Slower bullet (robot v_max=1.5)
     bullet_length: float = 3.0
-    bullet_start_x: float = -25.0  # Start behind the robot
+    bullet_start_x: float = 5.0  # Start closer to hallway for faster respawn
 
 
 @dataclass
@@ -84,10 +84,10 @@ class SimulationConfig:
     """Simulation configuration parameters."""
     dt: float = 0.05
     tf: float = 60.0
-    backup_horizon_time: float = 4.0
+    backup_horizon_time: float = 12.0  
     event_offset: float = 0.2
     safety_margin: float = 0.5
-    initial_x: float = 3.0
+    initial_x: float = 20.0  # Start ahead of bullet
     target_velocity: float = 1.0
 
 
@@ -196,7 +196,7 @@ def update_visualization(ax: plt.Axes, state: ShieldingState, dt: float):
 
 def forward_simulate(initial_state: np.ndarray, controller_type: str, horizon_steps: int,
                      robot_spec: Dict, dt: float, pocket_center: np.ndarray, 
-                     pocket_bounds: Dict) -> tuple:
+                     pocket_bounds: Dict, goal_bounds: Dict = None) -> tuple:
     """Forward simulate trajectory with given controller."""
     state = np.array(initial_state).flatten().reshape(-1, 1)
     x_traj = np.zeros((horizon_steps + 1, 4))
@@ -210,7 +210,7 @@ def forward_simulate(initial_state: np.ndarray, controller_type: str, horizon_st
         if controller_type == 'nominal':
             U = compute_nominal_control(state, robot_spec)
         else:
-            U = compute_backup_control(state, robot_spec, pocket_center, pocket_bounds)
+            U = compute_backup_control(state, robot_spec, pocket_center, pocket_bounds, goal_bounds)
         
         u_traj[i] = U.flatten()
         
@@ -267,14 +267,16 @@ def compute_nominal_control(state: np.ndarray, robot_spec: Dict) -> np.ndarray:
 
 
 def compute_backup_control(state: np.ndarray, robot_spec: Dict, 
-                           pocket_center: np.ndarray, pocket_bounds: Dict) -> np.ndarray:
+                           pocket_center: np.ndarray, pocket_bounds: Dict,
+                           goal_bounds: Dict = None) -> np.ndarray:
     """
-    Backup controller: go to pocket center (DEEP inside the pocket).
+    Backup controller: go to pocket center OR stay in goal zone if reached.
     
-    IMPORTANT: Avoid cutting corners! The trajectory must:
-    1. If in hallway and outside pocket x-range: first move x toward pocket center
-    2. If in hallway and within pocket x-range: move up into pocket
-    3. If in pocket: move to pocket center
+    Priority:
+    1. If in GOAL ZONE: stay there (brake to stop) - this is also safe!
+    2. If in hallway and outside pocket x-range: first move x toward pocket center
+    3. If in hallway and within pocket x-range: move up into pocket
+    4. If in pocket: move to pocket center
     """
     state = np.array(state).flatten()
     x, y, vx, vy = state[0], state[1], state[2], state[3]
@@ -293,6 +295,28 @@ def compute_backup_control(state: np.ndarray, robot_spec: Dict,
     # PD control gains
     Kp = 2.0
     Kd = 2.0
+    
+    # PRIORITY 1: Check if in GOAL ZONE - stay there (also safe!)
+    if goal_bounds is not None:
+        goal_x_min = goal_bounds['x_min']
+        goal_x_max = goal_bounds['x_max']
+        goal_y_min = goal_bounds['y_min']
+        goal_y_max = goal_bounds['y_max']
+        
+        in_goal = (goal_x_min <= x <= goal_x_max and 
+                   goal_y_min <= y <= goal_y_max)
+        
+        if in_goal:
+            # In goal zone - brake to stop and stay!
+            ax = -Kd * vx
+            ay = -Kd * vy
+            
+            # Clamp and return early
+            a_mag = np.sqrt(ax**2 + ay**2)
+            if a_mag > a_max:
+                ax = ax * a_max / a_mag
+                ay = ay * a_max / a_mag
+            return np.array([[ax], [ay]])
     
     # Margin for "in pocket" check
     inside_margin = 0.5
@@ -409,7 +433,8 @@ def is_trajectory_valid(x_traj: np.ndarray, obstacle_state: Dict,
 
 def solve_gatekeeper(robot_state: np.ndarray, obstacle_state: Dict,
                      state: ShieldingState, config: TestConfig, env: EvadeEnv,
-                     pocket_center: np.ndarray, pocket_bounds: Dict, ax: plt.Axes) -> np.ndarray:
+                     pocket_center: np.ndarray, pocket_bounds: Dict, 
+                     goal_bounds: Dict, ax: plt.Axes) -> np.ndarray:
     """
     Gatekeeper algorithm with backward search for maximum valid nominal horizon.
     """
@@ -421,7 +446,7 @@ def solve_gatekeeper(robot_state: np.ndarray, obstacle_state: Dict,
     # Initialize committed trajectory if needed
     if state.committed_x_traj is None:
         backup_x, backup_u = forward_simulate(
-            robot_state, 'backup', backup_steps, robot_spec, dt, pocket_center, pocket_bounds
+            robot_state, 'backup', backup_steps, robot_spec, dt, pocket_center, pocket_bounds, goal_bounds
         )
         state.committed_x_traj = backup_x
         state.committed_u_traj = backup_u
@@ -437,17 +462,17 @@ def solve_gatekeeper(robot_state: np.ndarray, obstacle_state: Dict,
     if should_evaluate:
         # Try nominal+backup trajectory with backward search
         found_valid = False
-        max_nominal_steps = backup_steps // 2  # Start with half backup horizon
+        max_nominal_steps = backup_steps  # Use full backup horizon for nominal search
         
         for nominal_steps in range(max_nominal_steps, -1, -1):
             nominal_x, nominal_u = forward_simulate(
-                robot_state, 'nominal', nominal_steps, robot_spec, dt, pocket_center, pocket_bounds
+                robot_state, 'nominal', nominal_steps, robot_spec, dt, pocket_center, pocket_bounds, goal_bounds
             )
             
             # Append backup from end of nominal
             if len(nominal_x) > 0:
                 backup_x, backup_u = forward_simulate(
-                    nominal_x[-1], 'backup', backup_steps, robot_spec, dt, pocket_center, pocket_bounds
+                    nominal_x[-1], 'backup', backup_steps, robot_spec, dt, pocket_center, pocket_bounds, goal_bounds
                 )
                 candidate_x = np.vstack([nominal_x, backup_x[1:]])
                 candidate_u = np.vstack([nominal_u, backup_u])
@@ -470,7 +495,7 @@ def solve_gatekeeper(robot_state: np.ndarray, obstacle_state: Dict,
         if not found_valid:
             # No valid trajectory found - commit pure backup from current position
             backup_x, backup_u = forward_simulate(
-                robot_state, 'backup', backup_steps, robot_spec, dt, pocket_center, pocket_bounds
+                robot_state, 'backup', backup_steps, robot_spec, dt, pocket_center, pocket_bounds, goal_bounds
             )
             state.committed_x_traj = backup_x
             state.committed_u_traj = backup_u
@@ -497,7 +522,8 @@ def solve_gatekeeper(robot_state: np.ndarray, obstacle_state: Dict,
 
 def solve_mps(robot_state: np.ndarray, obstacle_state: Dict,
               state: ShieldingState, config: TestConfig, env: EvadeEnv,
-              pocket_center: np.ndarray, pocket_bounds: Dict, ax: plt.Axes) -> np.ndarray:
+              pocket_center: np.ndarray, pocket_bounds: Dict,
+              goal_bounds: Dict, ax: plt.Axes) -> np.ndarray:
     """
     MPS (Model Predictive Shielding) algorithm with one-step nominal horizon.
     
@@ -516,12 +542,12 @@ def solve_mps(robot_state: np.ndarray, obstacle_state: Dict,
     # Try ONE step of nominal + backup
     nominal_steps = 1
     nominal_x, nominal_u = forward_simulate(
-        robot_state, 'nominal', nominal_steps, robot_spec, dt, pocket_center, pocket_bounds
+        robot_state, 'nominal', nominal_steps, robot_spec, dt, pocket_center, pocket_bounds, goal_bounds
     )
     
     # Append backup from end of nominal
     backup_x, backup_u = forward_simulate(
-        nominal_x[-1], 'backup', backup_steps, robot_spec, dt, pocket_center, pocket_bounds
+        nominal_x[-1], 'backup', backup_steps, robot_spec, dt, pocket_center, pocket_bounds, goal_bounds
     )
     candidate_x = np.vstack([nominal_x, backup_x[1:]])
     candidate_u = np.vstack([nominal_u, backup_u])
@@ -550,8 +576,8 @@ def solve_mps(robot_state: np.ndarray, obstacle_state: Dict,
         state.committed_horizon = nominal_steps * dt
     else:
         # Invalid: apply BACKUP control directly
-        # This makes the robot move toward the pocket
-        control = compute_backup_control(robot_state.reshape(-1, 1), robot_spec, pocket_center, pocket_bounds)
+        # This makes the robot move toward the pocket (goal zone not reachable with 1-step nominal)
+        control = compute_backup_control(robot_state.reshape(-1, 1), robot_spec, pocket_center, pocket_bounds, goal_bounds)
         state.using_backup = True
         
         # Update committed trajectory for visualization (pure backup)
@@ -654,9 +680,19 @@ def run_simulation(config: TestConfig, animation_saver: Optional['AnimationSaver
     pocket_center = env.get_pocket_center()
     pocket_bounds = env.get_pocket_bounds()
     
+    # Create goal bounds
+    goal_bounds = {
+        'x_min': env.goal_x_min,
+        'x_max': env.goal_x_max,
+        'y_min': -env.half_width,  # Hallway y-range
+        'y_max': env.half_width
+    }
+    
     print(f"  Pocket center: ({pocket_center[0]:.1f}, {pocket_center[1]:.1f})")
     print(f"  Pocket bounds: x=[{pocket_bounds['x_min']:.1f}, {pocket_bounds['x_max']:.1f}], "
           f"y=[{pocket_bounds['y_min']:.1f}, {pocket_bounds['y_max']:.1f}]")
+    print(f"  Goal bounds: x=[{goal_bounds['x_min']:.1f}, {goal_bounds['x_max']:.1f}], "
+          f"y=[{goal_bounds['y_min']:.1f}, {goal_bounds['y_max']:.1f}]")
     
     # Setup shielding state and visualization
     shielding_state = ShieldingState()
@@ -697,7 +733,7 @@ def run_simulation(config: TestConfig, animation_saver: Optional['AnimationSaver
         
         # Shielding control
         control = solve_func(state.flatten(), bullet_state, shielding_state, 
-                            config, env, pocket_center, pocket_bounds, ax)
+                            config, env, pocket_center, pocket_bounds, goal_bounds, ax)
         
         # Track mode
         if shielding_state.using_backup:
