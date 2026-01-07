@@ -501,7 +501,7 @@ class Gatekeeper:
             obs_at_t = obstacle_states[i] if obstacle_states else None
             collision, reason = self._is_collision(state, safety_margin, obs_at_t, return_reason=True)
             if collision:
-                print(f"Invalid candidate at step {i}: {reason}")
+                # print(f"Invalid candidate at step {i}: {reason}")
                 return False
         
         return True
