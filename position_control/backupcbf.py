@@ -169,151 +169,27 @@ class BackupCBF:
             return np.zeros(self.n_controls)
     
     def _dynamics_f(self, x):
-        """Get drift dynamics f(x) extended to full state dimension."""
-        x_arr = np.array(x).flatten()
-        x_col = x_arr.reshape(-1, 1)
-        f_raw = None
-        
-        if hasattr(self.robot, 'f'):
-            # Try different signatures - some robots use f(X), others use f() with internal state
-            try:
-                f_raw = self.robot.f(x_col).flatten()
-            except TypeError:
-                # DriftingCar uses internal state - temporarily set it
-                if hasattr(self.robot, 'X'):
-                    old_X = self.robot.X.copy() if self.robot.X is not None else None
-                    self.robot.X = x_col
-                    f_raw = self.robot.f().flatten()
-                    self.robot.X = old_X
-                else:
-                    f_raw = self.robot.f().flatten()
-        
-        if f_raw is not None:
-            # Extend to full state dimension if needed
-            # For DriftingCar: f is 5-dim for dynamics state [r, beta, V, delta, tau]
-            # Full state is 8-dim: [x, y, theta, r, beta, V, delta, tau]
-            # Kinematic coupling: x_dot = V*cos(theta+beta), y_dot = V*sin(theta+beta), theta_dot = r
-            if len(f_raw) < self.n_states:
-                f_full = np.zeros(self.n_states)
-                # Dynamics state at indices 3:8
-                offset = self.n_states - len(f_raw)  # 8 - 5 = 3
-                f_full[offset:] = f_raw
-                
-                # Add kinematic coupling for position states (DriftingCar)
-                if self.n_states == 8 and len(f_raw) == 5:
-                    # State: [x, y, theta, r, beta, V, delta, tau]
-                    #         0  1   2     3   4    5    6     7
-                    theta = x_arr[2]
-                    r = x_arr[3]
-                    beta = x_arr[4]
-                    V = x_arr[5]
-                    
-                    # Position dynamics (kinematic coupling)
-                    f_full[0] = V * np.cos(theta + beta)  # x_dot
-                    f_full[1] = V * np.sin(theta + beta)  # y_dot
-                    f_full[2] = r  # theta_dot
-                
-                return f_full
-            return f_raw
+        """Get full-state dynamics f(x) from robot."""
+        model = self.robot_spec.get('model', '')
+        if model in ['DriftingCar', 'DynamicBicycle2D']:
+            # DriftingCar has separate f_full() that includes kinematic coupling
+            return self.robot.f_full(x)
         else:
-            # Default: zero drift for simple integrator models
-            return np.zeros(self.n_states)
+            # DoubleIntegrator2D and others: f() already returns full-state dynamics
+            x = np.array(x).reshape(-1, 1)
+            return self.robot.f(x).flatten()
     
     def _dynamics_g(self, x):
-        """Get control matrix g(x) extended to full state dimension."""
-        x = np.array(x).reshape(-1, 1)
-        g_raw = None
-        
-        if hasattr(self.robot, 'g'):
-            # Try different signatures
-            try:
-                g_raw = self.robot.g(x)
-            except TypeError:
-                # DriftingCar uses internal state
-                if hasattr(self.robot, 'X'):
-                    old_X = self.robot.X.copy() if self.robot.X is not None else None
-                    self.robot.X = x
-                    g_raw = self.robot.g()
-                    self.robot.X = old_X
-                else:
-                    g_raw = self.robot.g()
-        
-        if g_raw is not None:
-            # Extend to full state dimension if needed
-            # For DriftingCar: g is 5x2 for dynamics state, need 8x2 for full state
-            if g_raw.shape[0] < self.n_states:
-                G = np.zeros((self.n_states, self.n_controls))
-                # Dynamics state starts at index 3 for DriftingCar
-                offset = self.n_states - g_raw.shape[0]  # 8 - 5 = 3
-                G[offset:, :] = g_raw
-                return G
-            return g_raw
+        """Get full-state control matrix g(x) from robot."""
+        model = self.robot_spec.get('model', '')
+        if model in ['DriftingCar', 'DynamicBicycle2D']:
+            # DriftingCar has separate g_full() that extends to full state
+            return self.robot.g_full(x)
         else:
-            # Default: direct control for simple integrator
-            G = np.zeros((self.n_states, self.n_controls))
-            if self.n_states == 4 and self.n_controls == 2:
-                G[2, 0] = 1.0  # ax -> vx_dot
-                G[3, 1] = 1.0  # ay -> vy_dot
-            return G
+            # DoubleIntegrator2D and others: g() already returns full-state matrix
+            x = np.array(x).reshape(-1, 1)
+            return self.robot.g(x)
     
-    def _discrete_f_and_g(self, x, u_b):
-        """
-        Compute discrete-time f and g via finite differences of robot.step().
-        
-        This ensures consistency with how sensitivity S is computed.
-        Returns (f_discrete, g_discrete) where:
-            x_next = f_discrete + g_discrete @ u
-            
-        Note: This assumes affine dynamics: x_next = x + dt*(f(x) + g(x)*u)
-              For discrete: x_next = F(x, u_b) + G(x, u_b) * (u - u_b)
-        """
-        x = np.array(x).flatten()
-        u_b = np.array(u_b).flatten()
-        eps = 1e-5
-        n = len(x)
-        m = self.n_controls
-        
-        # Compute base next state with backup control
-        if hasattr(self.robot, 'step'):
-            try:
-                x_next_base = self.robot.step(x.reshape(-1, 1), u_b.reshape(-1, 1))
-                x_next_base = np.array(x_next_base).flatten()
-            except:
-                # Fallback to continuous dynamics
-                f_val = self._dynamics_f(x)
-                g_val = self._dynamics_g(x)
-                x_next_base = x + self.dt * (f_val + g_val @ u_b)
-        else:
-            f_val = self._dynamics_f(x)
-            g_val = self._dynamics_g(x)
-            x_next_base = x + self.dt * (f_val + g_val @ u_b)
-        
-        # f_discrete is just x_next under backup control
-        f_discrete = x_next_base
-        
-        # g_discrete: how does control perturbation affect next state?
-        # g_discrete[:, j] = d(x_next)/d(u[j])
-        g_discrete = np.zeros((n, m))
-        for j in range(m):
-            u_pert = u_b.copy()
-            u_pert[j] += eps
-            
-            if hasattr(self.robot, 'step'):
-                try:
-                    x_next_pert = self.robot.step(x.reshape(-1, 1), u_pert.reshape(-1, 1))
-                    x_next_pert = np.array(x_next_pert).flatten()
-                except:
-                    f_val = self._dynamics_f(x)
-                    g_val = self._dynamics_g(x)
-                    x_next_pert = x + self.dt * (f_val + g_val @ u_pert)
-            else:
-                f_val = self._dynamics_f(x)
-                g_val = self._dynamics_g(x)
-                x_next_pert = x + self.dt * (f_val + g_val @ u_pert)
-            
-            g_discrete[:, j] = (x_next_pert - x_next_base) / eps
-        
-        return f_discrete, g_discrete
     
     def _dynamics_df_dx(self, x):
         """Get Jacobian of f with respect to x."""
