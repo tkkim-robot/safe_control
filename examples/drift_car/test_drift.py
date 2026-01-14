@@ -57,6 +57,7 @@ from safe_control.position_control.mpcc import MPCC
 from safe_control.position_control.backup_controller import LaneChangeController, StoppingController
 from safe_control.shielding.gatekeeper import Gatekeeper
 from safe_control.shielding.mps import MPS
+from safe_control.position_control.backupcbf import BackupCBF
 from safe_control.utils.animation import AnimationSaver
 
 
@@ -64,7 +65,7 @@ from safe_control.utils.animation import AnimationSaver
 # Algorithm Types
 # =============================================================================
 
-ALGO_TYPES = ['gatekeeper', 'mps']
+ALGO_TYPES = ['gatekeeper', 'mps', 'backupcbf']
 
 
 # =============================================================================
@@ -292,6 +293,15 @@ def setup_controllers(
             ax=ax
         )
         print(f"  Using MPS algorithm (one-step nominal horizon)")
+    elif config.algo_type == 'backupcbf':
+        shielding = BackupCBF(
+            robot=car,
+            robot_spec=car.robot_spec,
+            dt=sim.dt,
+            backup_horizon=sim.backup_horizon_time,
+            ax=ax
+        )
+        print(f"  Using BACKUPCBF algorithm (backup CBF-QP)")
     else:  # 'gatekeeper' (default)
         shielding = Gatekeeper(
             robot=car,
@@ -555,7 +565,9 @@ def run_test(config: TestConfig) -> Dict[str, Any]:
     print("-" * 50)
     
     plt.ioff()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(2)  # Show results briefly
+    plt.close('all')
     
     return results
 

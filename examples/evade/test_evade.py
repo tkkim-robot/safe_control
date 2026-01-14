@@ -38,6 +38,7 @@ from safe_control.robots.double_integrator2D import DoubleIntegrator2D
 from safe_control.position_control.backup_controller import EvadeBackupController
 from safe_control.shielding.gatekeeper import Gatekeeper
 from safe_control.shielding.mps import MPS
+from safe_control.position_control.backupcbf import BackupCBF
 from safe_control.utils.animation import AnimationSaver
 
 
@@ -45,7 +46,7 @@ from safe_control.utils.animation import AnimationSaver
 # Algorithm Types
 # =============================================================================
 
-ALGO_TYPES = ['gatekeeper', 'mps']
+ALGO_TYPES = ['gatekeeper', 'mps', 'backupcbf']
 
 
 # =============================================================================
@@ -296,6 +297,15 @@ def run_simulation(config: TestConfig, animation_saver: Optional['AnimationSaver
             dt=config.simulation.dt,
             backup_horizon=backup_horizon_time,
             event_offset=config.simulation.event_offset,
+            ax=ax
+        )
+    elif config.algo_type == 'backupcbf':
+        print(f"  Algorithm: BACKUPCBF (backup CBF-QP)")
+        shielding = BackupCBF(
+            robot=dynamics,
+            robot_spec=robot_spec,
+            dt=config.simulation.dt,
+            backup_horizon=backup_horizon_time,
             ax=ax
         )
     else:
