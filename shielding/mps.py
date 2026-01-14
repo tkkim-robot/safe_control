@@ -49,7 +49,12 @@ class MPS(Gatekeeper):
             ax: Matplotlib axis for visualization (optional)
         """
         super().__init__(robot, robot_spec, dt, backup_horizon, event_offset, ax)
+        self._control_matches_nominal = False  # Track if output matches u_ref
     
+    def is_using_backup(self):
+        """Check if currently in backup mode based on control comparison."""
+        return not self._control_matches_nominal
+        
     def solve_control_problem(self, robot_state, friction=None):
         """
         Main MPS control loop.
@@ -132,6 +137,20 @@ class MPS(Gatekeeper):
                 )
             else:
                 control = np.zeros((self.n_controls, 1))
+        
+        # Compare output control to what nominal controller would produce
+        # This determines mode: NOMINAL (u ≈ u_ref) or BACKUP (u ≠ u_ref)
+        u_ref = None
+        if self.nominal_controller is not None:
+            u_ref = np.array(self.nominal_controller(robot_state.reshape(-1, 1))).reshape(-1, 1)
+        elif self.nominal_u_traj is not None and len(self.nominal_u_traj) > 0:
+            u_ref = self.nominal_u_traj[0].reshape(-1, 1)
+        
+        if u_ref is not None:
+            control_diff = np.linalg.norm(control.flatten() - u_ref.flatten())
+            self._control_matches_nominal = control_diff < 1e-2  # Threshold for matching
+        else:
+            self._control_matches_nominal = False
         
         # Increment index AFTER getting control (for next iteration)
         self.current_time_idx += 1

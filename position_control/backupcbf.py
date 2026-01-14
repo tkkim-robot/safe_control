@@ -606,7 +606,10 @@ class BackupCBF:
                 
                 if prob.status in ['optimal', 'optimal_inaccurate']:
                     u_safe = u.value
-                    self._last_intervention = np.linalg.norm(u_safe - u_ref) > 1e-3
+                    # Compare output to u_ref - if similar, we're in NOMINAL mode
+                    control_diff = np.linalg.norm(u_safe - u_ref)
+                    self._last_intervention = control_diff > 1e-3
+                    self._using_backup = control_diff > 1e-3
                 else:
                     # QP infeasible - use backup control directly
                     u_safe = self._backup_control(robot_state)
@@ -621,6 +624,7 @@ class BackupCBF:
             # No constraints needed - use reference directly
             u_safe = u_ref
             self._last_intervention = False
+            self._using_backup = False
         
         # Update visualization
         self._update_visualization(phi)
