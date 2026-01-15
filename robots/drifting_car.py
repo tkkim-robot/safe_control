@@ -402,6 +402,67 @@ class DriftingCar:
         """Return input matrix g(x) for dynamics state."""
         return self.dynamics.g(self.get_dynamics_state())
     
+    def f_full(self, X=None):
+        """
+        Return full-state drift dynamics f(x) for BackupCBF.
+        
+        Full state: [x, y, theta, r, beta, V, delta, tau]
+        Returns 8-dim vector with kinematic coupling:
+            x_dot = V * cos(theta + beta)
+            y_dot = V * sin(theta + beta)
+            theta_dot = r
+        
+        Args:
+            X: Full state vector (8,) or (8,1). If None, uses internal state.
+        """
+        if X is None:
+            X = self.X
+        X = np.array(X).flatten()
+        
+        # Get dynamics state f (5-dim)
+        X_dyn = X[3:8].reshape(-1, 1)
+        f_dyn = self.dynamics.f(X_dyn).flatten()
+        
+        # Build full-state f (8-dim)
+        f_full = np.zeros(8)
+        f_full[3:8] = f_dyn
+        
+        # Kinematic coupling for position states
+        theta = X[2]
+        r = X[3]
+        beta = X[4]
+        V = X[5]
+        
+        f_full[0] = V * np.cos(theta + beta)  # x_dot
+        f_full[1] = V * np.sin(theta + beta)  # y_dot
+        f_full[2] = r  # theta_dot
+        
+        return f_full
+    
+    def g_full(self, X=None):
+        """
+        Return full-state control matrix g(x) for BackupCBF.
+        
+        Control affects dynamics state only, not position directly.
+        Returns 8x2 matrix with zeros in the first 3 rows.
+        
+        Args:
+            X: Full state vector (8,) or (8,1). If None, uses internal state.
+        """
+        if X is None:
+            X = self.X
+        X = np.array(X).flatten()
+        
+        # Get dynamics state g (5x2)
+        X_dyn = X[3:8].reshape(-1, 1)
+        g_dyn = self.dynamics.g(X_dyn)
+        
+        # Build full-state g (8x2)
+        g_full = np.zeros((8, 2))
+        g_full[3:8, :] = g_dyn
+        
+        return g_full
+    
     def f_casadi(self, X_dyn):
         """Return CasADi drift dynamics f(x)."""
         return self.dynamics.f(X_dyn, casadi=True)
