@@ -120,10 +120,16 @@ class LocalTrackingController:
 
         # Setup control problem
         self.setup_robot(X0)
-        self.num_constraints = 5 # number of max obstacle constraints to consider in the controller
+        
+        # Determine number of constraints
+        if self.robot_spec['model'] == 'Manipulator2D':
+             self.num_constraints = 150 # Allow 5 obstacles * 30 constraints
+        else:
+             self.num_constraints = 5 # number of max obstacle constraints to consider in the controller
+             
         if self.pos_controller_type == 'cbf_qp':
             from safe_control.position_control.cbf_qp import CBFQP
-            self.pos_controller = CBFQP(self.robot, self.robot_spec)
+            self.pos_controller = CBFQP(self.robot, self.robot_spec, num_obs=self.num_constraints)
         elif self.pos_controller_type == 'mpc_cbf':
             from safe_control.position_control.mpc_cbf import MPCCBF
             self.pos_controller = MPCCBF(self.robot, self.robot_spec, show_mpc_traj=self.show_mpc_traj)
@@ -230,6 +236,10 @@ class LocalTrackingController:
             n_pos = 3
             robot_pos = np.hstack([robot_pos, self.robot.get_z()])
             aug_waypoints = np.vstack((robot_pos, waypoints[:, :n_pos]))
+        elif self.robot_spec['model'] == 'Manipulator2D':
+             robot_pos = self.robot.robot.get_end_effector(self.robot.X)
+             n_pos = 2
+             aug_waypoints = np.vstack((robot_pos, waypoints[:, :n_pos]))
         else:
             n_pos = 2
             aug_waypoints = np.vstack((robot_pos, waypoints[:, :n_pos]))
@@ -239,6 +249,10 @@ class LocalTrackingController:
         return aug_waypoints[mask]
 
     def goal_reached(self, current_position, goal_position):
+        if self.robot_spec['model'] == 'Manipulator2D':
+            # current_position is X (angles), goal is Cartesian
+            ee_pos = self.robot.robot.get_end_effector(current_position)
+            return np.linalg.norm(ee_pos - goal_position[:2].flatten()) < self.reached_threshold
         return np.linalg.norm(current_position[:2] - goal_position[:2]) < self.reached_threshold
 
     def has_reached_goal(self):
@@ -344,7 +358,7 @@ class LocalTrackingController:
             all_obs = all_obs.reshape(1, -1)
 
         radius = all_obs[:, 2]
-        distances = np.linalg.norm(all_obs[:, :2] - self.robot.X[:2].T, axis=1)
+        distances = np.linalg.norm(all_obs[:, :2] - self.robot.get_position(), axis=1)
         min_distance_index = np.argmin(distances-radius)
         nearest_obstacle = all_obs[min_distance_index]
         return nearest_obstacle.reshape(-1, 1)
@@ -357,7 +371,7 @@ class LocalTrackingController:
         if self.unknown_obs is not None:
             for obs in self.unknown_obs:
                 # check if the robot collides with the obstacle
-                distance = np.linalg.norm(self.robot.X[:2, 0] - obs[:2])
+                distance = np.linalg.norm(self.robot.get_position() - obs[:2])
                 if distance < (obs[2] + robot_radius):
                     print("Collision with unknown obstacle detected!")
                     return True
@@ -366,9 +380,9 @@ class LocalTrackingController:
             for obs in self.obs:
                 # check if the robot collides with the obstacle
                 if obs[6] == 0:
-                    distance = np.linalg.norm(self.robot.X[:2, 0] - obs[:2])
+                    distance = np.linalg.norm(self.robot.get_position() - obs[:2])
                     if distance < (obs[2] + robot_radius):
-                        print(f"Collision with known obstacle detected! Obs: {obs}, Robot: {self.robot.X[:2, 0]} {robot_radius}, Distance: {distance}, {distance < (obs[2] + robot_radius)}")
+                        print(f"Collision with known obstacle detected! Obs: {obs}, Robot: {self.robot.get_position()} {robot_radius}, Distance: {distance}, {distance < (obs[2] + robot_radius)}")
                         return True
                 elif obs[6] == 1:
                     ox = obs[0]
@@ -408,7 +422,7 @@ class LocalTrackingController:
             current_angle = self.robot.get_orientation()
             goal_angle = np.arctan2(self.waypoints[0][1] - self.robot.X[1, 0],
                                     self.waypoints[0][0] - self.robot.X[0, 0])
-            if self.robot_spec['model'] in ['Quad2D', 'VTOL2D']: # These skip 'rotate' state since there is no yaw angle
+            if self.robot_spec['model'] in ['Quad2D', 'VTOL2D', 'Manipulator2D']: # Those skip 'rotate' state 
                 self.state_machine = 'track'
             if not self.enable_rotation:
                 self.state_machine = 'track'

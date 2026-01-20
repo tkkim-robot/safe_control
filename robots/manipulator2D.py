@@ -222,3 +222,14 @@ class Manipulator2D:
              dh_dx_list.append(dh_dx.flatten())
              
          return h_list, dh_dx_list
+
+    def stop(self, X):
+        return np.zeros((3, 1))
+
+    def has_stopped(self, X):
+        # Kinematic model, state has no velocity. 
+        return True
+
+    def rotate_to(self, X, theta):
+         # Dummy, not used for Manipulator
+         return np.zeros((3, 1))

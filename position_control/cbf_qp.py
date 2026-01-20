@@ -31,6 +31,8 @@ class CBFQP:
             self.cbf_param['alpha2'] = 1.5
         elif self.robot_spec['model'] == 'Quad3D':
             self.cbf_param['alpha'] = 1.5
+        elif self.robot_spec['model'] == 'Manipulator2D':
+            self.cbf_param['alpha'] = 1.0
 
         self.setup_control_problem()
 

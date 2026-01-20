@@ -342,6 +342,8 @@ class BaseRobot:
                 self.update_sensing_footprints()
 
     def get_position(self):
+        if self.robot_spec['model'] == 'Manipulator2D':
+            return self.robot.base_pos
         return self.X[0:2].reshape(-1)
     
     def get_z(self):
@@ -544,6 +546,9 @@ class BaseRobot:
              g_y = [topFrontY, topBackY, botBackY, botFrontY]
              
              self.gripper_line.set_data(g_x, g_y)
+             self.body.set_visible(False)
+             if self.axis is not None:
+                 self.axis.set_visible(False)
         else:
             # self.body.set_offsets([self.X[0, 0], self.X[1, 0]])
             self.body.center = self.X[0, 0], self.X[1, 0]
