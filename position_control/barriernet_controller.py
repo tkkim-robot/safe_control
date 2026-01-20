@@ -24,12 +24,13 @@ class BarrierNetController:
                  ckpt_path: str,
                  meta_path: Optional[str] = None,
         device: str = "auto",
-    ):
+        ):
         self.robot_spec = robot_spec
         self.ckpt_path = ckpt_path
         self.robot_model = robot_spec["model"]
         if self.robot_model not in ROBOT_CFG:
             raise ValueError(f"Unsupported robot model for BarrierNet: {self.robot_model}")
+        self.spec = ROBOT_CFG[self.robot_model]
 
         if device == "auto":
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -39,37 +40,9 @@ class BarrierNetController:
         self.model = self._load_model(ckpt_path, meta_path)
         self.status = "optimal"
         
-        # Propagate runtime parameters (radius, bounds, bicycle geometry)
+        # Propagate runtime parameters (radius only - control bounds are handled by clipping)
         if "radius" in self.robot_spec:
-                self.model.set_robot_radius(float(self.robot_spec["radius"]))
-
-        if self.robot_model == "DynamicUnicycle2D":
-            self.model.set_control_bounds(
-                a_max=float(self.robot_spec.get("a_max", 0.5)),
-                w_max=float(self.robot_spec.get("w_max", 0.5)),
-            )
-        elif self.robot_model == "Quad2D":
-            self.model.set_control_bounds(
-                f_min=float(self.robot_spec.get("f_min", 1.0)),
-                f_max=float(self.robot_spec.get("f_max", 10.0)),
-            )
-        elif self.robot_model == "Quad3D":
-            self.model.set_control_bounds(
-                u_min=float(self.robot_spec.get("u_min", -10.0)),
-                u_max=float(self.robot_spec.get("u_max", 10.0)),
-            )
-        elif self.robot_model == "KinematicBicycle2D_DPCBF":
-            rear_ax_dist = float(self.robot_spec.get("rear_ax_dist", 0.2))
-            self.model.set_rear_ax_dist(rear_ax_dist)
-            wheel_base = float(self.robot_spec.get("wheel_base", 0.4))
-            delta_max = float(self.robot_spec.get("delta_max", np.deg2rad(32)))
-            beta_max = self.robot_spec.get("beta_max", None)
-            if beta_max is None:
-                beta_max = float(np.arctan((rear_ax_dist / wheel_base) * np.tan(delta_max)))
-            self.model.set_control_bounds(
-                a_max=float(self.robot_spec.get("a_max", 5.0)),
-                beta_max=float(beta_max),
-            )
+            self.model.robot_radius = float(self.robot_spec["radius"])
     
     def _load_model(self, ckpt_path: str, meta_path: Optional[str]) -> BarrierNet:
         if meta_path is None:
@@ -111,7 +84,7 @@ class BarrierNetController:
           clearance = ||p_obs - p_robot|| - (r_obs + r_robot)
         and pad to (M,7) with far dummy obstacles.
         """
-        spec = ROBOT_CFG[self.robot_model]
+        spec = ROBOT_CFG_OFFICIAL[self.robot_model]
         M = spec.k_obs
         r_robot = float(self.robot_spec.get("radius", getattr(self.model, "robot_radius", 0.25)))
 
@@ -141,8 +114,9 @@ class BarrierNetController:
             return sel[:M]
         pad_n = M - sel.shape[0]
         far = np.zeros((pad_n, 7), dtype=np.float64)
-        far[:, 0] = 1e6
-        far[:, 1] = 1e6
+        far_pos = 100.0
+        far[:, 0] = far_pos
+        far[:, 1] = far_pos
         far[:, 2] = 0.0
         return np.vstack([sel, far])
 
@@ -184,12 +158,14 @@ class BarrierNetController:
         else:
             pad_n = M - sel.shape[0]
             far = np.zeros((pad_n, 7), dtype=np.float64)
-            far[:, 0] = 1e6
-            far[:, 1] = 1e6
+            # Keep dummy obstacles numerically reasonable (see note in _select_closest_by_clearance).
+            far_pos = 100.0
+            far[:, 0] = far_pos
+            far[:, 1] = far_pos
             far[:, 2] = 0.0
             obs_sel = np.vstack([sel, far])
 
-        # Extract theta and v scalar depending on model
+        # Extract heading (theta) and a scalar speed v depending on model
         if robot_model in ("DynamicUnicycle2D", "KinematicBicycle2D_DPCBF"):
             theta = float(robot_state[2])
             v = float(robot_state[3])
@@ -226,26 +202,40 @@ class BarrierNetController:
             x, y = float(robot_state[0]), float(robot_state[1])
             dst = float(np.hypot(gx - x, gy - y))
 
-        # Build z blocks: (px,py,theta,v,dst) per obstacle using obstacle-relative px,py
         blocks = []
         if robot_model == "Quad3D":
-            x, y, z = float(robot_state[0]), float(robot_state[1]), float(robot_state[2])
+            rx, ry, rz = float(robot_state[0]), float(robot_state[1]), float(robot_state[2])
             for i in range(obs_sel.shape[0]):
-                px = float(obs_sel[i, 0] - x)
-                py = float(obs_sel[i, 1] - y)
-                blocks.extend([px, py, theta, v, dst])
+                dx = float(obs_sel[i, 0] - rx)
+                dy = float(obs_sel[i, 1] - ry)
+                # bearing in xy-plane (obstacles have no z in 7D format here)
+                bearing = float(np.arctan2(dy, dx))
+                dtheta = float(((bearing - theta + np.pi) % (2 * np.pi)) - np.pi)
+                # clearance in 3D w.r.t. obs z=0 plane
+                oz = 0.0
+                dist = float(np.sqrt(dx * dx + dy * dy + (oz - rz) * (oz - rz)))
+                clearance = float(dist - (float(obs_sel[i, 2]) + r_robot))
+                blocks.extend([dx, dy, dtheta, clearance, v])
         elif robot_model == "Quad2D":
-            x, zpos = float(robot_state[0]), float(robot_state[1])
+            rx, rz = float(robot_state[0]), float(robot_state[1])
             for i in range(obs_sel.shape[0]):
-                px = float(obs_sel[i, 0] - x)
-                py = float(obs_sel[i, 1] - zpos)
-                blocks.extend([px, py, theta, v, dst])
+                dx = float(obs_sel[i, 0] - rx)
+                dy = float(obs_sel[i, 1] - rz)  # "y" slot corresponds to z in 2D quad
+                bearing = float(np.arctan2(dy, dx))
+                dtheta = float(((bearing - theta + np.pi) % (2 * np.pi)) - np.pi)
+                dist = float(np.hypot(dx, dy))
+                clearance = float(dist - (float(obs_sel[i, 2]) + r_robot))
+                blocks.extend([dx, dy, dtheta, clearance, v])
         else:
-            x, y = float(robot_state[0]), float(robot_state[1])
+            rx, ry = float(robot_state[0]), float(robot_state[1])
             for i in range(obs_sel.shape[0]):
-                px = float(obs_sel[i, 0] - x)
-                py = float(obs_sel[i, 1] - y)
-                blocks.extend([px, py, theta, v, dst])
+                dx = float(obs_sel[i, 0] - rx)
+                dy = float(obs_sel[i, 1] - ry)
+                bearing = float(np.arctan2(dy, dx))
+                dtheta = float(((bearing - theta + np.pi) % (2 * np.pi)) - np.pi)
+                dist = float(np.hypot(dx, dy))
+                clearance = float(dist - (float(obs_sel[i, 2]) + r_robot))
+                blocks.extend([dx, dy, dtheta, clearance, v])
 
         z_flat = np.array(blocks, dtype=np.float64)
         if z_flat.shape[0] != spec.z_dim:
@@ -278,24 +268,43 @@ class BarrierNetController:
         return BarrierNetController.build_z_ctx_for(self.robot_model, self.robot_spec, robot_state, goal, obs)
     
     def solve_control_problem(self, robot_state: np.ndarray, control_ref: Dict[str, Any], obs: Optional[np.ndarray] = None) -> np.ndarray:
+        """
+        BarrierNet forward pass with z/ctx split and u_ref.
+        
+        Args:
+            robot_state: Robot state vector
+            control_ref: Dict containing 'goal' and optionally 'u_ref'
+            obs: Optional obstacles array
+        
+        Returns:
+            Control output
+        """
         goal = control_ref.get("goal")
-        u_ref = control_ref.get("u_ref")
         if goal is None:
             self.status = "optimal"
-            return np.zeros(ROBOT_CFG[self.robot_model].n_u, dtype=np.float64)
-        if u_ref is None:
-            raise ValueError("BarrierNetController requires control_ref['u_ref'] (nominal control) for the QP objective.")
+            return np.zeros(self.spec.n_u, dtype=np.float64)
 
         try:
-            z, ctx = self.build_z_ctx(np.array(robot_state, dtype=np.float64), np.array(goal, dtype=np.float64), obs)
-            z_norm = (z - self.model.mean.detach().cpu().numpy()) / self.model.std.detach().cpu().numpy()
+            # Build z (neural features) and ctx (raw CBF context) - no normalization for ctx
+            z_flat, ctx_flat = self.build_z_ctx(
+                robot_state=np.array(robot_state, dtype=np.float64),
+                goal=np.array(goal, dtype=np.float64),
+                obs=obs,
+            )
+            
+            # Normalize z only (neural input), ctx stays raw
+            z_norm = (z_flat - self.model.mean.detach().cpu().numpy()) / self.model.std.detach().cpu().numpy()
             z_t = torch.from_numpy(z_norm).double().unsqueeze(0).to(self.device)
-            ctx_t = torch.from_numpy(ctx).double().unsqueeze(0).to(self.device)
-            u_ref = np.array(u_ref, dtype=np.float64).reshape(-1)
-            u_ref_t = torch.from_numpy(u_ref).double().unsqueeze(0).to(self.device)
+            ctx_t = torch.from_numpy(ctx_flat).double().unsqueeze(0).to(self.device)
+            
+            # Get u_ref from control_ref (default to zeros if not provided)
+            u_ref = control_ref.get("u_ref", np.zeros(self.spec.n_u, dtype=np.float64))
+            u_ref_t = torch.from_numpy(np.array(u_ref, dtype=np.float64)).double().unsqueeze(0).to(self.device)
 
+            # Forward pass: forward(z_norm, ctx, u_ref, sgn=0)
             with torch.no_grad():
                 u = self.model(z_t, ctx_t, u_ref_t, sgn=0)
+            
             u_np = u.detach().cpu().numpy().reshape(-1)
             u_np = self._clip_control(u_np)
             self.status = "optimal"
@@ -303,7 +312,7 @@ class BarrierNetController:
         except Exception as e:
             self.status = "infeasible"
             print(f"BarrierNet inference failed: {e}")
-            return np.zeros(ROBOT_CFG[self.robot_model].n_u, dtype=np.float64)
+            return np.zeros(self.spec.n_u, dtype=np.float64)
     
     def _clip_control(self, u: np.ndarray) -> np.ndarray:
         """Final deployment guard: clip to robot_spec bounds."""

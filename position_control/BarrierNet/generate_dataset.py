@@ -18,11 +18,16 @@ import os
 import sys
 import numpy as np
 import scipy.io as sio
+from multiprocessing import Pool, cpu_count
+from functools import partial
+try:
+    from tqdm import tqdm
+    HAS_TQDM = True
+except ImportError:
+    HAS_TQDM = False
+    def tqdm(iterable, **kwargs):
+        return iterable
 
-# Ensure *parent of safe_control* is on PYTHONPATH so `import safe_control` works
-# both when:
-# - online_adaptive_cbf imports safe_control as a subrepo, and
-# - user runs scripts from inside the safe_control repo.
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
@@ -47,8 +52,9 @@ DT = 0.05
 T_MAX = 30.0
 
 # Optional env overrides (for automation scripts)
-BN_TARGET_ROWS = int(os.environ.get("BN_TARGET_ROWS", "0"))  # if >0, collect at least this many rows (pre-split)
-BN_MAX_SIMS = int(os.environ.get("BN_MAX_SIMS", "0"))        # safety cap when BN_TARGET_ROWS is used (0 => use N_SIMS)
+BN_TARGET_ROWS = int(os.environ.get("BN_TARGET_ROWS", "200000"))  # if >0, collect at least this many rows (pre-split)
+BN_MAX_SIMS = int(os.environ.get("BN_MAX_SIMS", "10000"))        # safety cap when BN_TARGET_ROWS is used (0 => use N_SIMS)
+BN_N_PROCESSES = int(os.environ.get("BN_N_PROCESSES", str(cpu_count()-3)))  # number of processes (default: all cores)
 N_SIMS = int(os.environ.get("BN_N_SIMS", str(N_SIMS)))
 DT = float(os.environ.get("BN_DT", str(DT)))
 T_MAX = float(os.environ.get("BN_T_MAX", str(T_MAX)))
@@ -78,11 +84,13 @@ OUT_DIR = os.path.join(os.path.dirname(__file__), "data")
 
 
 """
-Dataset rows are stored as:
-  [z (z_dim), ctx (ctx_dim), u* (n_u)]
+Dataset rows are stored as (z/ctx/u_ref structure):
+  [z (z_dim), ctx (ctx_dim), u_ref (n_u), u* (n_u)]
 where:
-  - z is the NN input built from closest obstacles by signed clearance
-  - ctx is the raw context used by the BarrierNet QP constraints
+  - z: normalized neural features (per-obstacle 5D blocks: [Δx, Δy, Δθ, clearance, v])
+  - ctx: raw context for CBF construction ([state_reduced, goal, obs_sel_flat])
+  - u_ref: reference control (expert output, same as u* for training)
+  - u*: expert control output (labels)
 """
 
 
@@ -99,10 +107,7 @@ def _robot_spec_for(model: str) -> dict:
 
 
 def _baseline_controller_type(model: str) -> dict:
-    # Follow safe_control baseline usage:
-    # - Use MPC-CBF for DynamicUnicycle2D / Quad2D / Quad3D (user requested)
-    if model in ("DynamicUnicycle2D", "Quad2D", "Quad3D"):
-        return {"pos": "mpc_cbf"}
+    # Use CBF-QP for all models (BarrierNet requirement)
     return {"pos": "cbf_qp"}
 
 def _sample_obstacles_like_gat(model: str, robot_radius: float, num_obstacles: int) -> np.ndarray:
@@ -144,155 +149,249 @@ def _sample_obstacles_like_gat(model: str, robot_radius: float, num_obstacles: i
     return np.array(obstacles, dtype=np.float64)
 
 
-def run_single_sim(model: str, sim_id: int) -> np.ndarray | None:
+def run_single_sim(args) -> tuple[int, np.ndarray | None]:
     """
-    Run a single baseline rollout and return data rows (N, z_dim+ctx_dim+n_u), or None if failed.
+    Run a single baseline rollout and return (sim_id, data_rows) or (sim_id, None) if failed.
+    Wrapper function for multiprocessing.
     """
-    robot_spec = _robot_spec_for(model)
-    controller_type = _baseline_controller_type(model)
-
-    # Simple environment
-    env_handler = env.Env()
-
-    # sample obstacles like gat_data_generation.py (random count 2..10)
-    n_obs = int(np.random.randint(OBS_N_MIN, OBS_N_MAX + 1))
-    robot_radius = float(robot_spec.get("radius", 0.25))
-    known_obs = _sample_obstacles_like_gat(model, robot_radius=robot_radius, num_obstacles=n_obs)
-    if known_obs.size == 0:
-        # keep controller happy; will be padded later for features
-        known_obs = np.zeros((0, 7), dtype=np.float64)
-
-    # init state
-    theta0 = float(np.random.uniform(-0.01, 0.01))  # match gat theta_range
-    if model == "DynamicUnicycle2D":
-        v0 = float(np.random.uniform(0.0, 1.0))
-        x0 = np.array([START_XY[0], START_XY[1], theta0, v0], dtype=np.float64)
-    elif model == "Quad2D":
-        vx_init = float(np.random.uniform(0.0, 1.0))
-        vz_init = float(np.random.uniform(0.0, 1.0))
-        x0 = np.array([START_XY[0], START_XY[1], theta0, vx_init, vz_init, 0.0], dtype=np.float64)
-    elif model == "Quad3D":
-        # [x,y,z,theta,phi,psi,vx,vy,vz,q,p,r]
-        vx_init = float(np.random.uniform(0.0, 1.0))
-        vz_init = float(np.random.uniform(0.0, 1.0))
-        x0 = np.array([START_XY[0], START_XY[1], 0.0, 0.0, 0.0, 0.0, vx_init, 0.0, vz_init, 0.0, 0.0, 0.0], dtype=np.float64)
-    elif model == "KinematicBicycle2D_DPCBF":
-        v0 = float(np.random.uniform(0.2, 1.0))  # match DPCBF min speed
-        x0 = np.array([START_XY[0], START_XY[1], theta0, v0], dtype=np.float64)
-    else:
-        raise ValueError(model)
-
-    # waypoints
-    if model == "Quad3D":
-        waypoints = np.array([[START_XY[0], START_XY[1], 0.0], [GOAL_XYZ[0], GOAL_XYZ[1], GOAL_XYZ[2]]], dtype=np.float64)
-    else:
-        waypoints = np.array([[START_XY[0], START_XY[1], theta0], [GOAL_XY[0], GOAL_XY[1], 0.0]], dtype=np.float64)
-
-    # controller
     try:
-        if model == "KinematicBicycle2D_DPCBF":
-            ctrl = LocalTrackingControllerDyn(
-                x0, robot_spec,
-                controller_type=controller_type,
-                dt=DT,
-                show_animation=False,
-                save_animation=False,
-                env=env_handler,
-            )
-        else:
-            ctrl = LocalTrackingController(
-                x0, robot_spec,
-                controller_type=controller_type,
-                dt=DT,
-                show_animation=False,
-                save_animation=False,
-                env=env_handler,
-            )
+        model, sim_id = args
     except Exception as e:
-        print(f"[sim {sim_id}] controller init failed for {model}: {e}")
-        return None
+        # If we can't even get sim_id, return a dummy tuple (shouldn't happen)
+        print(f"[sim ?] Failed to unpack args: {e}")
+        return (0, None)
+    
+    try:
+        # Set random seed for each process to ensure reproducibility
+        np.random.seed(sim_id)
+        
+        robot_spec = _robot_spec_for(model)
+        controller_type = _baseline_controller_type(model)
+        
+        # Simple environment
+        env_handler = env.Env()
 
-    # seed known obstacles + goal
-    ctrl.obs = known_obs
-    ctrl.set_waypoints(waypoints)
+        # sample obstacles like gat_data_generation.py (random count 2..10)
+        n_obs = int(np.random.randint(OBS_N_MIN, OBS_N_MAX + 1))
+        robot_radius = float(robot_spec.get("radius", 0.25))
+        known_obs = _sample_obstacles_like_gat(model, robot_radius=robot_radius, num_obstacles=n_obs)
+        if known_obs.size == 0:
+            # keep controller happy; will be padded later for features
+            known_obs = np.zeros((0, 7), dtype=np.float64)
 
-    rows = []
-    max_steps = int(T_MAX / DT)
-    for _ in range(max_steps):
+        # init state
+        theta0 = float(np.random.uniform(-0.01, 0.01))  # match gat theta_range
+        if model == "DynamicUnicycle2D":
+            v0 = float(np.random.uniform(0.0, 1.0))
+            x0 = np.array([START_XY[0], START_XY[1], theta0, v0], dtype=np.float64)
+        elif model == "Quad2D":
+            vx_init = float(np.random.uniform(0.0, 1.0))
+            vz_init = float(np.random.uniform(0.0, 1.0))
+            x0 = np.array([START_XY[0], START_XY[1], theta0, vx_init, vz_init, 0.0], dtype=np.float64)
+        elif model == "Quad3D":
+            # [x,y,z,theta,phi,psi,vx,vy,vz,q,p,r]
+            vx_init = float(np.random.uniform(0.0, 1.0))
+            vz_init = float(np.random.uniform(0.0, 1.0))
+            x0 = np.array([START_XY[0], START_XY[1], 0.0, 0.0, 0.0, 0.0, vx_init, 0.0, vz_init, 0.0, 0.0, 0.0], dtype=np.float64)
+        elif model == "KinematicBicycle2D_DPCBF":
+            v0 = float(np.random.uniform(0.2, 1.0))  # match DPCBF min speed
+            x0 = np.array([START_XY[0], START_XY[1], theta0, v0], dtype=np.float64)
+        else:
+            raise ValueError(model)
+
+        # waypoints
+        if model == "Quad3D":
+            waypoints = np.array([[START_XY[0], START_XY[1], 0.0], [GOAL_XYZ[0], GOAL_XYZ[1], GOAL_XYZ[2]]], dtype=np.float64)
+        else:
+            waypoints = np.array([[START_XY[0], START_XY[1], theta0], [GOAL_XY[0], GOAL_XY[1], 0.0]], dtype=np.float64)
+
+        # controller
         try:
-            ret = ctrl.control_step()
-        except InfeasibleError as e:
-            print(f"[sim {sim_id}] infeasible for {model}: {e}")
-            return None
+            if model == "KinematicBicycle2D_DPCBF":
+                ctrl = LocalTrackingControllerDyn(
+                    x0, robot_spec,
+                    controller_type=controller_type,
+                    dt=DT,
+                    show_animation=False,
+                    save_animation=False,
+                    env=env_handler,
+                )
+            else:
+                ctrl = LocalTrackingController(
+                    x0, robot_spec,
+                    controller_type=controller_type,
+                    dt=DT,
+                    show_animation=False,
+                    save_animation=False,
+                    env=env_handler,
+                )
         except Exception as e:
-            print(f"[sim {sim_id}] exception during control_step for {model}: {e}")
-            return None
+            print(f"[sim {sim_id}] controller init failed for {model}: {e}")
+            return (sim_id, None)
 
-        # If the controller reported infeasible/collision, do not record this step
-        # (the controller may not have a valid u_pos for this step).
-        if ret == -2:
-            break
+        # seed known obstacles + goal
+        ctrl.obs = known_obs
+        ctrl.set_waypoints(waypoints)
 
-        # goal may become None after completion
-        cur_goal = ctrl.goal
-        if cur_goal is None:
-            break
+        rows = []
+        max_steps = int(T_MAX / DT)
+        goal_reached = False  # Track if goal was reached
+        
+        for _ in range(max_steps):
+            try:
+                ret = ctrl.control_step()
+            except InfeasibleError as e:
+                print(f"[sim {sim_id}] infeasible for {model}: {e}")
+                return (sim_id, None)
+            except Exception as e:
+                print(f"[sim {sim_id}] exception during control_step for {model}: {e}")
+                return (sim_id, None)
 
-        # Use the controller's current obstacle list; for dynamic env this is updated each step.
-        obs_now = getattr(ctrl, "obs", None)
+            # Paper-faithful dataset requirement: expert demonstrations must be safe.
+            # If we collide / become infeasible, discard the entire rollout (do not keep partial prefixes),
+            # otherwise the dataset will contain "stuck/unsafe" behavior that trains BarrierNet incorrectly.
+            if ret == -2:
+                return (sim_id, None)
 
-        # Nominal control for objective: use the robot's nominal tracking input toward the current goal.
-        u_ref = np.array(ctrl.robot.nominal_input(cur_goal), dtype=np.float64).reshape(-1)
-        n_u = ROBOT_CFG[model].n_u
-        if u_ref.shape[0] < n_u:
-            u_ref = np.pad(u_ref, (0, n_u - u_ref.shape[0]), mode="constant")
-        elif u_ref.shape[0] > n_u:
-            u_ref = u_ref[:n_u]
+            # goal may become None after completion
+            cur_goal = ctrl.goal
+            if cur_goal is None:
+                goal_reached = True
+                break
 
-        # labels = applied control (expert / baseline output) (pad/slice to expected control dimension)
-        u = np.array(ctrl.get_control_input(), dtype=np.float64).reshape(-1)
-        if u.shape[0] < n_u:
-            u = np.pad(u, (0, n_u - u.shape[0]), mode="constant")
-        elif u.shape[0] > n_u:
-            u = u[:n_u]
-        z, ctx = BarrierNetController.build_z_ctx_for(model, robot_spec, ctrl.robot.X.flatten(), np.array(cur_goal).flatten(), obs_now)
-        # row: [z, ctx, u_ref, u*]
-        rows.append(np.concatenate([z, ctx, u_ref.astype(np.float64), u.astype(np.float64)], axis=0))
+            obs_now = getattr(ctrl, "nearest_multi_obs", None)
+            if obs_now is None:
+                obs_now = getattr(ctrl, "obs", None)
 
-        if ret == -1:
-            break
+            # Check robot model
+            if model not in ROBOT_CFG:
+                raise ValueError(f"Unknown robot model: {model}")
+            spec = ROBOT_CFG[model]
+            
+            # Build z (neural features) and ctx (raw CBF context) using build_z_ctx_for
+            z_flat, ctx_flat = BarrierNetController.build_z_ctx_for(
+                robot_model=model,
+                robot_spec=robot_spec,
+                robot_state=ctrl.robot.X.flatten(),
+                goal=np.array(cur_goal).flatten(),
+                obs=obs_now,
+            )
+            
+            # Labels = applied control (expert / baseline output)
+            u = np.array(ctrl.get_control_input(), dtype=np.float64).reshape(-1)
+            n_u = spec.n_u
+            if u.shape[0] < n_u:
+                u = np.pad(u, (0, n_u - u.shape[0]), mode="constant")
+            elif u.shape[0] > n_u:
+                u = u[:n_u]
+            
+            # u_ref = u (expert output is the reference for training)
+            u_ref = u.copy()
+            
+            # Row: [z, ctx, u_ref, u*]
+            rows.append(np.concatenate([
+                z_flat.astype(np.float64),
+                ctx_flat.astype(np.float64),
+                u_ref.astype(np.float64),
+                u.astype(np.float64)
+            ], axis=0))
 
-    if not rows:
-        return None
-    return np.vstack(rows)
+            if ret == -1:
+                goal_reached = True
+                break
+
+        # Only keep trajectories that reached the goal (successful demonstrations)
+        if not goal_reached:
+            # Timeout: goal not reached within max_steps
+            return (sim_id, None)
+        
+        if not rows:
+            return (sim_id, None)
+        
+        try:
+            data = np.vstack(rows)
+            return (sim_id, data)
+        except Exception as e:
+            print(f"[sim {sim_id}] Failed to stack rows: {e}")
+            import traceback
+            traceback.print_exc()
+            return (sim_id, None)
+    except Exception as e:
+        # Catch any other unexpected exceptions in the entire function
+        print(f"[sim {sim_id}] Unexpected error in run_single_sim: {e}")
+        import traceback
+        traceback.print_exc()
+        return (sim_id, None)
 
 
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     np.random.seed(0)
 
+    # Determine number of processes
+    n_processes = min(BN_N_PROCESSES, cpu_count())
+    print(f"Using {n_processes} processes (available cores: {cpu_count()})")
+
     all_rows = []
     ok = 0
+    all_results = {}  # sim_id -> data mapping
 
-    # collection loop: either fixed N_SIMS, or target-row driven
+    # Determine max simulations
     max_sims = N_SIMS if BN_TARGET_ROWS <= 0 else (BN_MAX_SIMS if BN_MAX_SIMS > 0 else max(N_SIMS, 100))
-    sim_id = 0
-    while sim_id < max_sims:
-        data = run_single_sim(ROBOT_MODEL, sim_id)
-        if data is not None:
-            all_rows.append(data)
-            ok += 1
-            if BN_TARGET_ROWS > 0:
-                # row count before split
-                cur_rows = sum(d.shape[0] for d in all_rows)
-                if cur_rows >= BN_TARGET_ROWS:
-                    break
-        sim_id += 1
+    batch_size = max(100, n_processes * 10)  # Process in batches for target-row checking
+    
+    print(f"Target: {BN_TARGET_ROWS} samples (max {max_sims} simulations)")
+    if BN_TARGET_ROWS > 0:
+        print(f"Processing in batches of {batch_size} simulations...")
 
-    if not all_rows:
+    sim_id = 0
+    with Pool(processes=n_processes) as pool:
+        while sim_id < max_sims:
+            # Prepare batch of simulation IDs
+            batch_end = min(sim_id + batch_size, max_sims)
+            batch_ids = list(range(sim_id, batch_end))
+            
+            # Run batch in parallel
+            batch_args = [(ROBOT_MODEL, sid) for sid in batch_ids]
+            batch_results = list(tqdm(
+                pool.imap(run_single_sim, batch_args),
+                total=len(batch_args),
+                desc=f"Batch [{sim_id}-{batch_end-1}]"
+            ))
+            
+            # Collect successful results (filter out None results just in case)
+            for result in batch_results:
+                if result is None:
+                    continue  # Skip if result itself is None (shouldn't happen, but safety check)
+                try:
+                    result_sim_id, data = result
+                    if data is not None:
+                        all_results[result_sim_id] = data
+                        ok += 1
+                except (TypeError, ValueError) as e:
+                    print(f"Warning: Failed to unpack result: {result}, error: {e}")
+                    continue
+            
+            # Check if we've reached target
+            if BN_TARGET_ROWS > 0:
+                cur_rows = sum(d.shape[0] for d in all_results.values())
+                if cur_rows >= BN_TARGET_ROWS:
+                    print(f"\nReached target: {cur_rows} samples >= {BN_TARGET_ROWS}")
+                    break
+            
+            sim_id = batch_end
+            
+            # Print progress
+            if all_results:
+                cur_rows = sum(d.shape[0] for d in all_results.values())
+                print(f"Progress: {cur_rows} samples from {ok} successful simulations (target: {BN_TARGET_ROWS if BN_TARGET_ROWS > 0 else 'N/A'})")
+
+    if not all_results:
         raise RuntimeError("No successful simulations; dataset is empty.")
 
-    data = np.vstack(all_rows)
+    # Sort by sim_id for reproducibility and stack
+    sorted_results = [all_results[sid] for sid in sorted(all_results.keys())]
+    data = np.vstack(sorted_results)
     n_total = data.shape[0]
     n_train = int(TRAIN_FRAC * n_total)
     n_valid = int(VALID_FRAC * n_total)
