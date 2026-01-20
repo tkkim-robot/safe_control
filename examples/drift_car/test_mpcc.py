@@ -312,7 +312,7 @@ def run_mpcc_straight_track(save_animation=False):
     
     # Initial state
     V0 = 8.0
-    X0 = np.array([6.0, middle_lane_y, np.deg2rad(10), 0, 0, V0, 0, 0])
+    X0 = np.array([6.0, middle_lane_y+0.5, np.deg2rad(30), 0, 0, V0, 0, 0])
     
     print(f"\nInitial state: x={X0[0]:.1f}, y={X0[1]:.1f}, V={V0:.1f} m/s")
     
@@ -325,13 +325,13 @@ def run_mpcc_straight_track(save_animation=False):
     mpcc = MPCC(car, car.robot_spec)
     mpcc.set_reference_path(ref_x, ref_y)
     mpcc.set_cost_weights(
-        Q_c=50.0,       # Contouring error weight
+        Q_c=10.0,       # Contouring error weight
         Q_l=1.0,        # Lag error weight
-        Q_theta=30.0,   # Heading error weight
+        Q_theta=10.0,   # Heading error weight
         Q_v=50.0,       # Velocity tracking weight
         Q_r=20.0,       # Yaw rate penalty weight
         v_ref=V0,       # Target velocity [m/s]
-        R=np.array([150.0, 0.1, 0.1]),
+        R=np.array([200.0, 1.0, 1.0]),
     )
     mpcc.set_progress_rate(V0)
     

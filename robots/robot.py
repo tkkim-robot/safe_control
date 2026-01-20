@@ -133,6 +133,41 @@ class BaseRobot:
                 from safe_control.robots.vtol2D import VTOL2D
             self.robot = VTOL2D(dt, robot_spec)
             self.yaw = self.X[2, 0] # it's pitch in this case
+        elif self.robot_spec['model'] == 'Manipulator2D':
+            try:
+                from manipulator2D import Manipulator2D
+            except ImportError:
+                from safe_control.robots.manipulator2D import Manipulator2D
+            self.robot = Manipulator2D(dt, robot_spec)
+             # Manipulator state is [theta1, theta2, theta3]. Yaw is not really applicable or X[0]?
+             # BaseRobot expects self.yaw for visualization?
+             # Manipulator visualization is custom.
+            self.yaw = 0.0
+            
+            # Visualization Patches
+            # Parameters from index.html (SCALE = 60)
+            
+            self.link_lines = []
+            self.joint_circles = []
+            
+            # Base Circle
+            self.base_circle = ax.add_patch(plt.Circle((0,0), 12.0/60.0, color='#52525b', zorder=5))
+            
+            # Links and Joints
+            for i in range(3):
+                # Link: Line2D with round caps
+                line, = ax.plot([], [], color='#a1a1aa', lw=8, solid_capstyle='round', zorder=4)
+                self.link_lines.append(line)
+                
+                # Joint: Circle
+                # Last joint (EE) is different color in JS?
+                # JS: i === angles.length - 1 ? '#34d399' : '#71717a'
+                c_color = '#34d399' if i == 2 else '#71717a'
+                circle = ax.add_patch(plt.Circle((0,0), 6.0/60.0, color=c_color, zorder=6))
+                self.joint_circles.append(circle)
+                
+            # Gripper: C-shape (Line2D)
+            self.gripper_line, = ax.plot([], [], color='#34d399', lw=3, solid_capstyle='butt', zorder=7)
         else:
             raise ValueError("Invalid robot model")
 
@@ -268,8 +303,11 @@ class BaseRobot:
         self.unsafe_points_handle = ax.scatter(
             [], [], s=40, facecolors='r', edgecolors='r')
         # Robot's orientation axis represented as a line
-        self.axis,  = ax.plot([self.X[0, 0], self.X[0, 0]+self.vis_orient_len*np.cos(self.yaw)], [
-                      self.X[1, 0], self.X[1, 0]+self.vis_orient_len*np.sin(self.yaw)], color='r', linewidth=2)
+        if not self.robot_spec.get('no_heading', False):
+            self.axis,  = ax.plot([self.X[0, 0], self.X[0, 0]+self.vis_orient_len*np.cos(self.yaw)], [
+                          self.X[1, 0], self.X[1, 0]+self.vis_orient_len*np.sin(self.yaw)], color='r', linewidth=2)
+        else:
+            self.axis = None
         # Initialize FOV line handle with placeholder data
         self.fov, = ax.plot([], [], 'k--')  # Unpack the tuple returned by plot
         # Initialize FOV fill handle with placeholder data
@@ -304,6 +342,8 @@ class BaseRobot:
                 self.update_sensing_footprints()
 
     def get_position(self):
+        if self.robot_spec['model'] == 'Manipulator2D':
+            return self.robot.base_pos
         return self.X[0:2].reshape(-1)
     
     def get_z(self):
@@ -362,6 +402,8 @@ class BaseRobot:
             # these three have quite complex nominal input
             # so recommend to tune gains inside of each script
             return self.robot.nominal_input(self.X, goal)
+        elif self.robot_spec['model'] == 'Manipulator2D':
+             return self.robot.nominal_input(self.X, goal)
 
     def nominal_attitude_input(self, theta_des):
         if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
@@ -457,14 +499,65 @@ class BaseRobot:
             self.velocity_text.set_position((base_x + self.max_indicator_width / 2,
                                             base_y + self.indicator_height + 0.2))
             self.velocity_text.set_text(f"{speed:.1f} m/s")
+        elif self.robot_spec['model'] == 'Manipulator2D':
+             P = self.robot.get_joint_positions(self.X)
+             total_angle = 0
+             
+             # Update Base
+             self.base_circle.center = P[0]
+             
+             for i in range(3):
+                 total_angle += self.X[i, 0]
+                 p_start = P[i]
+                 p_end = P[i+1]
+                 
+                 # Update Link Line
+                 self.link_lines[i].set_data([p_start[0], p_end[0]], [p_start[1], p_end[1]])
+                 
+                 # Update Joint Circle (at p_end)
+                 self.joint_circles[i].center = p_end
+                 
+             # Update Gripper (C-shape) at P[-1] with angle total_angle
+             # JS Logic:
+             # gripLen = 15, gripWidth = 22
+             
+             gripLen = 15.0 / 60.0
+             gripWidth = 22.0 / 60.0
+             x, y = P[-1][0], P[-1][1]
+             angle = total_angle
+             
+             perpX = -np.sin(angle)
+             perpY = np.cos(angle)
+             
+             backX = x
+             backY = y
+             topBackX = backX + perpX * gripWidth / 2
+             topBackY = backY + perpY * gripWidth / 2
+             botBackX = backX - perpX * gripWidth / 2
+             botBackY = backY - perpY * gripWidth / 2
+             
+             topFrontX = topBackX + np.cos(angle) * gripLen
+             topFrontY = topBackY + np.sin(angle) * gripLen
+             botFrontX = botBackX + np.cos(angle) * gripLen
+             botFrontY = botBackY + np.sin(angle) * gripLen
+             
+             # Points: TopFront -> TopBack -> BotBack -> BotFront
+             g_x = [topFrontX, topBackX, botBackX, botFrontX]
+             g_y = [topFrontY, topBackY, botBackY, botFrontY]
+             
+             self.gripper_line.set_data(g_x, g_y)
+             self.body.set_visible(False)
+             if self.axis is not None:
+                 self.axis.set_visible(False)
         else:
             # self.body.set_offsets([self.X[0, 0], self.X[1, 0]])
             self.body.center = self.X[0, 0], self.X[1, 0]
 
-        self.axis.set_ydata([self.X[1, 0], self.X[1, 0] +
-                            self.vis_orient_len*np.sin(self.yaw)])
-        self.axis.set_xdata([self.X[0, 0], self.X[0, 0] +
-                            self.vis_orient_len*np.cos(self.yaw)])
+        if self.axis is not None:
+             self.axis.set_ydata([self.X[1, 0], self.X[1, 0] +
+                                 self.vis_orient_len*np.sin(self.yaw)])
+             self.axis.set_xdata([self.X[0, 0], self.X[0, 0] +
+                                 self.vis_orient_len*np.cos(self.yaw)])
 
         if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
             if len(self.unsafe_points) > 0:

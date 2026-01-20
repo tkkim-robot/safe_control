@@ -10,13 +10,14 @@ from safe_control.tracking import LocalTrackingController
 def main():
     parser = argparse.ArgumentParser(description='Run single agent tracking simulation.')
     parser.add_argument('--model', type=str, default='du', 
-                        choices=['si', 'di', 'un', 'du', 'kb', 'quad', 'quad3d'],
-                        help='Robot model to use (si, di, un, du, kb, quad, quad3d)')
+                        choices=['si', 'di', 'un', 'du', 'kb', 'quad', 'quad3d', 'ma'],
+                        help='Robot model to use (si, di, un, du, kb, quad, quad3d, ma)')
     parser.add_argument('--algo', type=str, default='mpc_cbf',
                         choices=['cbf_qp', 'mpc_cbf'],
                         help='Position controller algorithm')
     parser.add_argument('--att_algo', type=str, default='velocity_tracking_yaw',
                         help='Attitude controller algorithm')
+    parser.add_argument('--save_anim', action='store_true', help='Save animation as mp4')
     args = parser.parse_args()
 
     # Map short names to full model names
@@ -27,7 +28,8 @@ def main():
         'du': 'DynamicUnicycle2D',
         'kb': 'KinematicBicycle2D',
         'quad': 'Quad2D',
-        'quad3d': 'Quad3D'
+        'quad3d': 'Quad3D',
+        'ma': 'Manipulator2D'
     }
     
     model = model_map[args.model]
@@ -50,9 +52,22 @@ def main():
     known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
                         [10.0, 7.3, 0.4],
                         [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
-
-    env_width = 14.0
-    env_height = 14.0
+    
+    if model == 'Manipulator2D':
+        # Custom setup for Manipulator
+        # Center at (5.0, 3.5) in 10x7 environment
+        known_obs = np.array([
+            [6.0, 4.5, 0.3],
+            [4.0, 1.0, 0.3],
+            [1.0, 4.0, 0.3],
+            [7.0, 1.0, 0.3],
+            [4.0, 5.0, 0.3],
+        ])
+        env_width = 10.0
+        env_height = 7.0
+    else:
+        env_width = 14.0
+        env_height = 14.0
     
     robot_spec = {}
     
@@ -106,18 +121,26 @@ def main():
             'model': 'Quad3D',
             'radius': 0.25
         }
-        # override the waypoints with z axis
+    elif model == 'Manipulator2D':
+        robot_spec = {
+            'model': 'Manipulator2D',
+            'w_max': 2.0,
+            'Kp': 5.0,
+            'radius': 0.25,
+            'reached_threshold': 0.5
+        }
+        # Reachable waypoints from right-extended start (approx EE at 8.3, 3.5)
         waypoints = [
-            [2, 2, 0, math.pi/2],
-            [2, 12, 1, 0],
-            [12, 12, -1, 0],
-            [12, 2, 0, 0]
+            [6.5, 4.0, 0.0],
+            [2.0, 4.5, 0.0]
         ]
     
     waypoints = np.array(waypoints, dtype=np.float64)
 
     if model in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'Unicycle2D', 'Quad2D', 'Quad3D']:
         x_init = waypoints[0]
+    elif model == 'Manipulator2D':
+        x_init = np.zeros(3)
     else:
         x_init = np.append(waypoints[0], 1.0)
     
@@ -132,10 +155,14 @@ def main():
                                                   controller_type=controller_type,
                                                   dt=dt,
                                                   show_animation=True,
-                                                  save_animation=False,
+                                                  save_animation=args.save_anim,
                                                   show_mpc_traj=False,
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
+
+    if model == 'Manipulator2D':
+        # Offset base to center of valid workspace (env is 10x7)
+        tracking_controller.robot.robot.base_pos = np.array([5.0, 3.5])
 
     # Set obstacles
     tracking_controller.obs = known_obs
