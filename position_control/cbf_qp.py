@@ -81,9 +81,25 @@ class CBFQP:
                            cp.abs(self.u[2]) <= self.robot_spec['u_max'],
                            cp.abs(self.u[3]) <= self.robot_spec['u_max']]
 
+        elif self.robot_spec['model'] == 'Manipulator2D':
+            # Manipulator 3DOF
+            self.u = cp.Variable((3, 1))
+            self.u_ref = cp.Parameter((3, 1), value=np.zeros((3, 1)))
+            self.A1 = cp.Parameter((self.num_obs, 3), value=np.zeros((self.num_obs, 3)))
+            self.b1 = cp.Parameter((self.num_obs, 1), value=np.zeros((self.num_obs, 1)))
+            objective = cp.Minimize(cp.sum_squares(self.u - self.u_ref))
+            
+            # Constraints: CBF + Input Limits
+            constraints = [self.A1 @ self.u + self.b1 >= 0,
+                           cp.abs(self.u) <= self.robot_spec['w_max']]
+
         self.cbf_controller = cp.Problem(objective, constraints)
 
     def solve_control_problem(self, robot_state, control_ref, obs_list):
+        # Reset constraint matrices to avoid stale values from previous solve
+        self.A1.value[:] = 0
+        self.b1.value[:] = 0
+        
         if obs_list is None:
             self.u_ref.value = control_ref['u_ref']
             if self.robot_spec['model'] in ['Quad3D']:
@@ -91,23 +107,72 @@ class CBFQP:
             self.status = 'optimal'
             return self.u_ref.value
 
-        for i in range(min(self.num_obs, len(obs_list))):
-            obs = obs_list[i]
-            # 3. Update the CBF constraints
+        mode = self.robot_spec.get('cbf_mode', 'cbf')
+        row_idx = 0
+        for i, obs in enumerate(obs_list):
             if obs is None:
-                # deactivate the CBF constraints
-                self.A1.value = np.zeros_like(self.A1.value)
-                self.b1.value = np.zeros_like(self.b1.value)
-            elif self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'Quad3D']:
-                h, dh_dx = self.robot.agent_barrier(obs)
-                self.A1.value[i,:] = dh_dx @ self.robot.g()
-                self.b1.value[i,:] = dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h
-            elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D']:
-                h, h_dot, dh_dot_dx = self.robot.agent_barrier(obs)
-                self.A1.value[i,:] = dh_dot_dx @ self.robot.g()
-                self.b1.value[i,:] = dh_dot_dx @ self.robot.f() + (self.cbf_param['alpha1']+self.cbf_param['alpha2']) * h_dot + self.cbf_param['alpha1']*self.cbf_param['alpha2']*h
+                continue
             
-            #print(f'h: {h} | value: {self.A1.value[i,:] @ self.u.value + self.b1.value[i,:]}')
+            # Stop if we exceed allocated constraints
+            if row_idx >= self.num_obs:
+                break
+
+            # Handle Manipulator2D (Multiple constraints per obstacle)
+            if self.robot_spec['model'] == 'Manipulator2D':
+                h_list, dh_dx_list = self.robot.agent_barrier(obs)
+                for h, dh_dx in zip(h_list, dh_dx_list):
+                    if row_idx >= self.num_obs: break
+                    
+                    if mode == 'hard':
+                        # Hard Constraint: h(x_next) >= 0
+                        # Dividing by dt for numerical stability:
+                        # (dh_dx @ g) * u + h/dt >= 0 (equivalent to very high alpha CBF)
+                        dt = self.robot.dt
+                        
+                        self.A1.value[row_idx, :] = dh_dx @ self.robot.g()
+                        self.b1.value[row_idx, :] = h / dt + (dh_dx @ self.robot.f())
+                    else:
+                        # Standard CBF
+                        self.A1.value[row_idx, :] = dh_dx
+                        self.b1.value[row_idx, :] = self.cbf_param['alpha'] * h
+                    
+                    row_idx += 1
+
+            # Handle Standard Robots (Single constraint per obstacle)
+            else:
+                # Retrieve Barrier Terms
+                dt = self.robot.dt
+                if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'Quad3D']:
+                    h, dh_dx = self.robot.agent_barrier(obs)
+                    
+                    if mode == 'hard':
+                         # Hard Constraint: h(x_next) >= 0
+                         self.A1.value[row_idx, :] = dh_dx @ self.robot.g()
+                         self.b1.value[row_idx, :] = h / dt + dh_dx @ self.robot.f()
+                    else:
+                         # CBF: b = L_f h + alpha * h
+                         self.A1.value[row_idx, :] = dh_dx @ self.robot.g()
+                         self.b1.value[row_idx, :] = dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h
+                    
+                elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D']:
+                    h, h_dot, dh_dot_dx = self.robot.agent_barrier(obs)
+                    
+                    if mode == 'hard':
+                         # Hard Constraint for Relative Degree 2: h(x_{k+2}) >= 0
+                         # Using 2nd order Taylor expansion and dividing by dt^2 for numerical stability:
+                         # h_{k+2} ≈ h + 2*h_dot*dt + (L_f^2 h + L_g L_f h @ u)*dt^2
+                         # Constraint: (dh_dot_dx @ g) @ u + h/dt^2 + 2*h_dot/dt + (dh_dot_dx @ f) >= 0
+                         dt = self.robot.dt
+                         self.A1.value[row_idx, :] = dh_dot_dx @ self.robot.g()
+                         self.b1.value[row_idx, :] = h / (dt**2) + 2 * h_dot / dt + dh_dot_dx @ self.robot.f()
+                    else:
+                         # CBF for Relative Degree 2
+                         gamma1 = self.cbf_param['alpha1'] + self.cbf_param['alpha2']
+                         gamma2 = self.cbf_param['alpha1'] * self.cbf_param['alpha2']
+                         self.A1.value[row_idx, :] = dh_dot_dx @ self.robot.g()
+                         self.b1.value[row_idx, :] = dh_dot_dx @ self.robot.f() + gamma1 * h_dot + gamma2 * h
+                
+                row_idx += 1
         
         self.u_ref.value = control_ref['u_ref']
 
