@@ -93,7 +93,7 @@ class BackupCBF:
         if model in ['DriftingCar', 'DynamicBicycle2D']:
             self.safety_margin = 2.0  # Smaller margin for drift car
         else:
-            self.safety_margin = 5.0  # Large margin for evade scenario
+            self.safety_margin = 1.0  # Reasonable margin for evade scenario
         
         # Terminal set parameters (for detecting if in safe set)
         self.terminal_velocity_margin = 0.3  # Velocity tolerance for "stopped"
@@ -277,19 +277,23 @@ class BackupCBF:
             for j in range(n):
                 x_pert = x.copy()
                 x_pert[j] += eps
+                
+                u_b_pert = self._backup_control(x_pert)
+                
                 if hasattr(self.robot, 'step'):
                     try:
-                        x_next_pert = self.robot.step(x_pert.reshape(-1, 1), u_b.reshape(-1, 1))
+                        # Step with perturbed state AND perturbed control
+                        x_next_pert = self.robot.step(x_pert.reshape(-1, 1), u_b_pert.reshape(-1, 1))
                         x_next_pert = np.array(x_next_pert).flatten()
                     except:
                         f_pert = self._dynamics_f(x_pert)
                         g_pert = self._dynamics_g(x_pert)
-                        x_dot_pert = f_pert + (g_pert @ u_b)[:len(x)]
+                        x_dot_pert = f_pert + (g_pert @ u_b_pert)[:len(x)]
                         x_next_pert = x_pert + self.dt * x_dot_pert
                 else:
                     f_pert = self._dynamics_f(x_pert)
                     g_pert = self._dynamics_g(x_pert)
-                    x_dot_pert = f_pert + (g_pert @ u_b)[:len(x)]
+                    x_dot_pert = f_pert + (g_pert @ u_b_pert)[:len(x)]
                     x_next_pert = x_pert + self.dt * x_dot_pert
                 
                 A_discrete[:, j] = (x_next_pert - x_next) / eps
@@ -547,9 +551,29 @@ class BackupCBF:
             h_val = self._h_safety(x_i, t_i)
             grad_h = self._grad_h_safety(x_i, t_i)
             
-            # Constraint: grad_h @ S_i @ g0 @ u >= -grad_h @ S_i @ f0 - alpha(h)
+            # 1. Moving obstacle time derivative dh/dt
+            # Finite difference approx if moving obstacles exist
+            if self.moving_obstacles is not None:
+                h_val_dt = self._h_safety(x_i, t_i + self.dt)
+                dh_dt = (h_val_dt - h_val) / self.dt
+            else:
+                dh_dt = 0.0
+                
+            # 2. Backup trajectory drift term f_pi (velocity of backup plan)
+            # f_pi = (phi[i+1] - phi[i]) / dt (approx)
+            if i < self.N - 1:
+                f_pi_i = (phi[i+1] - phi[i]) / self.dt
+            else:
+                f_pi_i = (phi[i] - phi[i-1]) / self.dt
+            
+            # Constraint: 
+            # ∇h S (f0 + g0 u) - ∇h f_pi + dh_dt >= -α(h)
+            # ∇h S g0 u >= -∇h S f0 + ∇h f_pi - dh_dt - α(h)
+            
             lhs = grad_h @ S_i @ g0
-            rhs = -(grad_h @ S_i @ f0 + self._alpha(h_val))
+            
+            # The -grad_h @ f_pi_i term accounts for the shifting horizon
+            rhs = -(grad_h @ S_i @ f0) + (grad_h @ f_pi_i) - dh_dt - self._alpha(h_val)
             
             # Skip constraints that are already very satisfied (for numerical stability)
             if np.linalg.norm(lhs) > 1e-6:
@@ -557,6 +581,8 @@ class BackupCBF:
                 h_list.append(rhs)
         
         # Terminal constraint
+        # Note: Terminal constraint does NOT use the f_pi drift term 
+        # because the terminal time T is fixed relative to start for infinite safety
         x_T = phi[-1]
         S_T = S[-1]
         
