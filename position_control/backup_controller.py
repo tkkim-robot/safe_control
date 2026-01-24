@@ -475,13 +475,7 @@ class EvadeBackupController(BackupController):
                 # In goal zone - brake to stop
                 ax = -self.Kd * vx
                 ay = -self.Kd * vy
-                
-                # Clamp and return
-                a_mag = np.sqrt(ax**2 + ay**2)
-                if a_mag > self.a_max:
-                    ax = ax * self.a_max / a_mag
-                    ay = ay * self.a_max / a_mag
-                return np.array([[ax], [ay]])
+                return self._clamp_control(ax, ay)
         
         # Safe pocket bounds
         x_min = self.safe_bounds['x_min']
@@ -495,12 +489,17 @@ class EvadeBackupController(BackupController):
         # Margin for "inside pocket" check - ensure robot is fully inside
         margin = self.robot_spec.get('radius', 0.5) + 0.1
         
-        # Phase 2: Check if inside safe pocket - stay put
+        # Phase 2: Check if DEEP inside safe pocket (near center) - stay put
+        # We want to force the robot to go to the center (x=30) not just the edge (x=34)
+        dist_to_center = np.sqrt((x - pocket_center_x)**2 + (y - pocket_center_y)**2)
+        
         if (x_min + margin <= x <= x_max - margin and 
-            y_min + margin <= y <= y_max - margin):
-            # Inside pocket - brake to stop
+            y_min + margin <= y <= y_max - margin and
+            dist_to_center < 1.0):
+            # Inside pocket AND close to center - brake to stop
             ax = -self.Kd * vx
             ay = -self.Kd * vy
+            return self._clamp_control(ax, ay)
         
         # Phase 3: Approach pocket carefully
         # Strategy: Align X with pocket center first, THEN enter Y
@@ -521,9 +520,18 @@ class EvadeBackupController(BackupController):
                 ax = self.Kp * error_x - self.Kd * vx
                 ay = self.Kp * error_y - self.Kd * vy
             else:
-                # Not fully X-aligned yet, stay in hallway center (y=0) and align X
+                # Not fully X-aligned yet.
                 error_x = pocket_center_x - x
-                target_y = 0.0
+                
+                # WALL COLLISION AVOIDANCE LOGIC:
+                # If we are above the wall (y > y_min) but outside safe X, 
+                # we MUST NOT go down to y=0, or we hit the wall/corner.
+                # We must stay high until X is aligned.
+                if y > y_min: 
+                    target_y = max(y, 3.0) # Stay high (at least in pocket y-range)
+                else:
+                    target_y = 0.0 # Safe to be in hallway
+                    
                 error_y = target_y - y
                 
                 ax = self.Kp * error_x - self.Kd * vx
@@ -533,8 +541,13 @@ class EvadeBackupController(BackupController):
         # Phase 4: Outside pocket x-range - move along center line (y=0) toward pocket x
         else:
             # First, correct y to center line (y=0), then move x toward pocket
-            target_y = 0.0  # Center of hallway
             target_x = pocket_center_x  # Move toward pocket center x
+            
+            # WALL COLLISION AVOIDANCE LOGIC (Same as above):
+            if y > y_min and x > x_max: # If we are "above" the wall to the right
+                 target_y = max(y, 3.0) # Stay high
+            else:
+                 target_y = 0.0  # Center of hallway
             
             error_x = target_x - x
             error_y = target_y - y
@@ -544,12 +557,16 @@ class EvadeBackupController(BackupController):
             ay = self.Kp * error_y - self.Kd * vy
         
         # Clamp accelerations
+        return self._clamp_control(ax, ay)
+    
+    def _clamp_control(self, ax, ay):
+        """Helper to clamp control inputs."""
         a_mag = np.sqrt(ax**2 + ay**2)
         if a_mag > self.a_max:
             ax = ax * self.a_max / a_mag
             ay = ay * self.a_max / a_mag
-        
         return np.array([[ax], [ay]])
+
     
     def simulate_trajectory(self, initial_state, target, horizon, friction=1.0):
         """
