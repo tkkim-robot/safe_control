@@ -57,7 +57,7 @@ from safe_control.position_control.mpcc import MPCC
 from safe_control.position_control.backup_controller import LaneChangeController, StoppingController
 from safe_control.shielding.gatekeeper import Gatekeeper
 from safe_control.shielding.mps import MPS
-from safe_control.position_control.backupcbf import BackupCBF
+from safe_control.position_control.backup_cbf_qp import BackupCBF
 from safe_control.utils.animation import AnimationSaver
 
 

@@ -38,7 +38,7 @@ from safe_control.robots.double_integrator2D import DoubleIntegrator2D
 from safe_control.position_control.backup_controller import EvadeBackupController
 from safe_control.shielding.gatekeeper import Gatekeeper
 from safe_control.shielding.mps import MPS
-from safe_control.position_control.backupcbf import BackupCBF
+from safe_control.position_control.backup_cbf_qp import BackupCBF
 from safe_control.utils.animation import AnimationSaver
 
 
