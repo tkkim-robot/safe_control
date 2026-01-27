@@ -390,12 +390,17 @@ class EvadeEnv:
         Returns:
             dict: Bullet state with position, velocity, and dimensions
         """
+        # Collision bounds match check_obstacle_collision:
+        # Includes a nose of length/3 at the front (positive x direction)
+        effective_length = self.bullet_length * (1 + 1/3)
+        collision_center_x = self.bullet_x + (self.bullet_length / 6)
+        
         return {
-            'x': self.bullet_x,
+            'x': collision_center_x,
             'y': self.bullet_y,
             'vx': self.bullet_vx,
             'vy': 0.0,
-            'length': self.bullet_length,
+            'length': effective_length,
             'width': self.bullet_width,
             'active': self.bullet_active
         }
