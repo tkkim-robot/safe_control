@@ -162,7 +162,8 @@ class ObstacleConfig:
     theta: float = 0.0          # Heading angle
     body_length: float = 4.5
     body_width: float = 2.0
-    radius: float = 2.5         # Collision radius
+    radius: float = 2.5         # Collision radius (larger for safety)
+
 
 
 # Number of obstacles options
@@ -279,8 +280,9 @@ def setup_controllers(
         print(f"  Using STOPPING backup controller")
     else:  # 'lane_change' (default)
         backup_controller = LaneChangeController(car.robot_spec, sim.dt, direction='left')
-        backup_target = left_lane_y
-        print(f"  Using LANE CHANGE backup controller (target y={left_lane_y:.2f})")
+        # Target is the center of the left lane as requested by user
+        backup_target = left_lane_y  # never change the target here.
+        print(f"  Using LANE CHANGE backup controller (target y={backup_target:.2f})")
     
     # Shielding algorithm - choose based on config
     if config.algo_type == 'mps':
@@ -466,7 +468,8 @@ def run_simulation(
             V = car.get_velocity()
             status = shielding.get_status()
             mode = "BACKUP" if status['using_backup'] else "NOMINAL"
-            print(f"Step {step:4d}: x={pos[0]:6.2f}, y={pos[1]:6.2f}, V={V:5.2f} m/s, mode={mode}")
+            h_min = status.get('h_min', 1.0)
+            print(f"Step {step:4d}: x={pos[0]:6.2f}, y={pos[1]:6.2f}, V={V:5.2f} m/s, mode={mode:8s}, h_min={h_min:6.3f}")
         
         # Check collision
         if result['collision']:
