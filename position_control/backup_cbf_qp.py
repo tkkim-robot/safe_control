@@ -84,16 +84,17 @@ class BackupCBF:
         self.nominal_u_traj = None
         
         # CBF parameters - higher alpha = constraint activates sooner (more aggressive)
-        self.alpha = 5.0  # Reverted to 5.0 (aligned with MPCBF)
+        self.alpha = 1.0  # Aligned with theoretical stability requirements
         self.alpha_terminal = 2.0  # Class-K function gain for terminal constraint
         
         # Safety margin - depends on scenario
-        # Evade: large margin due to fast bullet
-        # Drift car: smaller margin for track constraints
-        if model in ['DriftingCar', 'DynamicBicycle2D']:
-            self.safety_margin = 0.5  # Reduced to allow y=4.0 target (Obs+Rob=3.5m < 4.0m)
+        # Can be overridden via robot_spec
+        if 'safety_margin' in robot_spec:
+            self.safety_margin = robot_spec['safety_margin']
+        elif model in ['DriftingCar', 'DynamicBicycle2D']:
+            self.safety_margin = 0.5  # Realistic margin
         else:
-            self.safety_margin = 1.0  # Reasonable margin for evade scenario
+            self.safety_margin = 0.5  # Standard default margin (consistent with test configs)
         
         # Stabilization weights for QP objective
         # Balance between steering (small) and torque (large)
@@ -458,7 +459,8 @@ class BackupCBF:
             if hasattr(self.env, 'get_pocket_bounds'):
                 pocket_bounds = self.env.get_pocket_bounds()
                 robot_radius = self.robot_spec.get('radius', 0.5)
-                margin = robot_radius + 0.5
+                # More generous margin (wide terminal set)
+                margin = robot_radius + 0.2
                 
                 h_x_min = position[0] - pocket_bounds['x_min'] - margin
                 h_x_max = pocket_bounds['x_max'] - position[0] - margin
@@ -475,14 +477,13 @@ class BackupCBF:
                  
                  # 1. Track boundary constraints (Hard limits)
                  h_track_upper = half_width - position[1] - robot_radius
-                 
                  h_track_lower = position[1] + half_width - robot_radius
                  
                  h_list = [h_track_upper, h_track_lower]
                  
-                 # 2. Target lane centering (Soft limits, generous margin)
+                 # 2. Target lane centering (terminal set)
                  if self.backup_target is not None:
-                     target_margin = 5.0
+                     target_margin = 8.0 # generous terminal set
                      h_target_upper = (self.backup_target + target_margin) - position[1] - robot_radius
                      h_target_lower = position[1] - (self.backup_target - target_margin) - robot_radius
                      h_list.extend([h_target_upper, h_target_lower])
@@ -556,7 +557,9 @@ class BackupCBF:
         phi, S = self._integrate_backup_trajectory(robot_state)
         
         # Calculate safety of the nonlinear backup trajectory for status reporting
-        h_safety_min = np.min([self._h_safety(chk) for chk in phi])
+        # Pass time t_i to correctly handle moving obstacles during the rollout
+        h_vals = [self._h_safety(phi[i], i * self.dt) for i in range(len(phi))]
+        h_safety_min = np.min(h_vals)
         h_term = self._h_terminal(phi[-1])
         self._last_h_min = min(h_safety_min, h_term)
         
@@ -604,14 +607,12 @@ class BackupCBF:
                 f_pi_i = (phi[i+1] - phi[i]) / self.dt
             else:
                 f_pi_i = (phi[i] - phi[i-1]) / self.dt
-            
+                
             # Constraint: 
             # ∇h S (f0 + g0 u) - ∇h f_pi + dh_dt >= -α(h)
             # ∇h S g0 u >= -∇h S f0 + ∇h f_pi - dh_dt - α(h)
             
             lhs = grad_h @ S_i @ g0
-            
-            # The -grad_h @ f_pi_i term accounts for the shifting horizon
             rhs = -(grad_h @ S_i @ f0) + (grad_h @ f_pi_i) - dh_dt - self._alpha(h_val)
             
             # Skip constraints that are already very satisfied (for numerical stability)
@@ -727,9 +728,10 @@ class BackupCBF:
                     
                     print("\n--- INFEASIBILITY ANALYSIS ---")
                     try:
-                        for i in range(len(h)):
+                        for i in range(len(phi)):
                             if i < len(phi):
-                                h_val = self._h_safety(phi[i])
+                                # Pass time i*dt to correctly evaluate moving obstacles
+                                h_val = self._h_safety(phi[i], i * self.dt)
                                 if h_val < 0.1:
                                     print(f"  Step {i} is dangerously close: h={h_val:.4f}")
                     except:
