@@ -84,23 +84,31 @@ class BackupCBF:
         self.nominal_u_traj = None
         
         # CBF parameters - higher alpha = constraint activates sooner (more aggressive)
-        self.alpha = 3.0  # Class-K function gain for safety constraints
+        self.alpha = 5.0  # Reverted to 5.0 (aligned with MPCBF)
         self.alpha_terminal = 2.0  # Class-K function gain for terminal constraint
         
         # Safety margin - depends on scenario
         # Evade: large margin due to fast bullet
         # Drift car: smaller margin for track constraints
         if model in ['DriftingCar', 'DynamicBicycle2D']:
-            self.safety_margin = 2.0  # Smaller margin for drift car
+            self.safety_margin = 0.5  # Reduced to allow y=4.0 target (Obs+Rob=3.5m < 4.0m)
         else:
             self.safety_margin = 1.0  # Reasonable margin for evade scenario
         
-        # Terminal set parameters (for detecting if in safe set)
-        self.terminal_velocity_margin = 0.3  # Velocity tolerance for "stopped"
-        
+        # Stabilization weights for QP objective
+        # Balance between steering (small) and torque (large)
+        if model in ['DriftingCar', 'DynamicBicycle2D']:
+            # Steering is ~0.1, Torque is ~2000. Weight steering more or torque less.
+            # Normalize to ~1.0 range
+            # Steering and torque weights [steering, torque]
+            # Penalize torque deviation (braking) more heavily to encourage steering avoidance
+            self.Q_u = np.array([1.0, 10.0])
+        else:
+            self.Q_u = np.array([1.0, 1.0])
+            
         # Visualization
         self.ax = ax
-        self.visualize_backup = True
+        self.visualize_backup = False  # Disabled by default for performance
         self.backup_trajs = []
         self.save_every_N = 5
         self.curr_step = 0
@@ -113,6 +121,7 @@ class BackupCBF:
         # Status tracking
         self._using_backup = False
         self._last_intervention = False
+        self._last_h_min = 1.0
         
     def _setup_visualization(self):
         """Setup visualization handles."""
@@ -459,11 +468,36 @@ class BackupCBF:
                 h_terminal = min(h_x_min, h_x_max, h_y_min, h_y_max)
                 
             # Drift car: in left lane (backup target lane)
-            elif hasattr(self.env, 'get_lane_center') and self.backup_target is not None:
-                lane_y = self.backup_target
-                lane_width = getattr(self.env, 'lane_width', 4.0)
-                dist_to_lane = abs(position[1] - lane_y)
-                h_terminal = lane_width / 2 - dist_to_lane - 0.5
+            # Drift car: ensure track boundaries AND loosely centered on target
+            elif hasattr(self.env, 'track_width'):
+                 half_width = self.env.track_width / 2
+                 robot_radius = self.robot_spec.get('radius', 1.5)
+                 
+                 # 1. Track boundary constraints (Hard limits)
+                 h_track_upper = half_width - position[1] - robot_radius
+                 
+                 h_track_lower = position[1] + half_width - robot_radius
+                 
+                 h_list = [h_track_upper, h_track_lower]
+                 
+                 # 2. Target lane centering (Soft limits, generous margin)
+                 if self.backup_target is not None:
+                     target_margin = 5.0
+                     h_target_upper = (self.backup_target + target_margin) - position[1] - robot_radius
+                     h_target_lower = position[1] - (self.backup_target - target_margin) - robot_radius
+                     h_list.extend([h_target_upper, h_target_lower])
+                 
+                 h_terminal = min(h_list)
+                 
+                 # DEBUG: Print if large violation
+                 if h_terminal < -10.0:
+                     print(f"DEBUG: Large h_terminal violation: {h_terminal}")
+                     print(f"  Pos: {position}, Target: {self.backup_target}")
+                     print(f"  Track: [{h_track_upper:.2f}, {h_track_lower:.2f}]")
+                     if self.backup_target is not None:
+                         print(f"  Target: [{h_target_upper:.2f}, {h_target_lower:.2f}] (margin 5.0)")
+                         
+        # Velocity constraint: should be slowing down
         
         # Velocity constraint: should be slowing down
         if self.n_states >= 4:
@@ -520,6 +554,11 @@ class BackupCBF:
         
         # Integrate backup trajectory and sensitivity
         phi, S = self._integrate_backup_trajectory(robot_state)
+        
+        # Calculate safety of the nonlinear backup trajectory for status reporting
+        h_safety_min = np.min([self._h_safety(chk) for chk in phi])
+        h_term = self._h_terminal(phi[-1])
+        self._last_h_min = min(h_safety_min, h_term)
         
         # Store for visualization
         if self.visualize_backup and self.curr_step % self.save_every_N == 0:
@@ -600,52 +639,103 @@ class BackupCBF:
             G = np.array(G_list)
             h = np.array(h_list)
             
-            u = cp.Variable(self.n_controls)
-            objective = cp.Minimize(cp.sum_squares(u - u_ref))
+            # SCALING: Scale variables to be O(1) using actuator limits
+            # Generalized for different models
+            u_scale_list = []
             
-            # CBF constraints: G @ u >= h
-            constraints = [G @ u >= h]
+            model = self.robot_spec.get('model', '')
             
-            # Control limits
-            if self.robot_spec.get('model') in ['DoubleIntegrator2D', 'double_integrator']:
-                a_max = self.robot_spec.get('a_max', 2.0)
-                constraints.extend([
-                    cp.abs(u[0]) <= a_max,
-                    cp.abs(u[1]) <= a_max,
-                ])
-            elif self.robot_spec.get('model') in ['DriftingCar', 'DynamicBicycle2D']:
-                delta_dot_max = self.robot_spec.get('delta_dot_max', np.deg2rad(15))
-                tau_dot_max = self.robot_spec.get('tau_dot_max', 8000.0)
-                constraints.extend([
-                    cp.abs(u[0]) <= delta_dot_max,
-                    cp.abs(u[1]) <= tau_dot_max,
-                ])
+            if model in ['DriftingCar', 'DynamicBicycle2D']:
+                 delta_dot_max = self.robot_spec.get('delta_dot_max', np.deg2rad(15))
+                 tau_dot_max = self.robot_spec.get('tau_dot_max', 8000.0)
+                 u_scale_list = [delta_dot_max, tau_dot_max]
+            elif model in ['DoubleIntegrator2D', 'double_integrator']:
+                 a_max = self.robot_spec.get('a_max', 2.0)
+                 u_scale_list = [a_max, a_max]
+            else:
+                 # Default fallback if unknown model (should restrict or warn)
+                 u_scale_list = [1.0] * self.n_controls
+                 
+            u_scale = np.array(u_scale_list)
+            
+            S_mat = np.diag(u_scale)           # u = S * u_scaled
+            
+            # Scaled variables: u_scaled \in [-1, 1] approximately
+            u_scaled = cp.Variable(self.n_controls)
+            
+            S_inv = np.diag(1.0/u_scale)
+            u_ref_scaled = (S_inv @ u_ref).flatten()
+            
+            W = np.diag(self.Q_u)
+            
+            # Expression to minimize: W @ (u_scaled - u_ref_scaled)
+            # This penalizes relative deviation (percentage of actuation range)
+            # which is much better conditioned than physical units
+            error_expr = W @ (u_scaled - u_ref_scaled)
+            objective = cp.Minimize(cp.sum_squares(error_expr))
+            
+            # Scaled CBF constraints
+            # G * u >= h  =>  G * (S * u_scaled) >= h
+            constraints = [(G @ S_mat) @ u_scaled >= h]
+            
+            # Control limits (scaled to [-1, 1])
+            constraints.extend([
+                u_scaled >= -1.0,
+                u_scaled <= 1.0,
+            ])
             
             prob = cp.Problem(objective, constraints)
             
+            # Solve with strict feasibility requirement
+            # Try OSQP first (faster), fallback to SCS (more robust)
             try:
-                # Try OSQP first (faster), fallback to GUROBI
-                try:
-                    prob.solve(solver=cp.OSQP, warm_start=True, verbose=False)
-                except:
-                    prob.solve(solver=cp.GUROBI, verbose=False)
+                prob.solve(solver=cp.OSQP, warm_start=True, verbose=False)
+            except:
+                prob.solve(solver=cp.SCS, verbose=False)
+            
+            if prob.status in ['optimal', 'optimal_inaccurate']:
+                if u_scaled.value is None:
+                        raise ValueError("QP solved but returned None value")
+
+                # Unscale result to physical units for output
+                u_safe = S_mat @ u_scaled.value
                 
-                if prob.status in ['optimal', 'optimal_inaccurate']:
-                    u_safe = u.value
-                    # Compare output to u_ref - if similar, we're in NOMINAL mode
-                    control_diff = np.linalg.norm(u_safe - u_ref)
-                    self._last_intervention = control_diff > 1e-3
-                    self._using_backup = control_diff > 1e-3
-                else:
-                    # QP infeasible - use backup control directly
-                    u_safe = self._backup_control(robot_state)
+                # Compare SCALED output to SCALED reference to determine backup usage
+                # This ensures torque (large values) doesn't dominate steering (small values)
+                # u_ref_scaled was calculated earlier
+                u_diff_scaled = u_scaled.value - u_ref_scaled
+                
+                # error_val = W * diff (element-wise since W is diagonal Q_u)
+                error_val = self.Q_u * u_diff_scaled
+                control_diff = np.linalg.norm(error_val)
+                
+                # Threshold for intervention (in normalized cost units)
+                self._last_intervention = control_diff > 0.1
+                self._using_backup = control_diff > 0.1
+
+            else:
+                if self._last_h_min > 0.01:
+                    u_backup = self.backup_controller.compute_control(robot_state, self.backup_target).flatten()
+                    u_safe = u_backup
                     self._last_intervention = True
                     self._using_backup = True
-            except Exception as e:
-                # Solver error - use backup control
-                u_safe = self._backup_control(robot_state)
-                self._last_intervention = True
-                self._using_backup = True
+                else:
+                    print(f"\n*** CBF-QP {prob.status.upper()} ***")
+                    print(f"CRITICAL: Backup trajectory is also UNSAFE or marginally safe (h={self._last_h_min:.4f}).")
+                    if self.env and hasattr(self.env, 'obstacles'):
+                        print(f"Obstacles: {self.env.obstacles}")
+                    
+                    print("\n--- INFEASIBILITY ANALYSIS ---")
+                    try:
+                        for i in range(len(h)):
+                            if i < len(phi):
+                                h_val = self._h_safety(phi[i])
+                                if h_val < 0.1:
+                                    print(f"  Step {i} is dangerously close: h={h_val:.4f}")
+                    except:
+                        pass
+                    
+                    raise ValueError(f"CBF-QP {prob.status} and Backup Unsafe (h_min={self._last_h_min:.4f})")
         else:
             # No constraints needed - use reference directly
             u_safe = u_ref
@@ -676,6 +766,7 @@ class BackupCBF:
             'using_backup': self._using_backup,
             'last_intervention': self._last_intervention,
             'backup_horizon': self.backup_horizon,
+            'h_min': self._last_h_min,
             'num_constraints': self.N,
         }
     

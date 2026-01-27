@@ -99,10 +99,9 @@ class LaneChangeController(BackupController):
             raise NotImplementedError("LaneChangeController is only implemented for DriftingCar model.")
         self.direction = direction
         
-        # Cascaded control gains (tuned for smooth lane change)
-        # Outer loop: lateral position -> desired heading
-        self.Kp_y = 0.15      # Proportional gain for lateral error -> heading
-        self.Kd_y = 0.8       # Derivative gain (using current heading as proxy for lateral velocity)
+        # Cascaded control gains (tuned for agile lane change with damping)
+        self.Kp_y = 0.3       # Increased for faster response
+        self.Kd_y = 0.5       # Added damping to reduce overshoot at high speed
         
         # Inner loop: heading -> desired steering
         self.Kp_theta = 1.5   # Proportional gain for heading error -> steering
@@ -113,6 +112,7 @@ class LaneChangeController(BackupController):
         
         # Velocity control gains
         self.Kp_v = 500.0     # Proportional gain for velocity tracking
+        self.Kp_tau_dot = 2.0 # Torque rate gain (aligned with MPCBF)
         self.target_velocity = robot_spec.get('v_ref', 8.0)  # Target velocity during lane change
         
         # Limits
@@ -121,8 +121,7 @@ class LaneChangeController(BackupController):
         self.tau_max = robot_spec.get('tau_max', 4000.0)
         self.tau_dot_max = robot_spec.get('tau_dot_max', 8000.0)
         
-        # Maximum desired heading during lane change (limits aggressiveness)
-        self.theta_des_max = np.deg2rad(15)  # Max 15 degrees heading toward target lane
+        self.theta_des_max = np.deg2rad(30)  # Reverted to 30 (MPCBF value) to support agile lane changes
     
     def compute_control(self, state, target_y):
         """
@@ -149,17 +148,22 @@ class LaneChangeController(BackupController):
         # Lateral error (positive = target is above current position)
         y_error = target_y - y
         
+        # Lateral velocity (approximate if no direct state for it)
+        # vy = V * sin(theta + beta)
+        vy = V * np.sin(angle_normalize(theta + beta))
+        
         # Desired heading angle to reach target lane
-        # Use arctan with a gain to limit maximum heading angle
-        # As y_error -> 0, theta_des -> 0 (straighten out)
-        theta_des = np.arctan(self.Kp_y * y_error)
+        # Use PD control to reduce overshoot
+        # Kp_y pulls towards target, Kd_y dampens lateral velocity
+        theta_des = np.arctan(self.Kp_y * y_error - self.Kd_y * vy)
         
         # Limit maximum desired heading
         theta_des = np.clip(theta_des, -self.theta_des_max, self.theta_des_max)
         
         # ===== Inner loop: Heading control =====
-        # Heading error (how far are we from desired heading)
-        theta_error = angle_normalize(theta_des - theta)
+        # Use Course Angle (theta + beta) instead of just theta to account for drift/side-slip
+        course_angle = angle_normalize(theta + beta)
+        theta_error = angle_normalize(theta_des - course_angle)
         
         # Desired steering angle: proportional to heading error + damping from yaw rate
         # Negative yaw rate (r) means turning right, so we subtract it for damping
@@ -183,8 +187,9 @@ class LaneChangeController(BackupController):
         tau_des = np.clip(tau_des, -self.tau_max, self.tau_max)
         
         # Torque rate
+        # Use linear gain logic from MPCBF/PCBF
         tau_error = tau_des - tau
-        tau_dot = 2000.0 * np.sign(tau_error) * min(abs(tau_error), 1.0)
+        tau_dot = self.Kp_tau_dot * tau_error
         tau_dot = np.clip(tau_dot, -self.tau_dot_max, self.tau_dot_max)
         
         return np.array([[delta_dot], [tau_dot]])
