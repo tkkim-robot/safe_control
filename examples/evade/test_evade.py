@@ -446,9 +446,10 @@ def run_simulation(config: TestConfig, animation_saver: Optional['AnimationSaver
         if step % 20 == 0:
             status = shielding.get_status()
             mode = "BACKUP" if status['using_backup'] else "NOMINAL"
+            h_min = status['h_min']
             in_pocket = env.is_in_safe_pocket(pos)
             pocket_str = " [IN POCKET]" if in_pocket else ""
-            print(f"Step {step:4d}: x={pos[0]:6.2f}, y={pos[1]:6.2f}, mode={mode}{pocket_str}")
+            print(f"Step {step:4d}: x={pos[0]:6.2f}, y={pos[1]:6.2f}, mode={mode}, h_min={h_min:6.3f}{pocket_str}")
     
     # Export video if requested
     if animation_saver is not None:

@@ -162,7 +162,7 @@ class ObstacleConfig:
     theta: float = 0.0          # Heading angle
     body_length: float = 4.5
     body_width: float = 2.0
-    radius: float = 2.0         # Collision radius (reduced to allow side-by-side passing)
+    radius: float = 2.5         # Collision radius (larger for safety)
 
 
 
@@ -281,7 +281,7 @@ def setup_controllers(
     else:  # 'lane_change' (default)
         backup_controller = LaneChangeController(car.robot_spec, sim.dt, direction='left')
         # Target is the center of the left lane as requested by user
-        backup_target = left_lane_y
+        backup_target = left_lane_y  # never change the target here.
         print(f"  Using LANE CHANGE backup controller (target y={backup_target:.2f})")
     
     # Shielding algorithm - choose based on config
