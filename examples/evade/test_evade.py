@@ -468,6 +468,7 @@ def run_simulation(config: TestConfig, animation_saver: Optional['AnimationSaver
         'backup_steps': backup_steps,
         'nominal_ratio': nominal_steps / max(total_steps, 1),
         'backup_ratio': backup_steps / max(total_steps, 1),
+        'global_min_h': shielding.get_status().get('global_min_h', 0.0),
     }
     
     print("\n" + "-" * 50)
@@ -475,8 +476,9 @@ def run_simulation(config: TestConfig, animation_saver: Optional['AnimationSaver
     print(f"  Collision: {'YES' if collision_occurred else 'NO'}")
     print(f"  Goal Reached: {'YES' if goal_reached else 'NO'}")
     print(f"  Total steps: {total_steps}")
-    print(f"  Nominal: {nominal_steps} ({100*results['nominal_ratio']:.1f}%)")
-    print(f"  Backup: {backup_steps} ({100*results['backup_ratio']:.1f}%)")
+    print(f"  Nominal: {results['nominal_steps']} ({100*results['nominal_ratio']:.1f}%)")
+    print(f"  Backup: {results['backup_steps']} ({100*results['backup_ratio']:.1f}%)")
+    print(f"  Global Min h: {results['global_min_h']:.4f}")
     
     if goal_reached and not collision_occurred:
         print("\n  ✓ TEST PASSED (reached goal without collision)")
