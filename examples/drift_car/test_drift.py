@@ -498,6 +498,7 @@ def run_simulation(
         'backup_steps': backup_steps,
         'nominal_ratio': nominal_steps / max(total_steps, 1),
         'backup_ratio': backup_steps / max(total_steps, 1),
+        'global_min_h': shielding.get_status().get('global_min_h', 0.0),
     }
 
 
@@ -556,6 +557,7 @@ def run_test(config: TestConfig) -> Dict[str, Any]:
     print(f"  Total steps: {results['total_steps']}")
     print(f"  Nominal: {results['nominal_steps']} ({100*results['nominal_ratio']:.1f}%)")
     print(f"  Backup: {results['backup_steps']} ({100*results['backup_ratio']:.1f}%)")
+    print(f"  Global Min h: {results['global_min_h']:.4f}")
     
     # Check expectation
     if results['collision'] == config.expected_collision:

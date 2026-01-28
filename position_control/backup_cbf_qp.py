@@ -484,7 +484,7 @@ class BackupCBF:
                  
                  # 2. Target lane centering (terminal set)
                  if self.backup_target is not None:
-                     target_margin = 8.0 # generous terminal set
+                     target_margin = 12.0 # generous terminal set
                      h_target_upper = (self.backup_target + target_margin) - position[1] - robot_radius
                      h_target_lower = position[1] - (self.backup_target - target_margin) - robot_radius
                      h_list.extend([h_target_upper, h_target_lower])
