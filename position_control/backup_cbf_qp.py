@@ -123,6 +123,7 @@ class BackupCBF:
         self._using_backup = False
         self._last_intervention = False
         self._last_h_min = 1.0
+        self.global_min_h = float('inf')  # Track global minimum for debugging
         
     def _setup_visualization(self):
         """Setup visualization handles."""
@@ -512,6 +513,12 @@ class BackupCBF:
             v_max = self.robot_spec.get('v_max', 1.5)
             h_velocity = v_max - velocity
             h_terminal = min(h_terminal, h_velocity)
+
+        # Check safety constraint at terminal state (ensure terminal set is subset of safe set)
+        if hasattr(self, 'backup_horizon'):
+             t_terminal = self.backup_horizon
+             h_safe_terminal = self._h_safety(x, t_terminal)
+             h_terminal = min(h_terminal, h_safe_terminal)
         
         return h_terminal if h_terminal != float('inf') else 1.0
     
@@ -562,6 +569,10 @@ class BackupCBF:
         h_safety_min = np.min(h_vals)
         h_term = self._h_terminal(phi[-1])
         self._last_h_min = min(h_safety_min, h_term)
+        
+        # Track global minimum
+        if self._last_h_min < self.global_min_h:
+            self.global_min_h = self._last_h_min
         
         # Store for visualization
         if self.visualize_backup and self.curr_step % self.save_every_N == 0:
@@ -769,6 +780,7 @@ class BackupCBF:
             'last_intervention': self._last_intervention,
             'backup_horizon': self.backup_horizon,
             'h_min': self._last_h_min,
+            'global_min_h': self.global_min_h,
             'num_constraints': self.N,
         }
     
