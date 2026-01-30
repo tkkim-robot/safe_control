@@ -42,7 +42,7 @@ class Gatekeeper:
     
     def __init__(self, robot, robot_spec, dt=0.05, 
                  backup_horizon=2.0, event_offset=0.5, ax=None,
-                 nominal_horizon=None, horizon_discount=None):
+                 nominal_horizon=None, horizon_discount=None, safety_margin=1.0):
         """
         Initialize the Gatekeeper controller.
 
@@ -64,7 +64,10 @@ class Gatekeeper:
         self.dt = dt
         self.backup_horizon = backup_horizon
         self.event_offset = event_offset
-        self.horizon_discount = horizon_discount if horizon_discount is not None else dt * 5  # Coarser search for speed
+        self.horizon_discount = horizon_discount if horizon_discount is not None else 5 * dt
+        self.safety_margin = safety_margin
+        
+        # State variableser search for speed
         self.nominal_horizon = nominal_horizon if nominal_horizon is not None else backup_horizon
         
         # Infer state/control dimensions from robot model
@@ -613,7 +616,7 @@ class Gatekeeper:
                          obstacle_states = [self.moving_obstacles] * len(candidate_x_traj)
                 
                 # Check validity with safety margin (conservative)
-                if self._is_candidate_valid(candidate_x_traj, safety_margin=1.0, obstacle_states=obstacle_states):
+                if self._is_candidate_valid(candidate_x_traj, safety_margin=self.safety_margin, obstacle_states=obstacle_states):
                     self._update_committed_trajectory(actual_steps)
                     found_valid = True
                     break
@@ -641,7 +644,6 @@ class Gatekeeper:
         
         # Increment index AFTER getting control (for next iteration)
         self.current_time_idx += 1
-        
         # Update visualization
         self._update_visualization()
         

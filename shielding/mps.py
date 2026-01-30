@@ -36,7 +36,7 @@ class MPS(Gatekeeper):
     """
     
     def __init__(self, robot, robot_spec, dt=0.05, 
-                 backup_horizon=2.0, event_offset=0.5, ax=None):
+                 backup_horizon=2.0, event_offset=0.5, ax=None, safety_margin=1.0):
         """
         Initialize the MPS controller.
 
@@ -47,8 +47,9 @@ class MPS(Gatekeeper):
             backup_horizon: Duration (seconds) for backup trajectory (TB in paper)
             event_offset: Time offset before next candidate generation event
             ax: Matplotlib axis for visualization (optional)
+            safety_margin: Safety margin for obstacle avoidance.
         """
-        super().__init__(robot, robot_spec, dt, backup_horizon, event_offset, ax)
+        super().__init__(robot, robot_spec, dt, backup_horizon, event_offset, ax, safety_margin=safety_margin)
         self._control_matches_nominal = False  # Track if output matches u_ref
     
     def is_using_backup(self):
@@ -118,7 +119,7 @@ class MPS(Gatekeeper):
                      obstacle_states = [self.moving_obstacles] * len(candidate_x_traj)
             
             # Check validity with safety margin (conservative)
-            if self._is_candidate_valid(candidate_x_traj, safety_margin=1.0, obstacle_states=obstacle_states):
+            if self._is_candidate_valid(candidate_x_traj, safety_margin=self.safety_margin, obstacle_states=obstacle_states):
                 # Valid: commit the one-step nominal + backup trajectory
                 self._update_committed_trajectory(actual_steps)
             else:
