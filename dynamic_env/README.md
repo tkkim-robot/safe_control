@@ -118,11 +118,11 @@ Now, our DPCBF formulation defines a parabolic safety boundary with a Line-of-Si
 If you find this repository useful, please consider citing our paper:
 
 ```
-@inproceedings{park2025dpcbf, 
+@inproceedings{park2026dpcbf, 
     author    = {Park, Hun Kuk and Kim, Taekyung and Panagou, Dimitra},
     title     = {Beyond Collision Cones: Dynamic Obstacle Avoidance for Nonholonomic Robots via Dynamic Parabolic Control Barrier Functions}, 
-    booktitle = {arXiv preprint arXiv.25},
+    booktitle = {IEEE International Conference on Robotics and Automation (ICRA)},
     shorttitle = {DPCBF},
-    year      = {2025}
+    year      = {2026}
 }
 ```
