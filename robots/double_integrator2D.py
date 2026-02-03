@@ -79,15 +79,30 @@ class DoubleIntegrator2D:
     def step(self, X, U):
         X = X + (self.f(X) + self.g(X) @ U) * self.dt
         
-        # Enforce velocity limits if specified
         v_max = self.robot_spec.get('v_max')
         if v_max is not None:
-            vx, vy = X[2, 0], X[3, 0]
-            v_mag = np.sqrt(vx**2 + vy**2)
-            if v_mag > v_max:
-                scale = v_max / v_mag
-                X[2, 0] *= scale
-                X[3, 0] *= scale
+            if isinstance(X, (ca.SX, ca.MX, ca.DM)):
+                # CasADi symbolic implementation
+                vx, vy = X[2, 0], X[3, 0]
+                v_mag = ca.sqrt(vx**2 + vy**2)
+                scale = ca.if_else(v_mag > v_max, v_max / v_mag, 1.0)
+                # Apply scaling. Note: In CasADi, we can't modify X in place effectively if it's symbolic, 
+                # but we can return a new expression. 
+                X_new_2 = X[2, 0] * scale
+                X_new_3 = X[3, 0] * scale
+                
+                # Reconstruct X. If X is SX/MX, we can't do slice assignment efficiently the same way as numpy sometimes.
+                # But CasADi supports slice assignment.
+                X[2, 0] = X_new_2
+                X[3, 0] = X_new_3
+            else:
+                # NumPy implementation
+                vx, vy = X[2, 0], X[3, 0]
+                v_mag = np.sqrt(vx**2 + vy**2)
+                if v_mag > v_max:
+                    scale = v_max / v_mag
+                    X[2, 0] *= scale
+                    X[3, 0] *= scale
                 
         return X
 

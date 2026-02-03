@@ -1,7 +1,7 @@
 import numpy as np
 from .simple_attitude import SimpleAtt
 from .velocity_tracking_yaw import VelocityTrackingYaw
-from .visibility_promoting_yaw import VisibilityAtt
+from .visibility_area import VisibilityAreaAtt
 from shapely.geometry import LineString, Polygon
 
 """
@@ -70,10 +70,10 @@ class GatekeeperAtt:
         self._ctrl_map = {
             'simple': SimpleAtt,
             'velocity tracking yaw': VelocityTrackingYaw,
-            'visibility promoting yaw': VisibilityAtt
+            'visibility area': VisibilityAreaAtt
         }
 
-        nom_key = ctrl_config.get('nominal', 'visibility promoting yaw')
+        nom_key = ctrl_config.get('nominal', 'visibility area')
         if nom_key not in self._ctrl_map:
             raise ValueError(f"Unknown nominal controller '{nom_key}'")
         NominalCtrl = self._ctrl_map[nom_key]
