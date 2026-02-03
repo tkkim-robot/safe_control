@@ -4,11 +4,12 @@ import do_mpc
 import matplotlib.pyplot as plt
 
 class MPCCBF:
-    def __init__(self, robot, robot_spec, show_mpc_traj=False):
+    def __init__(self, robot, robot_spec, show_mpc_traj=False, num_obs=5):
         self.robot = robot
         self.robot_spec = robot_spec
         self.status = 'optimal'  # TODO: not implemented
         self.show_mpc_traj = show_mpc_traj
+        self.num_obs = num_obs
 
         # MPC parameters
         self.horizon = 10
@@ -57,12 +58,12 @@ class MPCCBF:
             self.cbf_param['alpha2'] = 0.15
             self.n_states = 4
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
-            self.cbf_param['alpha1'] = 0.15
-            self.cbf_param['alpha2'] = 0.15
+            self.cbf_param['alpha1'] = 0.2
+            self.cbf_param['alpha2'] = 0.2
             self.n_states = 4
         elif self.robot_spec['model'] == 'KinematicBicycle2D':
-            self.cbf_param['alpha1'] = 0.15
-            self.cbf_param['alpha2'] = 0.15
+            self.cbf_param['alpha1'] = 0.1
+            self.cbf_param['alpha2'] = 0.1
             self.n_states = 4
         elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
             self.cbf_param['alpha'] = 0.15
@@ -111,7 +112,7 @@ class MPCCBF:
         _goal = model.set_variable(
             var_type='_tvp', var_name='goal', shape=(self.n_states, 1))
         _obs = model.set_variable(
-            var_type='_tvp', var_name='obs', shape=(5, 7)) # (num_obs, obs_info), where [x, y, r, vx, vy]
+            var_type='_tvp', var_name='obs', shape=(self.num_obs, 7)) # (num_obs, obs_info), where [x, y, r, vx, vy]
 
         if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'Quad3D']:
             _alpha = model.set_variable(
@@ -257,20 +258,20 @@ class MPCCBF:
             # Set goal
             tvp_template['_tvp', :, 'goal'] = np.concatenate([self.goal, [0] * (self.n_states - self.goal.shape[0])])
 
-            # Handle up to 5 obstacles (if fewer than 5, substitute dummy obstacles)
+            # Handle up to num_obs obstacles (if fewer, substitute dummy obstacles)
             if self.obs is None:
-                # Before detecting any obstacle, set 5 dummy obstacles far away
-                dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0, 0, 0]), (5, 1))  # 5 far away obstacles
+                # Before detecting any obstacle, set dummy obstacles far away
+                dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0, 0, 0]), (self.num_obs, 1))
                 tvp_template['_tvp', :, 'obs'] = dummy_obstacles
             else:
                 num_obstacles = self.obs.shape[0]
-                if num_obstacles < 5:
+                if num_obstacles < self.num_obs:
                     # Add dummy obstacles for missing ones
-                    dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0, 0, 0]), (5 - num_obstacles, 1))
+                    dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0, 0, 0]), (self.num_obs - num_obstacles, 1))
                     tvp_template['_tvp', :, 'obs'] = np.vstack([self.obs, dummy_obstacles])
                 else:
                     # Use the detected obstacles directly
-                    tvp_template['_tvp', :, 'obs'] = self.obs[:5, :]  # Limit to 5 obstacles
+                    tvp_template['_tvp', :, 'obs'] = self.obs[:self.num_obs, :]  # Limit to num_obs obstacles
 
             if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'Quad3D']:
                 tvp_template['_tvp', :, 'alpha'] = self.cbf_param['alpha']
@@ -288,8 +289,8 @@ class MPCCBF:
         _u = self.model.u['u']  # Current control input [0] acc, [1] omega
         _obs = self.model.tvp['obs']
 
-        # Add a separate constraint for each of the 5 obstacles
-        for i in range(5):
+        # Add a separate constraint for each of the obstacles
+        for i in range(self.num_obs):
             obs_i = _obs[i, :]  # Select the i-th obstacle
             cbf_constraint = self.compute_cbf_constraint(_x, _u, obs_i)
             mpc.set_nl_cons(f'cbf_{i}', -cbf_constraint, ub=0)
@@ -331,8 +332,8 @@ class MPCCBF:
         self.goal = np.array(goal)
         
         if obs is None or len(obs) == 0:
-            # No obstacles detected, set 5 dummy obstacles far away
-            self.obs = np.tile(np.array([1000, 1000, 0, 0, 0, 0, 0]), (5, 1))
+            # No obstacles detected, set dummy obstacles far away
+            self.obs = np.tile(np.array([1000, 1000, 0, 0, 0, 0, 0]), (self.num_obs, 1))
         else:
             num_obstacles = len(obs)
             padded_obs = []
@@ -346,13 +347,13 @@ class MPCCBF:
                 padded_obs.append(ob)
             padded_obs = np.array(padded_obs)
 
-            if num_obstacles < 5:
+            if num_obstacles < self.num_obs:
                 # Add dummy obstacles for missing ones
-                dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0, 0, 0]), (5 - num_obstacles, 1))
+                dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0, 0, 0]), (self.num_obs - num_obstacles, 1))
                 self.obs = np.vstack([padded_obs, dummy_obstacles])
             else:
-                # Use the detected obstacles directly (up to 5)
-                self.obs = padded_obs[:5]
+                # Use the detected obstacles directly (up to num_obs)
+                self.obs = padded_obs[:self.num_obs]
 
     def solve_control_problem(self, robot_state, control_ref, nearest_obs):
         # Set initial state and reference
@@ -388,9 +389,6 @@ class MPCCBF:
             self.fig.canvas.flush_events()
             plt.pause(0.001)
 
-        # if nearest_obs is not None:
-        #     cbf_constraint = self.compute_cbf_constraint(
-        #         x_next, u, nearest_obs)  # here use actual value, not symbolic
         # self.status = 'optimal' if self.mpc.optimal else 'infeasible'
         # print(self.mpc.opt_x_num['_x', :, 0, 0])
         return u

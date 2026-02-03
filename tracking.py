@@ -132,7 +132,7 @@ class LocalTrackingController:
             self.pos_controller = CBFQP(self.robot, self.robot_spec, num_obs=self.num_constraints)
         elif self.pos_controller_type == 'mpc_cbf':
             from safe_control.position_control.mpc_cbf import MPCCBF
-            self.pos_controller = MPCCBF(self.robot, self.robot_spec, show_mpc_traj=self.show_mpc_traj)
+            self.pos_controller = MPCCBF(self.robot, self.robot_spec, show_mpc_traj=self.show_mpc_traj, num_obs=self.num_constraints)
         elif self.pos_controller_type == 'optimal_decay_cbf_qp':
             from safe_control.position_control.optimal_decay_cbf_qp import OptimalDecayCBFQP
             self.pos_controller = OptimalDecayCBFQP(self.robot, self.robot_spec)
@@ -330,14 +330,13 @@ class LocalTrackingController:
         if len(unpassed_obs) == 0:
             all_obs = np.array(all_obs)
             distances = np.linalg.norm(all_obs[:, :2] - robot_pos, axis=1)
-            nearest_indices = np.argsort(distances)[:5]  # Get indices of the nearest 5 obstacles
+            nearest_indices = np.argsort(distances)[:obs_num]  # Get indices of the nearest obs_num obstacles
             return all_obs[nearest_indices]
         
         # Now, find the nearest unpassed obstacles
         unpassed_obs = np.array(unpassed_obs)
         distances = np.linalg.norm(unpassed_obs[:, :2] - robot_pos, axis=1)
         nearest_indices = np.argsort(distances)[:obs_num]  # Get indices of the nearest 'obs_num' (max 5) unpassed obstacles
-        
         return unpassed_obs[nearest_indices]
 
     def get_nearest_obs(self, detected_obs):
