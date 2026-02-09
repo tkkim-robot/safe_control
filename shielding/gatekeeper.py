@@ -380,8 +380,9 @@ class Gatekeeper:
         Args:
             state: State vector [x, y, theta, ...] or [x, y, vx, vy]
             safety_margin: Additional buffer distance for conservative checking
-            obstacle_state: Optional dict with obstacle position at this timestep
-                           {'x': x, 'y': y, 'length': l, 'width': w} for rectangular
+            obstacle_state: Optional obstacle(s) at this timestep.
+                           Can be a single dict or list of dicts.
+                           Each dict: {'x': x, 'y': y, 'length': l, 'width': w} for rectangular
                            or {'x': x, 'y': y, 'radius': r} for circular
             
         Returns:
@@ -406,11 +407,17 @@ class Gatekeeper:
         
         # Check moving obstacle collision (if provided)
         if obstacle_state is not None:
-            collision = self._check_moving_obstacle_collision(
-                position, robot_radius, obstacle_state
-            )
-            if collision:
-                return (True, "Moving Obstacle") if return_reason else True
+            # Handle both single obstacle dict and list of obstacles
+            obstacles_to_check = obstacle_state if isinstance(obstacle_state, list) else [obstacle_state]
+            
+            for obs in obstacles_to_check:
+                if obs is None:
+                    continue
+                collision = self._check_moving_obstacle_collision(
+                    position, robot_radius, obs
+                )
+                if collision:
+                    return (True, "Moving Obstacle") if return_reason else True
         
         return (False, "None") if return_reason else False
     
