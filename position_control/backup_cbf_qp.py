@@ -88,13 +88,11 @@ class BackupCBF:
         self.alpha_terminal = 2.0  # Class-K function gain for terminal constraint
         
         # Safety margin - depends on scenario
-        # Can be overridden via robot_spec
+        # Can be overridden via robot_spec or set_environment
         if 'safety_margin' in robot_spec:
             self.safety_margin = robot_spec['safety_margin']
-        elif model in ['DriftingCar', 'DynamicBicycle2D']:
-            self.safety_margin = 0.5  # Realistic margin
         else:
-            self.safety_margin = 0.5  # Standard default margin (consistent with test configs)
+            self.safety_margin = 0.0 
         
         # Stabilization weights for QP objective
         # Balance between steering (small) and torque (large)
@@ -388,17 +386,16 @@ class BackupCBF:
         
         # Static obstacle constraints  
         if self.env is not None and hasattr(self.env, 'obstacles'):
+            robot_radius_base = self.robot_spec.get('radius', 1.0)
             for obs in self.env.obstacles:
                 obs_pos = np.array([obs.get('x', 0), obs.get('y', 0)])
-                # Handle different obstacle formats:
-                # - Simple dict: {'x': x, 'y': y, 'radius': r}
-                # - DriftingEnv: {'x': x, 'y': y, 'spec': {'radius': r}}
                 if 'spec' in obs:
                     obs_radius = obs['spec'].get('radius', 2.5)
                 else:
                     obs_radius = obs.get('radius', 1.0)
                 dist = np.linalg.norm(position - obs_pos)
-                h_obs = dist - robot_radius - obs_radius - self.safety_margin
+                # Static obstacles have ZERO extra safety margin
+                h_obs = dist - robot_radius_base - obs_radius
                 h_min = min(h_min, h_obs)
         
         # Moving obstacle constraint (bullet)

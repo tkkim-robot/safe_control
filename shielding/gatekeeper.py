@@ -396,12 +396,15 @@ class Gatekeeper:
         
         # Check boundary collision
         if hasattr(self.env, 'check_collision'):
-            if self.env.check_collision(position, robot_radius):
+            robot_radius_base = self.robot_spec.get('radius', 1.5)
+            if self.env.check_collision(position, robot_radius_base):
                 return (True, "Environment Boundary") if return_reason else True
         
         # Check static obstacle collision (from environment)
         if hasattr(self.env, 'check_obstacle_collision'):
-            collision, _ = self.env.check_obstacle_collision(position, robot_radius)
+            # Static hurdles: no extra safety margin added
+            robot_radius_base = self.robot_spec.get('radius', 1.5)
+            collision, _ = self.env.check_obstacle_collision(position, robot_radius_base)
             if collision:
                 return (True, "Static Obstacle") if return_reason else True
         

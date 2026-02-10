@@ -20,16 +20,19 @@ class InventoryEnv:
         
         # Grid Config
         # 5 Hallways: 10, 30, 50, 70, 90
-        self.hallways_x = [10, 30, 50, 70, 90]
-        self.hallways_y = [10, 30, 50, 70, 90]
-        self.obs_radius = 7.0 # Large enough to block diagonal but leave hallway
+        # If Hero Level -> denser grid? Or just more obstacles?
+        if str(self.level).lower() == 'hero':
+             self.obs_radius = 7.0 # Back to standard
+        else:
+             self.obs_radius = 7.0 
         
         # Static Obstacles (between hallways)
-        # Centers at (20, 20), (20, 40)...
         self.static_obstacles = []
+        # Standard Grid for ALL levels including Hero
         for x in [20, 40, 60, 80]:
             for y in [20, 40, 60, 80]:
                 self.static_obstacles.append({'x': x, 'y': y, 'radius': self.obs_radius})
+                    
         self.obstacles = self.static_obstacles # Alias for Baselines
                 
         # Start and Goal
@@ -44,6 +47,8 @@ class InventoryEnv:
         self.ghosts = [] # list of dict {'x', 'y', 'vx', 'vy', 'radius'}
         self.ghost_radius = 2.0
         self.ghost_speed = 4.0
+        if str(self.level).lower() == 'hero':
+             self.ghost_speed = 2.5
         
         self.reset()
         
@@ -60,7 +65,16 @@ class InventoryEnv:
         # Level 0: None
         # Level 1: One ghost moving along a hallway (e.g. y=50)
         
-        if self.level >= 1:
+        lvl = 0
+        if str(self.level).lower() == 'hero':
+            lvl = 99
+        else:
+            try:
+                lvl = int(self.level)
+            except:
+                lvl = 1
+        
+        if lvl >= 1:
             # Ghost 1: Horizontal at Y=50
             self.ghosts.append({
                 'x': 95.0, 'y': 50.0,
@@ -68,7 +82,7 @@ class InventoryEnv:
                 'radius': self.ghost_radius
             })
             
-        if self.level >= 2:
+        if lvl >= 2:
             # Ghost 2: Vertical at X=50
             self.ghosts.append({
                 'x': 50.0, 'y': 5.0,
@@ -76,7 +90,7 @@ class InventoryEnv:
                 'radius': self.ghost_radius
             })
             
-        if self.level >= 3:
+        if lvl >= 3:
             # Ghost 3: Horizontal at Y=70
             self.ghosts.append({
                 'x': 5.0, 'y': 70.0,
@@ -84,7 +98,7 @@ class InventoryEnv:
                 'radius': self.ghost_radius
             })
             
-        if self.level >= 4:
+        if lvl >= 4:
             # Ghost 4: Vertical at X=30
             self.ghosts.append({
                 'x': 30.0, 'y': 95.0,
@@ -92,13 +106,25 @@ class InventoryEnv:
                 'radius': self.ghost_radius
             })
             
-        if self.level >= 5:
-            # Ghost 5: Fast random movement? Or just another hallway.
+        if lvl >= 5 or lvl == 99: # Hero has all ghosts + extra
+            # Ghost 5: Fast random movement near goal
             self.ghosts.append({
-                'x': 90.0, 'y': 90.0, # Near Goal
+                'x': 90.0, 'y': 90.0, 
                 'vx': -self.ghost_speed * 0.7, 'vy': -self.ghost_speed * 0.7,
                 'radius': self.ghost_radius
             })
+            
+        if lvl == 99: # Hero: Populate ALL hallways
+             # Additional Horizontal Ghosts
+             self.ghosts.append({'x': 95.0, 'y': 10.0, 'vx': -self.ghost_speed, 'vy': 0.0, 'radius': self.ghost_radius})
+             self.ghosts.append({'x': 5.0, 'y': 30.0, 'vx': self.ghost_speed, 'vy': 0.0, 'radius': self.ghost_radius})
+             self.ghosts.append({'x': 95.0, 'y': 90.0, 'vx': -self.ghost_speed, 'vy': 0.0, 'radius': self.ghost_radius})
+             
+             # Additional Vertical Ghosts
+             self.ghosts.append({'x': 10.0, 'y': 95.0, 'vx': 0.0, 'vy': -self.ghost_speed, 'radius': self.ghost_radius})
+             self.ghosts.append({'x': 70.0, 'y': 5.0, 'vx': 0.0, 'vy': self.ghost_speed, 'radius': self.ghost_radius})
+             self.ghosts.append({'x': 90.0, 'y': 95.0, 'vx': 0.0, 'vy': -self.ghost_speed, 'radius': self.ghost_radius})
+             
             
     def step(self):
         # Update Ghosts
