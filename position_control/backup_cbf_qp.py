@@ -592,6 +592,10 @@ class BackupCBF:
         # Store for visualization
         if self.visualize_backup and self.curr_step % self.save_every_N == 0:
             self.backup_trajs.append(phi.copy())
+        
+        # Always store latest for debugging/visualization
+        self.latest_backup_trajectory = phi.copy()
+        
         self.curr_step += 1
         
         # Get nominal control reference - BackupCBF uses nominal as QP reference
