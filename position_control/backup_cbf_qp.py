@@ -377,6 +377,14 @@ class BackupCBF:
                     h_top = self.env.half_width - py - robot_radius
                     h_min = min(h_min, h_top)
                     
+            elif hasattr(self.env, 'width') and hasattr(self.env, 'height'):
+                # Inventory scenario boundaries
+                h_left = position[0] - robot_radius
+                h_right = self.env.width - position[0] - robot_radius
+                h_bottom = position[1] - robot_radius
+                h_top = self.env.height - position[1] - robot_radius
+                h_min = min(h_min, h_left, h_right, h_bottom, h_top)
+            
             elif hasattr(self.env, 'track_width'):
                 # Track environment (drift car)
                 half_width = self.env.track_width / 2
@@ -394,7 +402,6 @@ class BackupCBF:
                 else:
                     obs_radius = obs.get('radius', 1.0)
                 dist = np.linalg.norm(position - obs_pos)
-                # Static obstacles have ZERO extra safety margin
                 h_obs = dist - robot_radius_base - obs_radius
                 h_min = min(h_min, h_obs)
         
@@ -760,25 +767,9 @@ class BackupCBF:
                     u_safe = u_backup
                     self._last_intervention = True
                     self._using_backup = True
-                    
-                    print(f"\n*** CBF-QP {str(prob_status).upper()} ***")
-                    print(f"CRITICAL: Backup trajectory is also UNSAFE or marginally safe (h={self._last_h_min:.4f}).")
-                    if self.env and hasattr(self.env, 'obstacles'):
-                        print(f"Obstacles: {self.env.obstacles}")
-                    
-                    print("\n--- INFEASIBILITY ANALYSIS ---")
-                    try:
-                        for i in range(len(phi)):
-                            if i < len(phi):
-                                # Pass time i*dt to correctly evaluate moving obstacles
-                                h_val = self._h_safety(phi[i], i * self.dt)
-                                if h_val < 0.1:
-                                    print(f"  Step {i} is dangerously close: h={h_val:.4f}")
-                    except:
-                        pass
-                    
-                    # Don't raise error immediately, try to brake with u_backup
-                    # raise ValueError(f"CBF-QP {prob.status} and Backup Unsafe (h_min={self._last_h_min:.4f})")
+                
+                # Don't raise error immediately, try to brake with u_backup
+                # raise ValueError(f"CBF-QP {prob.status} and Backup Unsafe (h_min={self._last_h_min:.4f})")
         else:
             # No constraints needed - use reference directly
             u_safe = u_ref

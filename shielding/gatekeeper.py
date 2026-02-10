@@ -574,6 +574,10 @@ class Gatekeeper:
             self.current_time_idx = 0
             self.next_event_time = 0.0  # Trigger event immediately on next call
         
+        # Prepare backup controller ONCE per physical step using current real state
+        if self.backup_controller is not None and hasattr(self.backup_controller, 'prepare_rollout'):
+             self.backup_controller.prepare_rollout(robot_state)
+
         # Try updating committed trajectory if event triggered
         if self.current_time_idx >= self.next_event_time / self.dt:
             # Determine max nominal steps from available trajectory or controller
@@ -627,6 +631,7 @@ class Gatekeeper:
                 
                 # Check validity with safety margin (conservative)
                 if self._is_candidate_valid(candidate_x_traj, safety_margin=self.safety_margin, obstacle_states=obstacle_states):
+                    # print(f"DEBUG: Gatekeeper UPDATE! Steps={actual_steps} (req={nominal_horizon_steps})")
                     self._update_committed_trajectory(actual_steps)
                     found_valid = True
                     break
