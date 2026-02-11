@@ -76,6 +76,10 @@ class Gatekeeper:
             # Double Integrator: [x, y, vx, vy] (4 states), [ax, ay] (2 controls)
             self.n_states = 4
             self.n_controls = 2
+        elif model in ['Quad3D', 'quad3d']:
+            # Quad3D: 12 states, 4 controls
+            self.n_states = 12
+            self.n_controls = 4
         else:
             # Default: Drifting car model
             # State: [x, y, theta, r, beta, V, delta, tau] (8 states)
@@ -740,4 +744,3 @@ class Gatekeeper:
             'using_backup': self.is_using_backup(),
             'committed_length': len(self.committed_u_traj) if self.committed_u_traj is not None else 0,
         }
-

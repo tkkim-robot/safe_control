@@ -60,6 +60,9 @@ class BackupCBF:
         if model in ['DoubleIntegrator2D', 'double_integrator']:
             self.n_states = 4
             self.n_controls = 2
+        elif model in ['Quad3D', 'quad3d']:
+            self.n_states = 12
+            self.n_controls = 4
         elif model in ['DriftingCar', 'DynamicBicycle2D']:
             self.n_states = 8
             self.n_controls = 2
@@ -97,11 +100,10 @@ class BackupCBF:
         # Stabilization weights for QP objective
         # Balance between steering (small) and torque (large)
         if model in ['DriftingCar', 'DynamicBicycle2D']:
-            # Steering is ~0.1, Torque is ~2000. Weight steering more or torque less.
-            # Normalize to ~1.0 range
             # Steering and torque weights [steering, torque]
-            # Penalize torque deviation (braking) more heavily to encourage steering avoidance
             self.Q_u = np.array([1.0, 10.0])
+        elif model in ['Quad3D', 'quad3d']:
+            self.Q_u = np.array([1.0, 1.0, 1.0, 1.0])
         else:
             self.Q_u = np.array([1.0, 1.0])
             
@@ -683,6 +685,9 @@ class BackupCBF:
             elif model in ['DoubleIntegrator2D', 'double_integrator']:
                  a_max = self.robot_spec.get('a_max', 2.0)
                  u_scale_list = [a_max, a_max]
+            elif model in ['Quad3D', 'quad3d']:
+                 u_max = self.robot_spec.get('u_max', 10.0)
+                 u_scale_list = [u_max, u_max, u_max, u_max]
             else:
                  # Default fallback if unknown model (should restrict or warn)
                  u_scale_list = [1.0] * self.n_controls
