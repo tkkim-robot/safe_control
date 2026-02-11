@@ -99,16 +99,14 @@ class InventoryEnv:
             # Ghosts 1-3 from above
             self.ghosts.append({'x': 95.0, 'y': 50.0, 'vx': -4.0, 'vy': 0.0, 'radius': self.ghost_radius})
             self.ghosts.append({'x': 50.0, 'y': 5.0, 'vx': 0.0, 'vy': 4.0, 'radius': self.ghost_radius})
-            self.ghosts.append({'x': 5.0, 'y': 70.0, 'vx': 4.0, 'vy': 0.0, 'radius': self.ghost_radius})
+            self.ghosts.append({'x': 5.0, 'y': 70.0, 'vx': 2.5, 'vy': 0.0, 'radius': self.ghost_radius})
             # Ghost 4 (V, x=30)
             self.ghosts.append({'x': 30.0, 'y': 95.0, 'vx': 0.0, 'vy': -4.0, 'radius': self.ghost_radius})
             # Ghost 5 (Random/Diagonal)
-            self.ghosts.append({'x': 90.0, 'y': 90.0, 'vx': -2.8, 'vy': -2.8, 'radius': self.ghost_radius})
+            self.ghosts.append({'x': 90.0, 'y': 90.0, 'vx': -2.0, 'vy': -2.0, 'radius': self.ghost_radius})
             
-        elif lvl >= 3: # Hero Layouts (Lvl 3, 4, 5)
+        elif lvl >= 3: # Hero Layouts (Lvl 3, 4, 5, 6)
             # Level Configuration
-            extra_ghosts = []
-            
             # Base Speed
             if lvl == 3: 
                 base_speed = 2.5
@@ -116,9 +114,15 @@ class InventoryEnv:
             elif lvl == 4: 
                 base_speed = 3.0
                 num_extra = 3 # Add 3 more
-            elif lvl >= 5: 
+            elif lvl == 5: 
                 base_speed = 3.0
                 num_extra = 6 # Add 6 more (Total 11+6=17)
+            elif lvl == 6:
+                base_speed = 2.7
+                num_extra = 10 # Add 10 more (Super dense)
+            elif lvl >= 7:
+                base_speed = 2.6
+                num_extra = 0 # Level 7 uses custom cross-flow only
             else:
                 base_speed = 2.5
                 num_extra = 0
@@ -159,6 +163,107 @@ class InventoryEnv:
                  # Horizontal sweepers at 40 and 60 (Empty hallways?)
                  self.ghosts.append({'x': 5.0, 'y': 40.0, 'vx': speed*0.8, 'vy': 0.0, 'radius': self.ghost_radius})
                  self.ghosts.append({'x': 95.0, 'y': 60.0, 'vx': -speed*0.8, 'vy': 0.0, 'radius': self.ghost_radius})
+
+            # Levels 3-5: reduce the y=70 sweeper speed for MPCBF feasibility
+            if lvl in [3, 4, 5]:
+                 target_speed = 1.5 if lvl == 3 else 2.5
+                 for g in self.ghosts:
+                      if abs(g.get('y', 0.0) - 70.0) < 1e-6 and abs(g.get('vy', 0.0)) < 1e-9:
+                           g['vx'] = target_speed if g.get('vx', 0.0) > 0 else -target_speed
+
+            # Levels 4-5: shift slow blockers away from the diagonal corridor
+            if lvl in [4, 5]:
+                 for g in self.ghosts:
+                      if abs(g.get('x', 0.0) - 20.0) < 1e-6 and abs(g.get('y', 0.0) - 20.0) < 1e-6:
+                           g['y'] = 15.0
+                           g['vy'] = 0.0
+                      if abs(g.get('x', 0.0) - 80.0) < 1e-6 and abs(g.get('y', 0.0) - 80.0) < 1e-6:
+                           g['y'] = 85.0
+                           g['vy'] = 0.0
+
+            # 4. Level 6 Additions (Super Dense)
+            if num_extra >= 10:
+                 # Dense horizontal sweepers
+                 self.ghosts.append({'x': 5.0, 'y': 15.0, 'vx': speed*0.9, 'vy': 0.0, 'radius': self.ghost_radius})
+                 self.ghosts.append({'x': 95.0, 'y': 80.0, 'vx': -speed*0.9, 'vy': 0.0, 'radius': self.ghost_radius})
+                 # Dense vertical sweepers
+                 self.ghosts.append({'x': 20.0, 'y': 95.0, 'vx': 0.0, 'vy': -speed*0.9, 'radius': self.ghost_radius})
+                 self.ghosts.append({'x': 80.0, 'y': 5.0, 'vx': 0.0, 'vy': speed*0.9, 'radius': self.ghost_radius})
+                 # Diagonal interceptors
+                 self.ghosts.append({'x': 15.0, 'y': 85.0, 'vx': speed*0.7, 'vy': -speed*0.7, 'radius': self.ghost_radius})
+                 self.ghosts.append({'x': 85.0, 'y': 15.0, 'vx': -speed*0.7, 'vy': speed*0.7, 'radius': self.ghost_radius})
+                 # Corridor blockers (Level 6 only): increase density on nominal zig-zag lines
+                 self.ghosts.append({'x': 35.0, 'y': 5.0, 'vx': 0.0, 'vy': speed*0.9, 'radius': self.ghost_radius})
+                 self.ghosts.append({'x': 75.0, 'y': 95.0, 'vx': 0.0, 'vy': -speed*0.9, 'radius': self.ghost_radius})
+                 self.ghosts.append({'x': 95.0, 'y': 30.0, 'vx': -speed*0.9, 'vy': 0.0, 'radius': self.ghost_radius})
+                 self.ghosts.append({'x': 5.0, 'y': 65.0, 'vx': speed*0.9, 'vy': 0.0, 'radius': self.ghost_radius})
+                 # Slow vertical blocker that drifts into the mid corridor
+                 self.ghosts.append({'x': 50.0, 'y': 10.0, 'vx': 0.0, 'vy': speed*0.45, 'radius': self.ghost_radius})
+
+            # 5. Level 7 Additions (Cross-Flow)
+            if lvl >= 7:
+                 flow_speed = speed * 0.8
+                 # Left-to-right lanes (start left)
+                 for y in [44.0, 58.0, 72.0, 86.0]:
+                      self.ghosts.append({'x': 5.0, 'y': y, 'vx': flow_speed, 'vy': 0.0, 'radius': self.ghost_radius})
+                 # Bottom-to-up lanes (start bottom)
+                 for x in [44.0, 58.0, 72.0, 86.0]:
+                      self.ghosts.append({'x': x, 'y': 5.0, 'vx': 0.0, 'vy': flow_speed, 'radius': self.ghost_radius})
+                 # Diagonal crossers
+                 self.ghosts.append({'x': 5.0, 'y': 54.0, 'vx': flow_speed, 'vy': -flow_speed*0.4, 'radius': self.ghost_radius})
+                 self.ghosts.append({'x': 54.0, 'y': 5.0, 'vx': -flow_speed*0.4, 'vy': flow_speed, 'radius': self.ghost_radius})
+                 # Targeted crossers near the mid corridor
+                 self.ghosts.append({'x': 40.0, 'y': 5.0, 'vx': 0.0, 'vy': flow_speed*1.1, 'radius': self.ghost_radius})
+                 self.ghosts.append({'x': 6.0, 'y': 40.0, 'vx': flow_speed*1.1, 'vy': 0.0, 'radius': self.ghost_radius})
+                 # Timed sweeper to intersect mid-path around t=20s
+                 self.ghosts.append({'x': 95.0, 'y': 34.0, 'vx': -flow_speed*1.1, 'vy': 0.0, 'radius': self.ghost_radius})
+                 # Head-on sweeper on y=30 (faster) to pressure nominal corridor
+                 self.ghosts.append({'x': 95.0, 'y': 30.0, 'vx': -speed, 'vy': 0.0, 'radius': self.ghost_radius})
+                 # Late-stage vertical trap near x=70 to force lateral avoidance
+                 self.ghosts.append({'x': 66.0, 'y': 80.0, 'vx': 0.0, 'vy': -flow_speed*1.2, 'radius': self.ghost_radius})
+                 self.ghosts.append({'x': 66.0, 'y': 60.0, 'vx': 0.0, 'vy': flow_speed*1.2, 'radius': self.ghost_radius})
+                 # Timed horizontal sweeper to intersect nominal at (70,70) around t=20s
+                 self.ghosts.append({'x': 20.0, 'y': 70.0, 'vx': speed*1.02, 'vy': 0.0, 'radius': self.ghost_radius})
+            
+            # Level 6: shift the y=30 sweeper away from the main corridor while staying dense
+            if lvl >= 6:
+                 for g in self.ghosts:
+                      if abs(g.get('x', 0.0) - 5.0) < 1e-6 and abs(g.get('y', 0.0) - 30.0) < 1e-6:
+                           g['y'] = 25.0
+                      # Redirect slow blocker that crosses (30,30)
+                      if abs(g.get('x', 0.0) - 20.0) < 1e-6 and abs(g.get('y', 0.0) - 20.0) < 1e-6:
+                           g['x'] = 45.0
+                           g['y'] = 25.0
+                           g['vy'] = 0.0
+                      # Shift vertical sweeper off the x=50 corridor
+                      if abs(g.get('x', 0.0) - 50.0) < 1e-6 and abs(g.get('y', 0.0) - 5.0) < 1e-6:
+                           g['x'] = 95.0
+                      # Shift the x=70 vertical sweeper off the main corridor
+                      if abs(g.get('x', 0.0) - 70.0) < 1e-6 and abs(g.get('y', 0.0) - 5.0) < 1e-6:
+                           g['x'] = 25.0
+                      # Shift the y=50 horizontal sweeper off the main corridor
+                      if abs(g.get('y', 0.0) - 50.0) < 1e-6 and abs(g.get('vy', 0.0)) < 1e-9 and g.get('vx', 0.0) < 0:
+                           g['y'] = 55.0
+                      # Redirect the upper-left slow blocker away from the center corridor
+                      if abs(g.get('x', 0.0) - 80.0) < 1e-6 and abs(g.get('y', 0.0) - 80.0) < 1e-6:
+                           g['y'] = 85.0
+                           g['vy'] = 0.0
+                      # Level 6: relieve left-boundary crowding near the start
+                      if abs(g.get('x', 0.0) - 5.0) < 1e-6 and abs(g.get('y', 0.0) - 15.0) < 1e-6:
+                           g['x'] = 95.0
+                           g['vx'] = -abs(g.get('vx', 0.0))
+                      if abs(g.get('x', 0.0) - 5.0) < 1e-6 and abs(g.get('y', 0.0) - 25.0) < 1e-6:
+                           g['x'] = 95.0
+                           g['vx'] = -abs(g.get('vx', 0.0))
+                      if abs(g.get('x', 0.0) - 5.0) < 1e-6 and abs(g.get('y', 0.0) - 40.0) < 1e-6:
+                           g['x'] = 95.0
+                           g['vx'] = -abs(g.get('vx', 0.0))
+                      if abs(g.get('x', 0.0) - 5.0) < 1e-6 and abs(g.get('y', 0.0) - 65.0) < 1e-6:
+                           g['x'] = 95.0
+                           g['vx'] = -abs(g.get('vx', 0.0))
+                      if abs(g.get('x', 0.0) - 5.0) < 1e-6 and abs(g.get('y', 0.0) - 70.0) < 1e-6:
+                           g['x'] = 95.0
+                           g['vx'] = -abs(g.get('vx', 0.0))
     def step(self):
         # Update Ghosts
         for ghost in self.ghosts:
