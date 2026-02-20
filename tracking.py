@@ -125,7 +125,7 @@ class LocalTrackingController:
         if self.robot_spec['model'] == 'Manipulator2D':
              self.num_constraints = 150 # Allow 5 obstacles * 30 constraints
         else:
-             self.num_constraints = 5 # number of max obstacle constraints to consider in the controller
+             self.num_constraints = 10 # number of max obstacle constraints to consider in the controller
              
         if self.pos_controller_type == 'cbf_qp':
             from safe_control.position_control.cbf_qp import CBFQP
