@@ -103,9 +103,25 @@ controller.set_unknown_obs(unknown_obs)
 
 The unknown obstacles are visualized in orange.
 
-|      Navigation with MPC-CBF controller            |
+|      Unknown Obstacle Detection            |
 | :-------------------------------: |
 |  <img src="https://github.com/user-attachments/assets/8be5453f-8629-4f1d-aa36-c0f9160fd2ee"  height="350px"> |
+
+
+
+You can also quickly test the indoor unknown-obstacle scenario with:
+
+```bash
+uv run python examples/test_unknown_env.py --algo mpc_cbf --model du
+```
+
+Optional flags:
+- `--unknown_detection fov` or `--unknown_detection ray`
+
+|      MPC-CBF in Unknown Environment          |
+| :-------------------------------: |
+|  <img src="https://github.com/user-attachments/assets/b85ab694-e080-450e-8ca8-86bbfaad32ff"  height="350px"> |
+
 
 ### Superellipsoid obstacles to approximate rectangles
 We support superellipsoid obstacles for collision avoidance with CBF. Superellipsoid with large enough power `e` (e.g., `e=10`) can approximate rectangles and it is differentiable. 

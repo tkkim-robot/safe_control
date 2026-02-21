@@ -280,6 +280,8 @@ class LocalTrackingController:
         elif unknown_obs.shape[1] > 7:
             unknown_obs = unknown_obs[:, :7]
         self.unknown_obs = unknown_obs
+        if hasattr(self.robot, 'reset_unknown_obs_memory'):
+            self.robot.reset_unknown_obs_memory()
 
         for patch in self.unknown_obs_patches:
             patch.remove()

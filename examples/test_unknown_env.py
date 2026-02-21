@@ -60,27 +60,41 @@ def build_indoor_env():
 
     known_obs = np.vstack((known_circles, interior_walls, known_furniture_super))
 
-    # Unknown obstacles near corners or immediately after turns.
+    # Unknown obstacles intentionally placed on/near the nominal route corridors.
+    # Small lateral offsets keep the scenario feasible while forcing meaningful avoidance.
     unknown_obs = np.array(
         [
-            [3.4, 13.9, 0.22],
-            [4.8, 13.6, 0.22],
-            [6.4, 13.8, 0.22],
-            [8.0, 13.4, 0.22],
-            [8.1, 12.0, 0.22],
-            [8.2, 10.2, 0.22],
-            [8.1, 7.8, 0.22],
-            [7.6, 6.0, 0.22],
-            [10.8, 4.3, 0.22],
-            [12.6, 4.4, 0.22],
-            [14.4, 4.2, 0.22],
-            [17.6, 3.8, 0.22],
-            [17.9, 6.8, 0.22],
-            [17.8, 9.4, 0.22],
-            [17.9, 11.8, 0.22],
-            [18.8, 12.2, 0.22],
-            [20.6, 10.8, 0.22],
-            [21.3, 9.2, 0.22],
+            # Segment 1: up (x ~= 2.0)
+            [2.45, 4.3, 0.19],
+            [1.60, 7.0, 0.19],
+            [2.40, 10.2, 0.19],
+            [1.65, 13.1, 0.19],
+            # Segment 2: right (y ~= 15.0)
+            [3.5, 14.6, 0.19],
+            [6.0, 15.35, 0.19],
+            [8.3, 14.6, 0.19],
+            # Segment 3: down (x ~= 9.4)
+            [8.95, 13.3, 0.19],
+            [9.85, 10.8, 0.19],
+            [8.95, 8.0, 0.19],
+            [9.85, 6.0, 0.19],
+            # Segment 4: right (y ~= 5.0)
+            [10.9, 5.45, 0.19],
+            [13.0, 4.55, 0.19],
+            [15.1, 5.45, 0.19],
+            # Segment 5: up (x ~= 16.6)
+            [16.15, 6.8, 0.19],
+            [17.05, 9.0, 0.19],
+            [16.15, 11.2, 0.19],
+            # Segment 6: right (y ~= 13.0)
+            [18.2, 12.6, 0.19],
+            [20.2, 13.4, 0.19],
+            [21.4, 12.6, 0.19],
+            # Segment 7: down (x ~= 22.0)
+            [21.55, 11.0, 0.19],
+            [22.45, 8.8, 0.19],
+            [21.55, 6.3, 0.19],
+            [22.45, 4.2, 0.19],
         ],
         dtype=np.float64,
     )
@@ -283,6 +297,8 @@ def main():
         ax, fig = plot_handler.plot_grid(
             f"Unknown Environment ({model}, detection={args.unknown_detection})"
         )
+        # Larger default window for the bigger indoor map.
+        fig.set_size_inches(15.0, 9.5, forward=True)
     else:
         fig, ax = plt.subplots()
         ax.set_xlim(0.0, env_width)

@@ -318,10 +318,16 @@ class BaseRobot:
             0]  # Access the first element
         self.sensing_footprints_fill = ax.fill([], [], color=color, alpha=0.4)[
             0]  # Access the first element
-        self.safety_area_fill = ax.fill([], [], 'r', alpha=0.3)[0]
+        # Optional visualization of maximum braking-distance safety area.
+        self.show_safety_area = bool(self.robot_spec.get('show_safety_area', False))
+        if self.show_safety_area:
+            self.safety_area_fill = ax.fill([], [], 'r', alpha=0.3)[0]
+        else:
+            self.safety_area_fill = None
 
         self.detected_obs = None
         self.detected_points = []
+        self.detected_unknown_obs_memory = np.empty((0, 7))
         self.detected_obs_patch = ax.add_patch(plt.Circle(
             (0, 0), 0, edgecolor='black', facecolor='orange', fill=True))
         self.detected_points_scatter = ax.scatter(
@@ -584,7 +590,7 @@ class BaseRobot:
                 xs, ys = self.process_sensing_footprints_visualization()
                 # Update the vertices of the polygon
                 self.sensing_footprints_fill.set_xy(np.array([xs, ys]).T)
-            if not self.safety_area.is_empty:
+            if self.show_safety_area and self.safety_area_fill is not None and (not self.safety_area.is_empty):
                 if self.safety_area.geom_type == 'Polygon':
                     safety_x, safety_y = self.safety_area.exterior.xy
                 elif self.safety_area.geom_type == 'MultiPolygon':
@@ -599,6 +605,8 @@ class BaseRobot:
             if len(self.detected_points) > 0:
                 self.detected_points_scatter.set_offsets(
                     np.array(self.detected_points))
+            else:
+                self.detected_points_scatter.set_offsets(np.empty((0, 2)))
                 
     def process_sensing_footprints_visualization(self):
         '''
@@ -716,6 +724,50 @@ class BaseRobot:
             self.unsafe_points.append((self.X[0, 0], self.X[1, 0]))
         return flag
 
+    def reset_unknown_obs_memory(self):
+        self.detected_unknown_obs_memory = np.empty((0, 7))
+        self.detected_obs = None
+        self.detected_points = []
+
+    @staticmethod
+    def _normalize_detected_obs_array(detected_obs):
+        if detected_obs is None or len(detected_obs) == 0:
+            return np.empty((0, 7))
+        arr = np.array(detected_obs, dtype=float)
+        if arr.ndim == 1:
+            arr = arr.reshape(1, -1)
+        if arr.shape[1] < 7:
+            arr = np.hstack((arr, np.zeros((arr.shape[0], 7 - arr.shape[1]))))
+        elif arr.shape[1] > 7:
+            arr = arr[:, :7]
+        return arr
+
+    def _merge_detected_unknown_obs(self, new_detected):
+        if new_detected.size == 0:
+            return
+        if self.detected_unknown_obs_memory.size == 0:
+            self.detected_unknown_obs_memory = new_detected.copy()
+            return
+
+        merged = self.detected_unknown_obs_memory.copy()
+        merge_tol = float(self.robot_spec.get('unknown_obs_merge_tol', 1e-3))
+        radius_tol = float(self.robot_spec.get('unknown_obs_merge_radius_tol', 1e-2))
+        for obs in new_detected:
+            center_diffs = np.linalg.norm(merged[:, :2] - obs[:2], axis=1)
+            radius_diffs = np.abs(merged[:, 2] - obs[2])
+            shape_diffs = np.abs(merged[:, 6] - obs[6])
+            match_idx = np.where(
+                (center_diffs <= merge_tol)
+                & (radius_diffs <= radius_tol)
+                & (shape_diffs <= 0.5)
+            )[0]
+            if len(match_idx) == 0:
+                merged = np.vstack((merged, obs.reshape(1, -1)))
+            else:
+                merged[match_idx[0], :] = obs
+
+        self.detected_unknown_obs_memory = merged
+
     def detect_unknown_obs(self, unknown_obs, obs_margin=0.05):
         detection_mode = str(self.robot_spec.get('unknown_obs_detection', 'fov')).lower()
         if detection_mode not in ['fov', 'ray']:
@@ -725,9 +777,33 @@ class BaseRobot:
         detected_obs, detected_points, detected_for_controller = detect_unknown_obs_with_mode(
             self, unknown_obs, detection_mode=detection_mode, obs_margin=obs_margin
         )
+
+        normalized_detected = self._normalize_detected_obs_array(detected_for_controller)
+        persistent_fov = bool(self.robot_spec.get('unknown_obs_persistent_fov', True))
+        if detection_mode == 'fov' and persistent_fov:
+            # Keep unknown obstacles active after first sighting. This prevents
+            # dropping CBF constraints when an obstacle exits instantaneous FoV
+            # but is still physically close to the robot.
+            self._merge_detected_unknown_obs(normalized_detected)
+            controller_obs = self.detected_unknown_obs_memory.copy()
+            if controller_obs.size > 0:
+                robot_pos = self.get_position()
+                nearest_idx = int(np.argmin(np.linalg.norm(controller_obs[:, :2] - robot_pos, axis=1)))
+                self.detected_obs = controller_obs[nearest_idx]
+                # FOV mode has no ray intersection points to visualize.
+                self.detected_points = []
+            else:
+                self.detected_obs = None
+                self.detected_points = []
+            return controller_obs
+
         self.detected_obs = detected_obs
-        self.detected_points = detected_points
-        return detected_for_controller
+        if detection_mode == 'fov':
+            # FOV mode uses obstacle-color highlighting only.
+            self.detected_points = []
+        else:
+            self.detected_points = detected_points
+        return normalized_detected
 
     def calculate_fov_points(self):
         """
