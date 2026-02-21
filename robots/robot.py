@@ -5,6 +5,7 @@ import matplotlib.patches as patches
 from shapely.geometry import Polygon, Point, LineString
 from shapely import is_valid_reason
 from safe_control.utils.geometry import custom_merge
+from safe_control.utils.detection import detect_unknown_obs as detect_unknown_obs_with_mode
 
 """
 Created on June 21st, 2024
@@ -51,6 +52,8 @@ class BaseRobot:
         # FOV parameters
         self.robot_spec.setdefault('fov_angle', 70.0)
         self.fov_angle = np.deg2rad(float(self.robot_spec['fov_angle']))  # [rad]
+        # Detection modes: 'fov' (default), 'ray' (legacy)
+        self.robot_spec.setdefault('unknown_obs_detection', 'fov')
         if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
             self.robot_spec.setdefault('cam_range', 3.0)
             self.cam_range = self.robot_spec['cam_range']  # [m]
@@ -713,77 +716,18 @@ class BaseRobot:
             self.unsafe_points.append((self.X[0, 0], self.X[1, 0]))
         return flag
 
-    def find_extreme_points(self, detected_points):
-        # Convert points and robot position to numpy arrays for vectorized operations
-        points = np.array(detected_points)
-        robot_pos = self.get_position()
-        robot_yaw = self.get_orientation()
-        vectors_to_points = points - robot_pos
-        robot_heading_vector = np.array([np.cos(robot_yaw), np.sin(robot_yaw)])
-        angles = np.arctan2(vectors_to_points[:, 1], vectors_to_points[:, 0]) - np.arctan2(
-            robot_heading_vector[1], robot_heading_vector[0])
-
-        angles = (angles + np.pi) % (2 * np.pi) - np.pi
-
-        leftmost_index = np.argmin(angles)
-        rightmost_index = np.argmax(angles)
-
-        # Extract the most left and most right points
-        leftmost_point = points[leftmost_index]
-        rightmost_point = points[rightmost_index]
-
-        return leftmost_point, rightmost_point
-
     def detect_unknown_obs(self, unknown_obs, obs_margin=0.05):
-        if unknown_obs is None:
-            return []
-        # detected_obs = []
-        self.detected_points = []
-
-        # sort unknown_obs by distance to the robot, closest first
-        robot_pos = self.get_position()
-        sorted_unknown_obs = sorted(
-            unknown_obs, key=lambda obs: np.linalg.norm(np.array(obs[0:2]) - robot_pos))
-        for obs in sorted_unknown_obs:
-            obs_circle = Point(obs[0], obs[1]).buffer(obs[2]-obs_margin)
-            intersected_area = self.sensing_footprints.intersection(obs_circle)
-
-            # Check each point on the intersected area's exterior
-            points = []
-            if intersected_area.geom_type == 'Polygon':
-                for point in intersected_area.exterior.coords:
-                    points.append(point)
-            elif intersected_area.geom_type == 'MultiPolygon':
-                for poly in intersected_area.geoms:
-                    for point in poly.exterior.coords:
-                        points.append(point)
-
-            for point in points:
-                point_obj = Point(point)
-                # Line from robot's position to the current point
-                line_to_point = LineString(
-                    [Point(self.X[0, 0], self.X[1, 0]), point_obj])
-
-                # Check if the line intersects with the obstacle (excluding the endpoints)
-                # only consider the front side of the obstacle
-                if not line_to_point.crosses(obs_circle):
-                    self.detected_points.append(point)
-
-            if len(self.detected_points) > 0:
-                break
-
-        if len(self.detected_points) == 0:
-            self.detected_obs = None
-            return []
-        leftmost_most, rightmost_point = self.find_extreme_points(
-            self.detected_points)
-
-        # Calculate the center and radius of the circle
-        center = (leftmost_most + rightmost_point) / 2
-        radius = np.linalg.norm(rightmost_point - leftmost_most) / 2
-
-        self.detected_obs = [center[0], center[1], radius, 0, 0, 0, 0]
-        return self.detected_obs
+        detection_mode = str(self.robot_spec.get('unknown_obs_detection', 'fov')).lower()
+        if detection_mode not in ['fov', 'ray']:
+            raise ValueError(
+                f"Unsupported unknown_obs_detection mode: {self.robot_spec.get('unknown_obs_detection')}"
+            )
+        detected_obs, detected_points, detected_for_controller = detect_unknown_obs_with_mode(
+            self, unknown_obs, detection_mode=detection_mode, obs_margin=obs_margin
+        )
+        self.detected_obs = detected_obs
+        self.detected_points = detected_points
+        return detected_for_controller
 
     def calculate_fov_points(self):
         """
