@@ -12,7 +12,7 @@ class MPCCBF:
         self.num_obs = num_obs
 
         # MPC parameters
-        self.horizon = 10
+        self.horizon = int(robot_spec.get('mpc_horizon', 10))
         self.dt = robot.dt
 
         # Cost function weights
@@ -85,6 +85,14 @@ class MPCCBF:
             self.cbf_param['alpha2'] = 0.05
             self.n_states = 6
             self.n_controls = 4 # override n_controls for VTOL2D
+
+        # Optional per-scenario CBF gain overrides.
+        if 'mpc_cbf_alpha' in self.robot_spec:
+            self.cbf_param['alpha'] = float(self.robot_spec['mpc_cbf_alpha'])
+        if 'mpc_cbf_alpha1' in self.robot_spec:
+            self.cbf_param['alpha1'] = float(self.robot_spec['mpc_cbf_alpha1'])
+        if 'mpc_cbf_alpha2' in self.robot_spec:
+            self.cbf_param['alpha2'] = float(self.robot_spec['mpc_cbf_alpha2'])
 
         
         self.obs = None

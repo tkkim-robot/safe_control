@@ -97,7 +97,7 @@ def main():
         robot_spec = {
             'model': 'DynamicUnicycle2D',
             'w_max': 0.5,
-            'a_max': 0.5,
+            'a_max': 1.0,
             'sensor': 'rgbd',
             'radius': 0.25
         }
