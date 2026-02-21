@@ -112,6 +112,9 @@ class LocalTrackingController:
         
         self.known_obs = np.array([])
         self.unknown_obs = np.array([])
+        self.unknown_obs_patches = []
+        self.unknown_obs_default_color = 'orange'
+        self.unknown_obs_detected_color = 'orangered'
 
         if show_animation:
             self.setup_animation_plot()
@@ -123,9 +126,10 @@ class LocalTrackingController:
         
         # Determine number of constraints
         if self.robot_spec['model'] == 'Manipulator2D':
-             self.num_constraints = 150 # Allow 5 obstacles * 30 constraints
+            default_num_constraints = 150  # Allow 5 obstacles * 30 constraints
         else:
-             self.num_constraints = 5 # number of max obstacle constraints to consider in the controller
+            default_num_constraints = 10  # number of max obstacle constraints to consider in the controller
+        self.num_constraints = int(self.robot_spec.get('num_constraints', default_num_constraints))
              
         if self.pos_controller_type == 'cbf_qp':
             from safe_control.position_control.cbf_qp import CBFQP
@@ -262,22 +266,66 @@ class LocalTrackingController:
         return self.goal is None
 
     def set_unknown_obs(self, unknown_obs):
-        unknown_obs = np.array(unknown_obs)
-        if unknown_obs.shape[1] == 3:
+        unknown_obs = np.array(unknown_obs, dtype=float)
+        if unknown_obs.ndim == 1 and unknown_obs.size > 0:
+            unknown_obs = unknown_obs.reshape(1, -1)
+        if unknown_obs.size == 0:
+            unknown_obs = np.empty((0, 7))
+        elif unknown_obs.shape[1] == 3:
             zeros = np.zeros((unknown_obs.shape[0], 4))
             unknown_obs = np.hstack((unknown_obs, zeros))
+        elif unknown_obs.shape[1] < 7:
+            zeros = np.zeros((unknown_obs.shape[0], 7 - unknown_obs.shape[1]))
+            unknown_obs = np.hstack((unknown_obs, zeros))
+        elif unknown_obs.shape[1] > 7:
+            unknown_obs = unknown_obs[:, :7]
         self.unknown_obs = unknown_obs
+        if hasattr(self.robot, 'reset_unknown_obs_memory'):
+            self.robot.reset_unknown_obs_memory()
+
+        for patch in self.unknown_obs_patches:
+            patch.remove()
+        self.unknown_obs_patches = []
+
         for obs_info in self.unknown_obs:
             ox, oy, r = obs_info[:3]
-            self.ax.add_patch(
+            patch = self.ax.add_patch(
                 patches.Circle(
                     (ox, oy), r,
                     edgecolor='black',
-                    facecolor='orange',
+                    facecolor=self.unknown_obs_default_color,
                     fill=True,
-                    alpha=0.4
+                    alpha=0.35
                 )
             )
+            self.unknown_obs_patches.append(patch)
+
+    def update_unknown_obs_visual(self, detected_obs):
+        if len(self.unknown_obs_patches) == 0:
+            return
+
+        for patch in self.unknown_obs_patches:
+            patch.set_facecolor(self.unknown_obs_default_color)
+            patch.set_alpha(0.35)
+
+        if detected_obs is None or len(detected_obs) == 0:
+            return
+
+        detected_obs = np.array(detected_obs, dtype=float)
+        if detected_obs.ndim == 1:
+            detected_obs = detected_obs.reshape(1, -1)
+
+        for idx, obs_info in enumerate(self.unknown_obs):
+            is_detected = False
+            for detected in detected_obs:
+                dist = np.linalg.norm(obs_info[:2] - detected[:2])
+                radius_diff = abs(obs_info[2] - detected[2]) if detected.shape[0] >= 3 else np.inf
+                if dist < 1e-3 and radius_diff < 1e-2:
+                    is_detected = True
+                    break
+            if is_detected:
+                self.unknown_obs_patches[idx].set_facecolor(self.unknown_obs_detected_color)
+                self.unknown_obs_patches[idx].set_alpha(0.85)
 
     def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=5):
         def angle_normalize(x):
@@ -490,6 +538,7 @@ class LocalTrackingController:
 
         # 1. Update the detected obstacles
         detected_obs = self.robot.detect_unknown_obs(self.unknown_obs)
+        self.update_unknown_obs_visual(detected_obs)
         # self.nearest_obs = self.get_nearest_obs(detected_obs)
         self.nearest_multi_obs = self.get_nearest_unpassed_obs(detected_obs, obs_num=self.num_constraints)
         if self.nearest_multi_obs is not None:
