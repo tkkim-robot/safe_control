@@ -1,424 +1,534 @@
 import numpy as np
+from shapely.geometry import Point, LineString
+
 from .simple_attitude import SimpleAtt
 from .velocity_tracking_yaw import VelocityTrackingYaw
-from .visibility_area import VisibilityAreaAtt
-from shapely.geometry import LineString, Polygon
+from .visibility_area import VisibilityAreaAtt, build_fov_sector
 
-"""
-Created on April 21th, 2025
-@author: Taekyung Kim
-
-@description: 
-This code calls gatekeeper submodule and implements a gatekeeper-based attitude controller.
-The intended use case is nominal: visibility promoting, backup: velocity tracking yaw, but not limited to it.
-
-
-"""
 
 def angle_normalize(x):
     return (((x + np.pi) % (2 * np.pi)) - np.pi)
 
+
 class GatekeeperAtt:
     """
-    Attitude (yaw) controller that wraps the Gatekeeper safety filter,
-    selecting between a nominal and a backup yaw policy.
+    Gatekeeper-based attitude controller.
+
+    Core idea:
+    1. Generate candidate yaw trajectory = nominal segment + backup segment.
+    2. Validate candidate with critical-point visibility condition.
+    3. Commit the longest valid nominal segment; otherwise keep previous committed backup.
     """
-    def __init__(self,
-                 robot,
-                 robot_spec: dict,
-                 dt: float = 0.05,
-                 ctrl_config: dict = {},
-                 nominal_horizon: float = 1.0,
-                 backup_horizon: float = 2.0,
-                 event_offset: float = 1.0):
-        """
-        Parameters
-        ----------
-        robot : object
-            Robot instance (provides state X, dynamics, etc.).
-        robot_spec : dict
-            Robot specifications
-        ctrl_config : dict
-            {'nominal': <'simple'|'velocity tracking yaw'>,
-             'backup': <'simple'|'velocity tracking yaw'>}
-        dt : float
-            Integration timestep for Gatekeeper.
-        nominal_horizon : float
-        backup_horizon : float
-        event_offset : float
-        """
+
+    def __init__(
+        self,
+        robot,
+        robot_spec: dict,
+        dt: float = 0.05,
+        ctrl_config: dict = None,
+        nominal_horizon: float = 1.0,
+        backup_horizon: float = 2.0,
+        event_offset: float = 0.5,
+    ):
         self.robot = robot
         self.robot_spec = robot_spec
-        self.dt = dt
-        self.nominal_horizon = nominal_horizon
-        self.backup_horizon = backup_horizon
-        self.event_offset = event_offset
-        self.horizon_discount = dt * 5
+        self.dt = float(dt)
+
+        self.nominal_horizon = float(
+            robot_spec.get("gatekeeper_nominal_horizon", nominal_horizon)
+        )
+        self.backup_horizon = float(
+            robot_spec.get("gatekeeper_backup_horizon", backup_horizon)
+        )
+        self.event_offset = float(
+            robot_spec.get("gatekeeper_event_offset", event_offset)
+        )
+        self.horizon_discount = float(
+            robot_spec.get("gatekeeper_horizon_discount", max(5.0 * self.dt, self.dt))
+        )
 
         self.next_event_time = 0.0
-        self.current_time_idx = backup_horizon / dt # start from backup trajectory. If the initial canddidate traj is valid, it will be updated to 0
-        self.candidate_time_idx = 0
+        self.current_time_idx = int(np.ceil(self.backup_horizon / self.dt))
         self.committed_horizon = 0.0
+        self.actual_nominal_steps = 0
 
-        # Initialize the committed trajectory
         self.committed_x_traj = None
         self.committed_u_traj = None
-        self.pos_committed_x_traj = None # be updated using pos_controller instance
+        self.candidate_x_traj = None
+        self.candidate_u_traj = None
+        self.pos_committed_x_traj = None
         self.pos_committed_u_traj = None
+        self.total_replan_events = 0
+        self.accepted_replan_events = 0
+        self.rejected_replan_events = 0
+        self.nominal_commit_events = 0
+        self.nominal_committed_steps = 0
+        self.max_nominal_committed_steps = 0
 
-        # Map user keys to controller classes
+        # Monitor tuning: conservative but tunable.
+        self.validation_slack = float(
+            robot_spec.get("gatekeeper_validation_slack", 0.05)
+        )
+        self.braking_distance_scale = float(
+            robot_spec.get("gatekeeper_braking_distance_scale", 1.0)
+        )
+        self.braking_distance_margin = float(
+            robot_spec.get(
+                "gatekeeper_braking_distance_margin",
+                float(self.robot.robot_radius) + 0.10,
+            )
+        )
+        self.max_yaw_rate = float(robot_spec.get("w_max", 0.5))
+
+        ctrl_cfg = {} if ctrl_config is None else dict(ctrl_config)
+        nominal_key = ctrl_cfg.get(
+            "nominal",
+            robot_spec.get("gatekeeper_nominal", "visibility_area"),
+        )
+        backup_key = ctrl_cfg.get(
+            "backup",
+            robot_spec.get("gatekeeper_backup", "velocity_tracking_yaw"),
+        )
+
         self._ctrl_map = {
-            'simple': SimpleAtt,
-            'velocity tracking yaw': VelocityTrackingYaw,
-            'visibility area': VisibilityAreaAtt
+            "simple": SimpleAtt,
+            "velocity tracking yaw": VelocityTrackingYaw,
+            "velocity_tracking_yaw": VelocityTrackingYaw,
+            "visibility area": VisibilityAreaAtt,
+            "visibility_area": VisibilityAreaAtt,
         }
 
-        nom_key = ctrl_config.get('nominal', 'visibility area')
-        if nom_key not in self._ctrl_map:
-            raise ValueError(f"Unknown nominal controller '{nom_key}'")
-        NominalCtrl = self._ctrl_map[nom_key]
-        self.nominal_ctrl = NominalCtrl(robot, robot_spec)
-        self._set_nominal_controller(self.nominal_ctrl.solve_control_problem)
+        nominal_name = self._normalize_ctrl_name(nominal_key)
+        backup_name = self._normalize_ctrl_name(backup_key)
+        if nominal_name not in self._ctrl_map:
+            raise ValueError(f"Unknown gatekeeper nominal controller '{nominal_key}'")
+        if backup_name not in self._ctrl_map:
+            raise ValueError(f"Unknown gatekeeper backup controller '{backup_key}'")
 
-        backup_key = ctrl_config.get('backup', 'velocity tracking yaw')
-        if backup_key not in self._ctrl_map:
-            raise ValueError(f"Unknown backup controller '{backup_key}'")
-        BackupCtrl = self._ctrl_map[backup_key]
-        self.backup_ctrl = BackupCtrl(robot, robot_spec)
-        self._set_backup_controller(self.backup_ctrl.solve_control_problem)
+        self.nominal_ctrl = self._ctrl_map[nominal_name](robot, robot_spec)
+        self.backup_ctrl = self._ctrl_map[backup_name](robot, robot_spec)
+        self.nominal_controller = self.nominal_ctrl.solve_control_problem
+        self.backup_controller = self.backup_ctrl.solve_control_problem
 
-    def _set_nominal_controller(self, nominal_controller):
-        self.nominal_controller = nominal_controller
-
-    def _set_backup_controller(self, backup_controller):
-        self.backup_controller = backup_controller
+    @staticmethod
+    def _normalize_ctrl_name(name):
+        return str(name).strip().lower().replace("-", "_").replace(" ", "_")
 
     def setup_pos_controller(self, pos_controller):
         self.pos_controller = pos_controller
 
     def _dynamics(self, x, u):
-        x_col = np.array(x)
-        u_col = np.array(u)
-        # f and g live under self.robot.robot
+        x_col = np.asarray(x, dtype=float).reshape(-1, 1)
+        u_col = np.asarray(u, dtype=float).reshape(-1, 1)
         dx = self.robot.robot.f(x_col) + self.robot.robot.g(x_col) @ u_col
-        return dx
-    
-    def _update_pos_committed_trajectory(self):
+        return np.asarray(dx, dtype=float).reshape(-1, 1)
+
+    def _update_pos_committed_trajectory(self, robot_state):
         """
-        Update the positional committed trajectory.
+        Pull positional prediction from MPC and extend it to cover
+        nominal + backup horizon.
         """
+        required_control_steps = int(
+            np.ceil((self.nominal_horizon + self.backup_horizon) / self.dt)
+        )
+        required_state_steps = required_control_steps + 1
 
-        x_traj_casadi = self.pos_controller.mpc.opt_x_num['_x', :, 0, 0]
-        x_traj_casadi = x_traj_casadi[:-1] # remove the last step to make it same length as u_traj_casadi
-        u_traj_casadi = self.pos_controller.mpc.opt_x_num['_u', :, 0]
-        
-        # Convert to numpy arrays - initialization
-        n_steps = len(x_traj_casadi)
-        state_dim = x_traj_casadi[0].shape[0] if hasattr(x_traj_casadi[0], 'shape') else 1
-        pos_x_traj = np.zeros((n_steps, state_dim))
-        
-        n_controls = len(u_traj_casadi)
-        control_dim = u_traj_casadi[0].shape[0] if hasattr(u_traj_casadi[0], 'shape') else 1
-        pos_u_traj = np.zeros((n_controls, control_dim))
-        
-        # Convert each state in the trajectory
-        for i, x_dm in enumerate(x_traj_casadi):
-            pos_x_traj[i, :] = np.array(x_dm.full()).flatten()
-        
-        for i, u_dm in enumerate(u_traj_casadi):
-            pos_u_traj[i, :] = np.array(u_dm.full()).flatten()
+        x_traj = None
+        u_traj = None
+        try:
+            x_traj_casadi = self.pos_controller.mpc.opt_x_num["_x", :, 0, 0]
+            u_traj_casadi = self.pos_controller.mpc.opt_x_num["_u", :, 0]
 
-        # Update the class attributes
-        self.pos_committed_x_traj = pos_x_traj
-        self.pos_committed_u_traj = pos_u_traj
+            x_np = []
+            for x_dm in x_traj_casadi:
+                x_np.append(np.asarray(x_dm.full(), dtype=float).reshape(-1))
+            u_np = []
+            for u_dm in u_traj_casadi:
+                u_np.append(np.asarray(u_dm.full(), dtype=float).reshape(-1))
 
-        # --- now extend if too short ---
-        required_steps = int((self.nominal_horizon + self.backup_horizon) / self.dt) + 1
-        curr_len = self.pos_committed_x_traj.shape[0]
-        if curr_len < required_steps:
-            missing = required_steps - curr_len
+            if len(x_np) > 0:
+                x_traj = np.vstack(x_np)
+            if len(u_np) > 0:
+                u_traj = np.vstack(u_np)
+        except Exception:
+            x_traj = None
+            u_traj = None
 
-            x_ext = np.zeros((missing, state_dim))
-            u_ext = np.zeros((missing, control_dim))
+        if x_traj is None or x_traj.size == 0:
+            # Fallback: constant-velocity roll-out from current state.
+            x0 = np.asarray(robot_state, dtype=float).reshape(-1)
+            state_dim = x0.size
+            control_dim = 2
+            x_traj = np.zeros((required_state_steps, state_dim), dtype=float)
+            u_traj = np.zeros((required_control_steps, control_dim), dtype=float)
+            x_traj[0] = x0
+            for i in range(1, required_state_steps):
+                x_traj[i] = x_traj[i - 1]
+                if state_dim >= 4:
+                    x_traj[i, 0] += x_traj[i - 1, 2] * self.dt
+                    x_traj[i, 1] += x_traj[i - 1, 3] * self.dt
+            self.pos_committed_x_traj = x_traj
+            self.pos_committed_u_traj = u_traj
+            return
 
-            last_x = self.pos_committed_x_traj[-1].reshape(-1, 1)
-            last_u = self.pos_committed_u_traj[-1].reshape(-1, 1)
-            last_u = np.zeros_like(last_u) # TODO: maintain zero control input
+        if u_traj is None or u_traj.size == 0:
+            u_traj = np.zeros((max(x_traj.shape[0] - 1, 1), 2), dtype=float)
 
-            for k in range(missing):
-                dx = self._dynamics(last_x, last_u)
-                last_x = last_x + dx * self.dt
+        # Ensure state/control length consistency: n_state = n_control + 1.
+        if x_traj.shape[0] == u_traj.shape[0]:
+            last_x = x_traj[-1].reshape(-1, 1)
+            last_u = u_traj[-1].reshape(-1, 1)
+            next_x = (last_x + self.dt * self._dynamics(last_x, last_u)).reshape(-1)
+            x_traj = np.vstack((x_traj, next_x))
+        elif x_traj.shape[0] < u_traj.shape[0] + 1:
+            u_traj = u_traj[: max(x_traj.shape[0] - 1, 0)]
+        elif x_traj.shape[0] > u_traj.shape[0] + 1:
+            x_traj = x_traj[: u_traj.shape[0] + 1]
 
-                x_ext[k, :] = last_x.flatten()
-                u_ext[k, :] = last_u.flatten()
-
-            # Concatenate in NumPy
-            self.pos_committed_x_traj = np.concatenate(
-                [self.pos_committed_x_traj, x_ext], axis=0
-            )
-            self.pos_committed_u_traj = np.concatenate(
-                [self.pos_committed_u_traj, u_ext], axis=0
-            )
-
-    def _generate_trajectory(self, initial_yaw, horizon, controller):
-        """
-        Generate a backup trajectory that tracks velocity direction from the
-        committed positional trajectory.
-        
-        Parameters:
-        -----------
-        initial_yaw : float
-            Initial yaw angle to start the backup trajectory from
-        horizon : float
-            Time horizon for the backup trajectory
-        controller : callable
-            Function to compute the control input based on the current state
-        """
-        n_steps = int(horizon / self.dt) + 1
-        x_traj = np.zeros(n_steps)
-        u_traj = np.zeros(n_steps)
-        
-        current_yaw = initial_yaw
-        x_traj[0] = current_yaw
-        
-        # Propagate yaw dynamics using defined controller
-        for i in range(1, n_steps):
-            # Get corresponding positional state and control
-            pos_idx = self.candidate_time_idx + i
-            if pos_idx < len(self.pos_committed_x_traj)-1 :
-                pos_x = self.pos_committed_x_traj[pos_idx]
-                pos_u = self.pos_committed_u_traj[pos_idx]
+        # Extend prediction if needed.
+        while u_traj.shape[0] < required_control_steps:
+            if u_traj.shape[0] > 0:
+                last_u = np.zeros_like(u_traj[-1]).reshape(-1, 1)
             else:
-                # Use last available state/control if beyond pos trajectory
-                pos_x = self.pos_committed_x_traj[-1]
-                #pos_u = self.pos_committed_u_traj[-1]
-                pos_u = np.zeros_like(self.pos_committed_u_traj[-1]) # TODO: maintain zero control input
+                last_u = np.zeros((2, 1))
+            last_x = x_traj[-1].reshape(-1, 1)
+            next_x = (last_x + self.dt * self._dynamics(last_x, last_u)).reshape(-1)
+            x_traj = np.vstack((x_traj, next_x))
+            u_traj = np.vstack((u_traj, last_u.reshape(1, -1)))
 
-            # Compute yaw control input
-            u = controller(pos_x.reshape(-1, 1), current_yaw, pos_u.reshape(-1, 1))
-            u = u.item()  # Extract scalar from 1x1 array
-            u_traj[i-1] = u
-            
-            # Update yaw using simple Euler integration
-            current_yaw = current_yaw + u * self.dt
-            x_traj[i] = current_yaw
-        
+        if x_traj.shape[0] < required_state_steps:
+            missing = required_state_steps - x_traj.shape[0]
+            for _ in range(missing):
+                last_u = np.zeros((u_traj.shape[1], 1))
+                last_x = x_traj[-1].reshape(-1, 1)
+                next_x = (last_x + self.dt * self._dynamics(last_x, last_u)).reshape(-1)
+                x_traj = np.vstack((x_traj, next_x))
+
+        self.pos_committed_x_traj = x_traj[:required_state_steps]
+        self.pos_committed_u_traj = u_traj[:required_control_steps]
+
+    def _generate_trajectory(self, initial_yaw, n_steps, controller, start_step=0):
+        """
+        Roll out yaw dynamics for n_steps controls:
+          yaw_{k+1} = yaw_k + dt * u_att_k
+        """
+        n_steps = max(int(n_steps), 0)
+        x_traj = np.zeros((n_steps + 1,), dtype=float)
+        u_traj = np.zeros((n_steps,), dtype=float)
+        x_traj[0] = angle_normalize(float(initial_yaw))
+
+        if self.pos_committed_x_traj is None or self.pos_committed_u_traj is None:
+            return x_traj, u_traj
+
+        yaw = x_traj[0]
+        for k in range(n_steps):
+            pos_idx = min(start_step + k, self.pos_committed_x_traj.shape[0] - 1)
+            if self.pos_committed_u_traj.shape[0] > 0:
+                u_idx = min(start_step + k, self.pos_committed_u_traj.shape[0] - 1)
+                pos_u = self.pos_committed_u_traj[u_idx].reshape(-1, 1)
+            else:
+                pos_u = np.zeros((2, 1))
+            pos_x = self.pos_committed_x_traj[pos_idx].reshape(-1, 1)
+
+            raw = controller(pos_x, yaw, pos_u)
+            yaw_rate = float(np.asarray(raw, dtype=float).reshape(-1)[0])
+            yaw_rate = float(np.clip(yaw_rate, -self.max_yaw_rate, self.max_yaw_rate))
+
+            u_traj[k] = yaw_rate
+            yaw = angle_normalize(yaw + yaw_rate * self.dt)
+            x_traj[k + 1] = yaw
+
         return x_traj, u_traj
 
-    def _generate_candidate_trajectory(self, discounted_nominal_horizon):
+    def _generate_candidate_trajectory(self, nominal_horizon_steps, current_yaw):
+        nominal_horizon_steps = max(int(nominal_horizon_steps), 0)
+        backup_steps = max(int(np.ceil(self.backup_horizon / self.dt)), 0)
 
-        # Generate the candidate trajectory using the nominal and backup controllers
-        self.candidate_time_idx = 0
-        current_yaw = self.robot.get_orientation()
-        nominal_x_traj, nominal_u_traj = self._generate_trajectory(current_yaw, discounted_nominal_horizon, self.nominal_controller)
+        nominal_x, nominal_u = self._generate_trajectory(
+            current_yaw, nominal_horizon_steps, self.nominal_controller, start_step=0
+        )
+        backup_x, backup_u = self._generate_trajectory(
+            nominal_x[-1], backup_steps, self.backup_controller, start_step=nominal_horizon_steps
+        )
 
-        self.candidate_time_idx = len(nominal_x_traj) - 1
-        yaw_at_backup = nominal_x_traj[-1]  # last yaw of the nominal trajectory
-        backup_x_traj, backup_u_traj = self._generate_trajectory(yaw_at_backup, self.backup_horizon, self.backup_controller)
+        # Remove duplicate switching state.
+        candidate_x = np.concatenate((nominal_x, backup_x[1:]), axis=0)
+        candidate_u = np.concatenate((nominal_u, backup_u), axis=0)
 
-        self.candidate_x_traj = np.hstack((nominal_x_traj, backup_x_traj))
-        self.candidate_u_traj = np.hstack((nominal_u_traj, backup_u_traj))
-        return self.candidate_x_traj
-    
-    def _is_candidate_valid(self, critical_point, candidate_x_traj, discounted_nominal_horizon):
-        """
-        Check if the candidate trajectory is valid by evaluating the safety condition.
-        The trajectory is valid if the critical point becomes visible before the robot reaches it.
-        
-        Parameters
-        ----------
-        candidate_x_traj : numpy.ndarray
-            The candidate yaw trajectory to evaluate
-            
-        Returns
-        -------
-        bool
-            True if the trajectory is valid (critical point becomes visible in time), False otherwise
-        """
-        if critical_point is None:
-            return True  # No critical point found, trajectory is valid
-            
-        # Check if critical point becomes visible before robot reaches it
-        for i in range(len(candidate_x_traj)):
-            # Get position and yaw at this timestep
-            
-            pos = self.pos_committed_x_traj[i]
-            yaw = candidate_x_traj[i]
-            
-            # Check if critical point is in FOV at this state
-            # Consider the discounted nominal horizon, only check during the backup phase
-            if i > discounted_nominal_horizon/self.dt:
-                if self._is_point_in_fov(pos, yaw, critical_point, is_in_cam_range=True):
-                    # print("In FOV at time step", i, "at position", pos, "with yaw", yaw)
-                    # print("critical point", critical_point)
-                    return True
-                    
-            # Check if we've reached the stopping point before critical point
-            if self.robot_spec['model'] == 'DoubleIntegrator2D':
-                # Get current velocity
-                # vx = pos[2]
-                # vy = pos[3]
-                # v = np.sqrt(vx**2 + vy**2)
-                v = self.robot.robot_spec['v_max'] # TODO:
-                
-                # Calculate maximum braking distance
-                a_max = self.robot_spec['a_max']
-                braking_distance = v**2 / (2 * a_max)
-                
-                # Calculate distance to critical point
-                dist_to_critical = np.linalg.norm(pos[:2] - critical_point)
-                
-                # If we're within braking distance of critical point, trajectory is invalid
-                if dist_to_critical <= braking_distance:
-                    return False
-            elif self.robot_spec['model'] == 'SingleIntegrator2D':
-                # If we've passed the critical point, trajectory is invalid
-                if np.linalg.norm(pos[:2] - critical_point) < self.robot.robot_radius:
-                    return False
+        self.candidate_x_traj = candidate_x
+        self.candidate_u_traj = candidate_u
+        return candidate_x, candidate_u, nominal_horizon_steps
+
+    @staticmethod
+    def _segment_boundary_crossing(known_region, p0, p1, max_iter=24):
+        inside0 = bool(known_region.covers(Point(float(p0[0]), float(p0[1]))))
+        inside1 = bool(known_region.covers(Point(float(p1[0]), float(p1[1]))))
+        if inside0 == inside1:
+            return None
+
+        lo = np.array(p0, dtype=float)
+        hi = np.array(p1, dtype=float)
+        ref_inside = inside0
+        for _ in range(max_iter):
+            mid = 0.5 * (lo + hi)
+            mid_inside = bool(known_region.covers(Point(float(mid[0]), float(mid[1]))))
+            if mid_inside == ref_inside:
+                lo = mid
             else:
-                raise ValueError(f"Not implemented for robot model: {self.robot_spec['model']}")
-                
-        return False  # Critical point never became visible
-        
-    def _is_point_in_fov(self, robot_state, robot_yaw, point, is_in_cam_range=False):
-        """
-        Check if a point is within the robot's field of view at a given state and yaw.
-        
-        Parameters
-        ----------
-        robot_state : numpy.ndarray
-            Robot state [x, y, ...]
-        robot_yaw : float
-            Robot yaw angle
-        point : numpy.ndarray
-            Point to check [x, y]
-        is_in_cam_range : bool
-            Whether to also check if point is within camera range
-            
-        Returns
-        -------
-        bool
-            True if point is in FOV, False otherwise
-        """
-        robot_pos = robot_state[:2]
-        to_point = point - robot_pos
-        
-        angle_to_point = np.arctan2(to_point[1], to_point[0])
-        angle_diff = abs(angle_normalize(angle_to_point - robot_yaw))
-        
-        in_fov = angle_diff <= self.robot.fov_angle / 2
-        
-        if is_in_cam_range:
-            dist_to_point = np.linalg.norm(to_point)
-            return in_fov and dist_to_point <= self.robot.cam_range
-            
-        return in_fov
+                hi = mid
+        return 0.5 * (lo + hi)
 
-    def _compute_critical_point(self):
+    def _compute_critical_point(self, max_state_steps):
         """
-        Compute the critical point where the planned trajectory intersects with the map boundary.
-        
-        Returns
-        -------
-        critical_point : numpy.ndarray or None
-            The critical point where trajectory intersects map boundary, or None if no intersection
+        Critical point = first boundary crossing where predicted positional
+        trajectory exits the currently known sensing footprint.
         """
+        if self.pos_committed_x_traj is None or self.pos_committed_x_traj.shape[0] < 2:
+            return None, None
         if self.robot.sensing_footprints.is_empty:
-            print("No sensing footprints found")
-            return None
-            
-        # Get the planned trajectory
-        trajectory = self.pos_committed_x_traj
-        
-        # Convert trajectory points to LineString
-        trajectory_line = LineString([(x[0], x[1]) for x in trajectory])
-        
-        # Find intersection with sensing footprints
-        intersection = trajectory_line.intersection(self.robot.sensing_footprints)
+            return None, None
 
-        if intersection.is_empty:
-            return None
-            
-        # Get the first intersection point
-        if intersection.geom_type == 'Point':
-            critical_point = np.array([intersection.x, intersection.y])
-        elif intersection.geom_type == 'LineString':
-            # For LineString intersection, get the furthest point
-            # This is the point where we exit the explored area
-            robot_pos = self.robot.get_position()
-            coords = list(intersection.coords)
-            distances = [np.linalg.norm(np.array(p) - robot_pos) for p in coords]
-            furthest_idx = np.argmax(distances)
-            critical_point = np.array(coords[furthest_idx])
-        elif intersection.geom_type in ['GeometryCollection', 'MultiLineString', 'MultiPoint']:
-            #print("GeometryCollection intersection")
-            robot_pos = self.robot.get_position()
-            multi_geom = list(intersection.geoms)
-            coords = []
-            for geom in multi_geom:
-                if geom.geom_type == 'LineString':
-                    coords.extend(list(geom.coords))
-                elif geom.geom_type == 'Point':
-                    coords.append((geom.x, geom.y))
-            distances = [np.linalg.norm(np.array(p) - robot_pos) for p in coords]
-            furthest_idx = np.argmax(distances)
-            critical_point = np.array(coords[furthest_idx])
+        known_region = self.robot.sensing_footprints.buffer(0.0)
+        if known_region.is_empty:
+            return None, None
+
+        path = self.pos_committed_x_traj[
+            : min(max_state_steps, self.pos_committed_x_traj.shape[0]), :2
+        ]
+        if path.shape[0] < 2:
+            return None, None
+
+        first_inside = bool(known_region.covers(Point(float(path[0, 0]), float(path[0, 1]))))
+        if not first_inside:
+            return np.array(path[0], dtype=float), 0
+
+        prev = path[0]
+        prev_inside = first_inside
+        for i in range(1, path.shape[0]):
+            cur = path[i]
+            cur_inside = bool(known_region.covers(Point(float(cur[0]), float(cur[1]))))
+            if prev_inside and cur_inside:
+                prev = cur
+                prev_inside = cur_inside
+                continue
+
+            cp = self._segment_boundary_crossing(known_region, prev, cur)
+            if cp is None:
+                cp = np.array(cur if not cur_inside else prev, dtype=float)
+            return cp, i
+
+        return None, None
+
+    def _max_braking_distance(self):
+        model = self.robot_spec.get("model", "")
+        if model == "DoubleIntegrator2D":
+            v_max = float(
+                self.robot_spec.get(
+                    "v_max",
+                    max(np.linalg.norm(np.asarray(self.robot.X[2:4, 0], dtype=float)), 1e-3),
+                )
+            )
+            a_max = float(self.robot_spec.get("a_max", 1.0))
+            if a_max <= 1e-6:
+                return np.inf
+            base = (v_max * v_max) / (2.0 * a_max)
+        elif model == "SingleIntegrator2D":
+            v_max = float(self.robot_spec.get("v_max", 1.0))
+            base = v_max * self.dt
         else:
-            print(f"Unexpected intersection type: {intersection.geom_type}")
-            return None
-            
-        return critical_point
+            base = float(self.robot_spec.get("cam_range", 3.0)) * 0.25
+        return self.braking_distance_scale * base + self.braking_distance_margin
 
-    def _update_committed_trajectory(self, discounted_nominal_horizon):
-        """
-        Update the committed trajectory with the candidate trajectory.
-        """
-        self.committed_x_traj = self.candidate_x_traj
-        self.committed_u_traj = self.candidate_u_traj
+    def _is_point_in_fov(self, robot_state, robot_yaw, point, is_in_cam_range=False):
+        robot_pos = np.asarray(robot_state[:2], dtype=float).reshape(-1)
+        pt = np.asarray(point, dtype=float).reshape(-1)
+        to_point = pt - robot_pos
+
+        angle_to_point = np.arctan2(to_point[1], to_point[0])
+        angle_diff = abs(angle_normalize(angle_to_point - float(robot_yaw)))
+        in_fov = angle_diff <= (self.robot.fov_angle / 2.0)
+        if not is_in_cam_range:
+            return in_fov
+        return in_fov and (np.linalg.norm(to_point) <= float(self.robot.cam_range))
+
+    def _is_candidate_valid(self, critical_point, crossing_step, candidate_x_traj):
+        if self.pos_committed_x_traj is None:
+            return True
+
+        n_states = min(candidate_x_traj.shape[0], self.pos_committed_x_traj.shape[0])
+        if n_states <= 0:
+            return False
+
+        # If there is no boundary crossing within the checked horizon,
+        # nominal behavior is admissible.
+        if critical_point is None:
+            return True
+
+        brake_dist = self._max_braking_distance()
+        deadline_step = None
+        if crossing_step is not None:
+            deadline_step = int(max(crossing_step, 0))
+
+        path_xy = self.pos_committed_x_traj[:n_states, :2]
+
+        # 1) Global critical-point check (boundary exit point).
+        for i in range(n_states):
+            pos_i = path_xy[i]
+            if np.linalg.norm(pos_i - critical_point) <= (brake_dist + self.validation_slack):
+                deadline_step = i if deadline_step is None else min(deadline_step, i)
+                break
+
+        seen_global = False
+        if deadline_step is not None:
+            for i in range(n_states):
+                pos = self.pos_committed_x_traj[i]
+                yaw = candidate_x_traj[i]
+                if not seen_global and self._is_point_in_fov(pos, yaw, critical_point, is_in_cam_range=True):
+                    seen_global = True
+                if i >= deadline_step and not seen_global:
+                    return False
+
+        # 2) Stepwise braking-lookahead tube check (instantaneous FoV version).
+        # At each step, the braking tube to the local critical point must be
+        # covered by the current FoV. This enforces timely detection.
+        for i in range(n_states):
+            pos_i = path_xy[i]
+            yaw_i = float(candidate_x_traj[i])
+            sector = build_fov_sector(
+                pos_i,
+                yaw_i,
+                float(self.robot.fov_angle),
+                float(self.robot.cam_range),
+                resolution=18,
+            )
+            sector = sector.buffer(self.validation_slack).buffer(0.0)
+
+            cp_i = self._critical_point_along_path(path_xy, i, brake_dist)
+            if cp_i is None:
+                continue
+            safety_tube = LineString(
+                [
+                    (float(pos_i[0]), float(pos_i[1])),
+                    (float(cp_i[0]), float(cp_i[1])),
+                ]
+            ).buffer(float(self.robot.robot_radius))
+            if not sector.covers(safety_tube):
+                return False
+
+        return True
+
+    @staticmethod
+    def _critical_point_along_path(path_xy, start_idx, lookahead_dist):
+        if path_xy is None or len(path_xy) == 0:
+            return None
+        n = len(path_xy)
+        i0 = int(np.clip(start_idx, 0, n - 1))
+        if i0 >= n - 1:
+            return np.array(path_xy[-1], dtype=float)
+
+        if lookahead_dist <= 1e-9:
+            return np.array(path_xy[i0], dtype=float)
+
+        remaining = float(lookahead_dist)
+        p_prev = np.array(path_xy[i0], dtype=float)
+        for k in range(i0 + 1, n):
+            p_next = np.array(path_xy[k], dtype=float)
+            seg = p_next - p_prev
+            seg_len = float(np.linalg.norm(seg))
+            if seg_len <= 1e-9:
+                p_prev = p_next
+                continue
+            if remaining <= seg_len:
+                alpha = remaining / seg_len
+                return p_prev + alpha * seg
+            remaining -= seg_len
+            p_prev = p_next
+        return np.array(path_xy[-1], dtype=float)
+
+    def _update_committed_trajectory(self, candidate_x, candidate_u, actual_nominal_steps):
+        self.committed_x_traj = np.array(candidate_x, dtype=float).copy()
+        self.committed_u_traj = np.array(candidate_u, dtype=float).copy()
+        self.actual_nominal_steps = int(max(actual_nominal_steps, 0))
+        self.committed_horizon = self.actual_nominal_steps * self.dt
         self.next_event_time = self.event_offset
         self.current_time_idx = 0
-        self.committed_horizon = discounted_nominal_horizon
 
-    def solve_control_problem(self,
-                              robot_state: np.ndarray,
-                              current_yaw: float,
-                              u: np.ndarray) -> float:
-        '''
-            u: ignored here, and instead using pos_committed_u_traj
-        '''
+    def get_stats(self):
+        accepted = max(self.accepted_replan_events, 1)
+        return {
+            "replans": int(self.total_replan_events),
+            "accepted": int(self.accepted_replan_events),
+            "rejected": int(self.rejected_replan_events),
+            "nominal_commits": int(self.nominal_commit_events),
+            "nominal_steps_total": int(self.nominal_committed_steps),
+            "nominal_seconds_total": float(self.nominal_committed_steps * self.dt),
+            "nominal_seconds_avg_per_commit": float(
+                self.nominal_committed_steps * self.dt / accepted
+            ),
+            "nominal_seconds_max": float(self.max_nominal_committed_steps * self.dt),
+        }
+
+    def solve_control_problem(self, robot_state: np.ndarray, current_yaw: float, u: np.ndarray) -> float:
+        """
+        Gatekeeper main loop for yaw control.
+        """
+        robot_state = np.asarray(robot_state, dtype=float).reshape(-1)
+        current_yaw = float(np.asarray(current_yaw, dtype=float).reshape(-1)[0])
+
+        self._update_pos_committed_trajectory(robot_state)
+
+        if self.committed_x_traj is None or self.committed_u_traj is None:
+            backup_steps = max(int(np.ceil(self.backup_horizon / self.dt)), 1)
+            init_x, init_u = self._generate_trajectory(
+                current_yaw, backup_steps, self.backup_controller, start_step=0
+            )
+            self._update_committed_trajectory(init_x, init_u, actual_nominal_steps=0)
+            self.next_event_time = 0.0
+
+        if self.current_time_idx >= (self.next_event_time / self.dt):
+            self.total_replan_events += 1
+            max_nominal_steps = max(int(np.ceil(self.nominal_horizon / self.dt)), 0)
+            backup_steps = max(int(np.ceil(self.backup_horizon / self.dt)), 0)
+            discount_steps = max(int(np.ceil(self.horizon_discount / self.dt)), 1)
+
+            critical_point, crossing_step = self._compute_critical_point(
+                max_state_steps=max_nominal_steps + backup_steps + 2
+            )
+
+            found_valid = False
+            for i in range(max_nominal_steps // discount_steps + 2):
+                nominal_steps = max_nominal_steps - i * discount_steps
+                if nominal_steps < 0:
+                    nominal_steps = 0
+
+                cand_x, cand_u, actual_nom_steps = self._generate_candidate_trajectory(
+                    nominal_steps, current_yaw
+                )
+                if self._is_candidate_valid(critical_point, crossing_step, cand_x):
+                    self.accepted_replan_events += 1
+                    self.nominal_committed_steps += int(max(actual_nom_steps, 0))
+                    self.max_nominal_committed_steps = max(
+                        self.max_nominal_committed_steps, int(max(actual_nom_steps, 0))
+                    )
+                    if int(max(actual_nom_steps, 0)) > 0:
+                        self.nominal_commit_events += 1
+                    self._update_committed_trajectory(cand_x, cand_u, actual_nom_steps)
+                    found_valid = True
+                    break
+
+            if not found_valid:
+                self.rejected_replan_events += 1
+                # Keep current committed trajectory (safe fallback), retry later.
+                self.next_event_time = self.current_time_idx * self.dt + self.event_offset
+
+        if self.current_time_idx < len(self.committed_u_traj):
+            yaw_rate = float(self.committed_u_traj[self.current_time_idx])
+        else:
+            raw = self.backup_controller(
+                robot_state.reshape(-1, 1), current_yaw, np.asarray(u, dtype=float).reshape(-1, 1)
+            )
+            yaw_rate = float(np.asarray(raw, dtype=float).reshape(-1)[0])
+        yaw_rate = float(np.clip(yaw_rate, -self.max_yaw_rate, self.max_yaw_rate))
 
         self.current_time_idx += 1
-        self._update_pos_committed_trajectory()
-
-        if self.committed_x_traj is None and self.committed_u_traj is None:
-            # initialize the committed trajectory
-            init_x_traj, init_u_traj = self._generate_trajectory(current_yaw, self.backup_horizon, self.backup_controller)   
-            self.committed_x_traj = init_x_traj
-            self.committed_u_traj = init_u_traj 
-
-        # try updating the committed trajectory
-        if self.current_time_idx > self.next_event_time/self.dt:
-            #print("Event triggered, generating new candidate trajectory")
-            critical_point = self._compute_critical_point()
-
-            for i in range(int(self.nominal_horizon//self.horizon_discount)):
-                # discount the nominal horizon
-                discounted_nominal_horizon = self.nominal_horizon - i * self.horizon_discount
-                # Generate the candidate trajectory
-                candidate_x_traj = self._generate_candidate_trajectory(discounted_nominal_horizon)
-                # Check if the candidate trajectory is valid
-                if self._is_candidate_valid(critical_point, candidate_x_traj, discounted_nominal_horizon):
-                    #print("Candidate trajectory is valid")
-                    self._update_committed_trajectory(discounted_nominal_horizon)
-                    break
-        
-        if self.current_time_idx < self.committed_horizon/self.dt:
-            # Use the committed trajectory for the next control input
-            #print("in nominal: control input", self.committed_u_traj[self.current_time_idx])
-            #print("in nominal: control input", self.nominal_controller(self.robot.X, goal))
-            #print("nominal")
-            return self.committed_u_traj[self.current_time_idx] if self.nominal_controller is None else self.nominal_controller(robot_state, current_yaw, u)
-        else:
-            #print("backup")
-            #print("backup: control input", self.backup_controller(self.robot.X))
-            return self.committed_u_traj[self.current_time_idx] if self.backup_controller is None else self.backup_controller(robot_state, current_yaw, u)
+        return np.array([[yaw_rate]])
