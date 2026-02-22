@@ -675,6 +675,31 @@ class BaseRobot:
             v = np.linalg.norm([vx, vy, vz])
         yaw_rate = self.get_yaw_rate()
 
+        # For integrator models, physical motion direction is given by translational
+        # velocity, not yaw dynamics. Use a velocity-aligned braking tube so
+        # visibility violation marks reflect true collision risk.
+        if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
+            if self.robot_spec['model'] == 'SingleIntegrator2D':
+                vel = self.U.reshape(-1)[:2]
+                speed = np.linalg.norm(vel)
+                braking_distance = speed * self.dt
+            else:
+                vel = np.array([self.X[2, 0], self.X[3, 0]], dtype=float)
+                speed = np.linalg.norm(vel)
+                braking_distance = speed**2 / (2 * max(self.max_decel, 1e-6))
+
+            if speed > 1e-6:
+                heading = vel / speed
+            else:
+                heading = np.array([np.cos(self.yaw), np.sin(self.yaw)], dtype=float)
+
+            start = np.array([self.X[0, 0], self.X[1, 0]], dtype=float)
+            front_center = start + braking_distance * heading
+            self.safety_area = LineString(
+                [Point(start[0], start[1]), Point(front_center[0], front_center[1])]
+            ).buffer(self.robot_radius)
+            return
+
         if yaw_rate != 0.0:
             # Stopping times
             t_stop_linear = v / self.max_decel

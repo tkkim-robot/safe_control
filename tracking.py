@@ -603,7 +603,10 @@ class LocalTrackingController:
             self.robot.update_sensing_footprints()
             self.robot.update_safety_area()
 
-            beyond_flag = self.robot.is_beyond_sensing_footprints()
+            violation_mode = str(self.robot_spec.get('visibility_violation_mode', 'safety_area')).lower()
+            if violation_mode not in ['safety_area', 'point_mass']:
+                violation_mode = 'safety_area'
+            beyond_flag = self.robot.is_beyond_sensing_footprints(mode=violation_mode)
             if beyond_flag and self.show_animation:
                 pass
                 # print("Visibility Violation")
