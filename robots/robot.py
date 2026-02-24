@@ -741,10 +741,13 @@ class BaseRobot:
                 front_center)]).buffer(self.robot_radius)
 
     def is_beyond_sensing_footprints(self, mode='point_mass'):
+        # Use a tiny tolerance and boundary-inclusive coverage check to avoid
+        # false positives from geometric boundary precision.
+        known_region = self.sensing_footprints.buffer(1e-9)
         if mode == 'safety_area':
-            flag = not self.sensing_footprints.contains(self.safety_area)
+            flag = not known_region.covers(self.safety_area)
         elif mode == 'point_mass':
-            flag = not self.sensing_footprints.contains(Point(self.X[0, 0], self.X[1, 0]))
+            flag = not known_region.covers(Point(self.X[0, 0], self.X[1, 0]))
         if flag:
             self.unsafe_points.append((self.X[0, 0], self.X[1, 0]))
         return flag
