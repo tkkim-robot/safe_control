@@ -5,6 +5,7 @@ import matplotlib.patches as patches
 from shapely.geometry import Polygon, Point, LineString
 from shapely import is_valid_reason
 from safe_control.utils.geometry import custom_merge
+from safe_control.utils.detection import detect_unknown_obs as detect_unknown_obs_with_mode
 
 """
 Created on June 21st, 2024
@@ -51,6 +52,8 @@ class BaseRobot:
         # FOV parameters
         self.robot_spec.setdefault('fov_angle', 70.0)
         self.fov_angle = np.deg2rad(float(self.robot_spec['fov_angle']))  # [rad]
+        # Detection modes: 'fov' (default), 'ray' (legacy)
+        self.robot_spec.setdefault('unknown_obs_detection', 'fov')
         if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':
             self.robot_spec.setdefault('cam_range', 3.0)
             self.cam_range = self.robot_spec['cam_range']  # [m]
@@ -315,10 +318,16 @@ class BaseRobot:
             0]  # Access the first element
         self.sensing_footprints_fill = ax.fill([], [], color=color, alpha=0.4)[
             0]  # Access the first element
-        self.safety_area_fill = ax.fill([], [], 'r', alpha=0.3)[0]
+        # Optional visualization of maximum braking-distance safety area.
+        self.show_safety_area = bool(self.robot_spec.get('show_safety_area', False))
+        if self.show_safety_area:
+            self.safety_area_fill = ax.fill([], [], 'r', alpha=0.3)[0]
+        else:
+            self.safety_area_fill = None
 
         self.detected_obs = None
         self.detected_points = []
+        self.detected_unknown_obs_memory = np.empty((0, 7))
         self.detected_obs_patch = ax.add_patch(plt.Circle(
             (0, 0), 0, edgecolor='black', facecolor='orange', fill=True))
         self.detected_points_scatter = ax.scatter(
@@ -581,7 +590,7 @@ class BaseRobot:
                 xs, ys = self.process_sensing_footprints_visualization()
                 # Update the vertices of the polygon
                 self.sensing_footprints_fill.set_xy(np.array([xs, ys]).T)
-            if not self.safety_area.is_empty:
+            if self.show_safety_area and self.safety_area_fill is not None and (not self.safety_area.is_empty):
                 if self.safety_area.geom_type == 'Polygon':
                     safety_x, safety_y = self.safety_area.exterior.xy
                 elif self.safety_area.geom_type == 'MultiPolygon':
@@ -596,6 +605,8 @@ class BaseRobot:
             if len(self.detected_points) > 0:
                 self.detected_points_scatter.set_offsets(
                     np.array(self.detected_points))
+            else:
+                self.detected_points_scatter.set_offsets(np.empty((0, 2)))
                 
     def process_sensing_footprints_visualization(self):
         '''
@@ -664,6 +675,31 @@ class BaseRobot:
             v = np.linalg.norm([vx, vy, vz])
         yaw_rate = self.get_yaw_rate()
 
+        # For integrator models, physical motion direction is given by translational
+        # velocity, not yaw dynamics. Use a velocity-aligned braking tube so
+        # visibility violation marks reflect true collision risk.
+        if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
+            if self.robot_spec['model'] == 'SingleIntegrator2D':
+                vel = self.U.reshape(-1)[:2]
+                speed = np.linalg.norm(vel)
+                braking_distance = speed * self.dt
+            else:
+                vel = np.array([self.X[2, 0], self.X[3, 0]], dtype=float)
+                speed = np.linalg.norm(vel)
+                braking_distance = speed**2 / (2 * max(self.max_decel, 1e-6))
+
+            if speed > 1e-6:
+                heading = vel / speed
+            else:
+                heading = np.array([np.cos(self.yaw), np.sin(self.yaw)], dtype=float)
+
+            start = np.array([self.X[0, 0], self.X[1, 0]], dtype=float)
+            front_center = start + braking_distance * heading
+            self.safety_area = LineString(
+                [Point(start[0], start[1]), Point(front_center[0], front_center[1])]
+            ).buffer(self.robot_radius)
+            return
+
         if yaw_rate != 0.0:
             # Stopping times
             t_stop_linear = v / self.max_decel
@@ -705,85 +741,97 @@ class BaseRobot:
                 front_center)]).buffer(self.robot_radius)
 
     def is_beyond_sensing_footprints(self, mode='point_mass'):
+        # Use a tiny tolerance and boundary-inclusive coverage check to avoid
+        # false positives from geometric boundary precision.
+        known_region = self.sensing_footprints.buffer(1e-9)
         if mode == 'safety_area':
-            flag = not self.sensing_footprints.contains(self.safety_area)
+            flag = not known_region.covers(self.safety_area)
         elif mode == 'point_mass':
-            flag = not self.sensing_footprints.contains(Point(self.X[0, 0], self.X[1, 0]))
+            flag = not known_region.covers(Point(self.X[0, 0], self.X[1, 0]))
         if flag:
             self.unsafe_points.append((self.X[0, 0], self.X[1, 0]))
         return flag
 
-    def find_extreme_points(self, detected_points):
-        # Convert points and robot position to numpy arrays for vectorized operations
-        points = np.array(detected_points)
-        robot_pos = self.get_position()
-        robot_yaw = self.get_orientation()
-        vectors_to_points = points - robot_pos
-        robot_heading_vector = np.array([np.cos(robot_yaw), np.sin(robot_yaw)])
-        angles = np.arctan2(vectors_to_points[:, 1], vectors_to_points[:, 0]) - np.arctan2(
-            robot_heading_vector[1], robot_heading_vector[0])
-
-        angles = (angles + np.pi) % (2 * np.pi) - np.pi
-
-        leftmost_index = np.argmin(angles)
-        rightmost_index = np.argmax(angles)
-
-        # Extract the most left and most right points
-        leftmost_point = points[leftmost_index]
-        rightmost_point = points[rightmost_index]
-
-        return leftmost_point, rightmost_point
-
-    def detect_unknown_obs(self, unknown_obs, obs_margin=0.05):
-        if unknown_obs is None:
-            return []
-        # detected_obs = []
+    def reset_unknown_obs_memory(self):
+        self.detected_unknown_obs_memory = np.empty((0, 7))
+        self.detected_obs = None
         self.detected_points = []
 
-        # sort unknown_obs by distance to the robot, closest first
-        robot_pos = self.get_position()
-        sorted_unknown_obs = sorted(
-            unknown_obs, key=lambda obs: np.linalg.norm(np.array(obs[0:2]) - robot_pos))
-        for obs in sorted_unknown_obs:
-            obs_circle = Point(obs[0], obs[1]).buffer(obs[2]-obs_margin)
-            intersected_area = self.sensing_footprints.intersection(obs_circle)
+    @staticmethod
+    def _normalize_detected_obs_array(detected_obs):
+        if detected_obs is None or len(detected_obs) == 0:
+            return np.empty((0, 7))
+        arr = np.array(detected_obs, dtype=float)
+        if arr.ndim == 1:
+            arr = arr.reshape(1, -1)
+        if arr.shape[1] < 7:
+            arr = np.hstack((arr, np.zeros((arr.shape[0], 7 - arr.shape[1]))))
+        elif arr.shape[1] > 7:
+            arr = arr[:, :7]
+        return arr
 
-            # Check each point on the intersected area's exterior
-            points = []
-            if intersected_area.geom_type == 'Polygon':
-                for point in intersected_area.exterior.coords:
-                    points.append(point)
-            elif intersected_area.geom_type == 'MultiPolygon':
-                for poly in intersected_area.geoms:
-                    for point in poly.exterior.coords:
-                        points.append(point)
+    def _merge_detected_unknown_obs(self, new_detected):
+        if new_detected.size == 0:
+            return
+        if self.detected_unknown_obs_memory.size == 0:
+            self.detected_unknown_obs_memory = new_detected.copy()
+            return
 
-            for point in points:
-                point_obj = Point(point)
-                # Line from robot's position to the current point
-                line_to_point = LineString(
-                    [Point(self.X[0, 0], self.X[1, 0]), point_obj])
+        merged = self.detected_unknown_obs_memory.copy()
+        merge_tol = float(self.robot_spec.get('unknown_obs_merge_tol', 1e-3))
+        radius_tol = float(self.robot_spec.get('unknown_obs_merge_radius_tol', 1e-2))
+        for obs in new_detected:
+            center_diffs = np.linalg.norm(merged[:, :2] - obs[:2], axis=1)
+            radius_diffs = np.abs(merged[:, 2] - obs[2])
+            shape_diffs = np.abs(merged[:, 6] - obs[6])
+            match_idx = np.where(
+                (center_diffs <= merge_tol)
+                & (radius_diffs <= radius_tol)
+                & (shape_diffs <= 0.5)
+            )[0]
+            if len(match_idx) == 0:
+                merged = np.vstack((merged, obs.reshape(1, -1)))
+            else:
+                merged[match_idx[0], :] = obs
 
-                # Check if the line intersects with the obstacle (excluding the endpoints)
-                # only consider the front side of the obstacle
-                if not line_to_point.crosses(obs_circle):
-                    self.detected_points.append(point)
+        self.detected_unknown_obs_memory = merged
 
-            if len(self.detected_points) > 0:
-                break
+    def detect_unknown_obs(self, unknown_obs, obs_margin=0.05):
+        detection_mode = str(self.robot_spec.get('unknown_obs_detection', 'fov')).lower()
+        if detection_mode not in ['fov', 'ray']:
+            raise ValueError(
+                f"Unsupported unknown_obs_detection mode: {self.robot_spec.get('unknown_obs_detection')}"
+            )
+        detected_obs, detected_points, detected_for_controller = detect_unknown_obs_with_mode(
+            self, unknown_obs, detection_mode=detection_mode, obs_margin=obs_margin
+        )
 
-        if len(self.detected_points) == 0:
-            self.detected_obs = None
-            return []
-        leftmost_most, rightmost_point = self.find_extreme_points(
-            self.detected_points)
+        normalized_detected = self._normalize_detected_obs_array(detected_for_controller)
+        persistent_fov = bool(self.robot_spec.get('unknown_obs_persistent_fov', True))
+        if detection_mode == 'fov' and persistent_fov:
+            # Keep unknown obstacles active after first sighting. This prevents
+            # dropping CBF constraints when an obstacle exits instantaneous FoV
+            # but is still physically close to the robot.
+            self._merge_detected_unknown_obs(normalized_detected)
+            controller_obs = self.detected_unknown_obs_memory.copy()
+            if controller_obs.size > 0:
+                robot_pos = self.get_position()
+                nearest_idx = int(np.argmin(np.linalg.norm(controller_obs[:, :2] - robot_pos, axis=1)))
+                self.detected_obs = controller_obs[nearest_idx]
+                # FOV mode has no ray intersection points to visualize.
+                self.detected_points = []
+            else:
+                self.detected_obs = None
+                self.detected_points = []
+            return controller_obs
 
-        # Calculate the center and radius of the circle
-        center = (leftmost_most + rightmost_point) / 2
-        radius = np.linalg.norm(rightmost_point - leftmost_most) / 2
-
-        self.detected_obs = [center[0], center[1], radius, 0, 0, 0, 0]
-        return self.detected_obs
+        self.detected_obs = detected_obs
+        if detection_mode == 'fov':
+            # FOV mode uses obstacle-color highlighting only.
+            self.detected_points = []
+        else:
+            self.detected_points = detected_points
+        return normalized_detected
 
     def calculate_fov_points(self):
         """

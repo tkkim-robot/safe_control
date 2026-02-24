@@ -163,15 +163,20 @@ class SingleIntegrator2D:
         def _h_superellipsoid(x, obs, robot_radius, beta):
             ox = obs[0]
             oy = obs[1]
-            a = obs[2]
-            b = obs[3]
-            e = obs[4]
+            # Guard inactive superellipsoid branch in CasADi graphs:
+            # circles are encoded with flag=0 and arbitrary trailing params.
+            a = ca.fmax(ca.fabs(obs[2]), 1e-3)
+            b = ca.fmax(ca.fabs(obs[3]), 1e-3)
+            e = ca.fmax(ca.fabs(obs[4]), 2.0)
             theta = obs[5]
 
-            pox_prime = np.cos(theta)*(x[0,0]-ox) + np.sin(theta)*(x[1,0]-oy)
-            poy_prime = -np.sin(theta)*(x[0,0]-ox) + np.cos(theta)*(x[1,0]-oy)
+            ct = ca.cos(theta)
+            st = ca.sin(theta)
+            pox_prime = ct * (x[0, 0] - ox) + st * (x[1, 0] - oy)
+            poy_prime = -st * (x[0, 0] - ox) + ct * (x[1, 0] - oy)
 
-            h = ((pox_prime)/(a + robot_radius))**(e) + ((poy_prime)/(b + robot_radius))**(e) - 1
+            h = ca.power(ca.fabs(pox_prime) / (a + robot_radius), e) \
+                + ca.power(ca.fabs(poy_prime) / (b + robot_radius), e) - 1
             return h
         
         def h(x, obs, robot_radius, beta=1.01):

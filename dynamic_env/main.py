@@ -142,6 +142,7 @@ class LocalTrackingControllerDyn(LocalTrackingController):
 
         # 1. Update the detected obstacles
         detected_obs = self.robot.detect_unknown_obs(self.unknown_obs)
+        self.update_unknown_obs_visual(detected_obs)
         # self.nearest_obs = self.get_nearest_obs(detected_obs)
         self.nearest_multi_obs = self.get_nearest_unpassed_obs(detected_obs, obs_num=self.num_constraints)
         if self.nearest_multi_obs is not None:

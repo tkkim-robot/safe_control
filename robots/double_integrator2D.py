@@ -79,15 +79,30 @@ class DoubleIntegrator2D:
     def step(self, X, U):
         X = X + (self.f(X) + self.g(X) @ U) * self.dt
         
-        # Enforce velocity limits if specified
         v_max = self.robot_spec.get('v_max')
         if v_max is not None:
-            vx, vy = X[2, 0], X[3, 0]
-            v_mag = np.sqrt(vx**2 + vy**2)
-            if v_mag > v_max:
-                scale = v_max / v_mag
-                X[2, 0] *= scale
-                X[3, 0] *= scale
+            if isinstance(X, (ca.SX, ca.MX, ca.DM)):
+                # CasADi symbolic implementation
+                vx, vy = X[2, 0], X[3, 0]
+                v_mag = ca.sqrt(vx**2 + vy**2)
+                scale = ca.if_else(v_mag > v_max, v_max / v_mag, 1.0)
+                # Apply scaling. Note: In CasADi, we can't modify X in place effectively if it's symbolic, 
+                # but we can return a new expression. 
+                X_new_2 = X[2, 0] * scale
+                X_new_3 = X[3, 0] * scale
+                
+                # Reconstruct X. If X is SX/MX, we can't do slice assignment efficiently the same way as numpy sometimes.
+                # But CasADi supports slice assignment.
+                X[2, 0] = X_new_2
+                X[3, 0] = X_new_3
+            else:
+                # NumPy implementation
+                vx, vy = X[2, 0], X[3, 0]
+                v_mag = np.sqrt(vx**2 + vy**2)
+                if v_mag > v_max:
+                    scale = v_max / v_mag
+                    X[2, 0] *= scale
+                    X[3, 0] *= scale
                 
         return X
 
@@ -99,6 +114,8 @@ class DoubleIntegrator2D:
         '''
         nominal input for CBF-QP (position control)
         '''
+        k_v = self.robot_spec.get('nominal_k_v', k_v)
+        k_a = self.robot_spec.get('nominal_k_a', k_a)
         G = np.copy(G.reshape(-1, 1))  # goal state
         v_max = self.robot_spec['v_max']  # Maximum velocity (x+y)
         a_max = self.robot_spec['a_max']  # Maximum acceleration
@@ -132,6 +149,7 @@ class DoubleIntegrator2D:
 
     def stop(self, X, k_a=1.0):
         # Set desired velocity to zero
+        k_a = self.robot_spec.get('nominal_k_a', k_a)
         vx_des, vy_des = 0.0, 0.0
         ax = k_a * (vx_des - X[2, 0])
         ay = k_a * (vy_des - X[3, 0])
@@ -220,15 +238,19 @@ class DoubleIntegrator2D:
         def _h_superellipsoid(x, obs, robot_radius, beta):
             ox = obs[0]
             oy = obs[1]
-            a = obs[2]
-            b = obs[3]
-            e = obs[4]
+            # Keep branch numerically safe even when obs is actually a circle.
+            a = ca.fmax(ca.fabs(obs[2]), 1e-3)
+            b = ca.fmax(ca.fabs(obs[3]), 1e-3)
+            e = ca.fmax(ca.fabs(obs[4]), 2.0)
             theta = obs[5]
 
-            pox_prime = np.cos(theta)*(x[0,0]-ox) + np.sin(theta)*(x[1,0]-oy)
-            poy_prime = -np.sin(theta)*(x[0,0]-ox) + np.cos(theta)*(x[1,0]-oy)
+            ct = ca.cos(theta)
+            st = ca.sin(theta)
+            pox_prime = ct * (x[0, 0] - ox) + st * (x[1, 0] - oy)
+            poy_prime = -st * (x[0, 0] - ox) + ct * (x[1, 0] - oy)
 
-            h = ((pox_prime)/(a + robot_radius))**(e) + ((poy_prime)/(b + robot_radius))**(e) - 1
+            h = ca.power(ca.fabs(pox_prime) / (a + robot_radius), e) \
+                + ca.power(ca.fabs(poy_prime) / (b + robot_radius), e) - 1
             return h
         
         def h(x, obs, robot_radius, beta=1.01):

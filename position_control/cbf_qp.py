@@ -34,6 +34,14 @@ class CBFQP:
         elif self.robot_spec['model'] == 'Manipulator2D':
             self.cbf_param['alpha'] = 1.0
 
+        # Optional per-scenario CBF gain overrides.
+        if 'cbf_alpha' in self.robot_spec:
+            self.cbf_param['alpha'] = float(self.robot_spec['cbf_alpha'])
+        if 'cbf_alpha1' in self.robot_spec:
+            self.cbf_param['alpha1'] = float(self.robot_spec['cbf_alpha1'])
+        if 'cbf_alpha2' in self.robot_spec:
+            self.cbf_param['alpha2'] = float(self.robot_spec['cbf_alpha2'])
+
         self.setup_control_problem()
 
     def setup_control_problem(self):
