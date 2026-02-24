@@ -3,13 +3,13 @@ Created on February 4th, 2026
 @author: Antigravity
 
 @description:
-Inventory Environment.
+Warehouse Environment.
 A grid-like world with circular static obstacles and moving dynamic obstacles (ghosts).
 """
 import numpy as np
 import matplotlib.pyplot as plt
 
-class InventoryEnv:
+class WarehouseEnv:
     def __init__(self, level=1, dt=0.05):
         self.level = level
         self.dt = dt

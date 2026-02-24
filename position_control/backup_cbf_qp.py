@@ -380,7 +380,7 @@ class BackupCBF:
                     h_min = min(h_min, h_top)
                     
             elif hasattr(self.env, 'width') and hasattr(self.env, 'height'):
-                # Inventory scenario boundaries
+                # Warehouse scenario boundaries
                 h_left = position[0] - robot_radius
                 h_right = self.env.width - position[0] - robot_radius
                 h_bottom = position[1] - robot_radius
