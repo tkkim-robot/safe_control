@@ -164,7 +164,7 @@ class WarehouseEnv:
                  self.ghosts.append({'x': 5.0, 'y': 40.0, 'vx': speed*0.8, 'vy': 0.0, 'radius': self.ghost_radius})
                  self.ghosts.append({'x': 95.0, 'y': 60.0, 'vx': -speed*0.8, 'vy': 0.0, 'radius': self.ghost_radius})
 
-            # Levels 3-5: reduce the y=70 sweeper speed for MPCBF feasibility
+            # Levels 3-5: reduce the y=70 sweeper speed for PLCBF feasibility
             if lvl in [3, 4, 5]:
                  target_speed = 1.5 if lvl == 3 else 2.5
                  for g in self.ghosts:
