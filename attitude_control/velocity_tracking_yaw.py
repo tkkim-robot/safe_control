@@ -28,7 +28,8 @@ class VelocityTrackingYaw:
         self.robot_spec = robot_spec
         self.model = robot_spec['model']
 
-        self.kp = kp
+        self.kp = float(robot_spec.get('velocity_tracking_yaw_kp', kp))
+        self.preview_time = float(robot_spec.get('velocity_tracking_yaw_preview_time', 0.0))
         self.w_max = robot_spec.get('w_max', 0.5) 
 
     def solve_control_problem(self,
@@ -42,6 +43,9 @@ class VelocityTrackingYaw:
         elif self.model == 'DoubleIntegrator2D':
             vx = robot_state[2, 0]
             vy = robot_state[3, 0]
+            if u is not None and np.asarray(u).size >= 2 and self.preview_time > 0.0:
+                vx = vx + self.preview_time * u[0, 0]
+                vy = vy + self.preview_time * u[1, 0]
         speed = np.hypot(vx, vy)
 
         # 2) If nearly stationary, hold yaw

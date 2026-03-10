@@ -6,6 +6,8 @@ import glob
 import subprocess
 import csv
 
+from safe_control.utils.headless_plot import NullAxes, NullFigure
+
 """
 Created on June 20th, 2024
 @author: Taekyung Kim
@@ -52,7 +54,8 @@ class LocalTrackingController:
         # if robot_spec specifies a different reached_threshold, use that (ex. VTOL)
         if 'reached_threshold' in robot_spec:
             self.reached_threshold = robot_spec['reached_threshold']
-            print("Using custom reached_threshold: ", self.reached_threshold)
+            if self.robot_spec.get('log_reached_threshold', False):
+                print("Using custom reached_threshold: ", self.reached_threshold)
 
         if self.robot_spec['model'] == 'SingleIntegrator2D':
             if X0.shape[0] == 2:
@@ -119,7 +122,10 @@ class LocalTrackingController:
         if show_animation:
             self.setup_animation_plot()
         else:
-            self.ax = plt.axes()  # dummy placeholder
+            if self.fig is None:
+                self.fig = NullFigure()
+            if self.ax is None:
+                self.ax = NullAxes(self.fig)
 
         # Setup control problem
         self.setup_robot(X0)
@@ -184,10 +190,13 @@ class LocalTrackingController:
 
     def setup_animation_plot(self):
         # Initialize plotting
-        if self.ax is None:
-            self.ax = plt.axes()
         if self.fig is None:
-            self.fig = plt.figure()
+            if self.ax is not None:
+                self.fig = self.ax.figure
+            else:
+                self.fig = plt.figure()
+        if self.ax is None:
+            self.ax = self.fig.add_subplot(111)
         plt.ion()
         self.ax.set_xlabel("X [m]")
         if self.robot_spec['model'] in ['Quad2D', 'VTOL2D']:
@@ -283,6 +292,10 @@ class LocalTrackingController:
         if hasattr(self.robot, 'reset_unknown_obs_memory'):
             self.robot.reset_unknown_obs_memory()
 
+        if not self.show_animation:
+            self.unknown_obs_patches = []
+            return
+
         for patch in self.unknown_obs_patches:
             patch.remove()
         self.unknown_obs_patches = []
@@ -301,6 +314,8 @@ class LocalTrackingController:
             self.unknown_obs_patches.append(patch)
 
     def update_unknown_obs_visual(self, detected_obs):
+        if not self.show_animation:
+            return
         if len(self.unknown_obs_patches) == 0:
             return
 
@@ -538,7 +553,8 @@ class LocalTrackingController:
 
         # 1. Update the detected obstacles
         detected_obs = self.robot.detect_unknown_obs(self.unknown_obs)
-        self.update_unknown_obs_visual(detected_obs)
+        if self.show_animation:
+            self.update_unknown_obs_visual(detected_obs)
         # self.nearest_obs = self.get_nearest_obs(detected_obs)
         self.nearest_multi_obs = self.get_nearest_unpassed_obs(detected_obs, obs_num=self.num_constraints)
         if self.nearest_multi_obs is not None:
@@ -573,7 +589,8 @@ class LocalTrackingController:
         else:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
-        plt.figure(self.fig.number)
+        if self.show_animation and self.fig is not None:
+            plt.figure(self.fig.number)
 
         # 6. Update the attitude controller
         if self.state_machine == 'track' and self.att_controller is not None:

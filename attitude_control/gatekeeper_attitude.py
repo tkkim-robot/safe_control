@@ -69,6 +69,9 @@ class GatekeeperAtt:
         self.validation_slack = float(
             robot_spec.get("gatekeeper_validation_slack", 0.05)
         )
+        self.validation_tube_margin = float(
+            robot_spec.get("gatekeeper_validation_tube_margin", 0.0)
+        )
         self.braking_distance_scale = float(
             robot_spec.get("gatekeeper_braking_distance_scale", 1.0)
         )
@@ -411,7 +414,7 @@ class GatekeeperAtt:
                     (float(pos_i[0]), float(pos_i[1])),
                     (float(cp_i[0]), float(cp_i[1])),
                 ]
-            ).buffer(float(self.robot.robot_radius))
+            ).buffer(float(self.robot.robot_radius) + self.validation_tube_margin)
             if not sector.covers(safety_tube):
                 return False
 
@@ -474,8 +477,43 @@ class GatekeeperAtt:
         """
         robot_state = np.asarray(robot_state, dtype=float).reshape(-1)
         current_yaw = float(np.asarray(current_yaw, dtype=float).reshape(-1)[0])
+        pos_u = np.asarray(u, dtype=float).reshape(-1, 1)
 
         self._update_pos_committed_trajectory(robot_state)
+
+        critical_point, crossing_step = self._compute_critical_point(
+            max_state_steps=max(
+                int(np.ceil((self.nominal_horizon + self.backup_horizon) / self.dt)) + 2,
+                2,
+            )
+        )
+
+        if critical_point is not None:
+            critical_dist = float(np.linalg.norm(robot_state[:2] - np.asarray(critical_point, dtype=float).reshape(2)))
+            critical_visible = self._is_point_in_fov(
+                robot_state,
+                current_yaw,
+                critical_point,
+                is_in_cam_range=True,
+            )
+            # If the unknown-boundary exit point is already within sensing
+            # range but outside the current FoV, fall back to the reactive
+            # forward-looking backup immediately instead of replaying a
+            # committed open-loop yaw segment.
+            if critical_dist <= float(self.robot.cam_range) + self.validation_slack and not critical_visible:
+                raw = self.backup_controller(
+                    robot_state.reshape(-1, 1),
+                    current_yaw,
+                    pos_u,
+                )
+                yaw_rate = float(np.asarray(raw, dtype=float).reshape(-1)[0])
+                yaw_rate = float(np.clip(yaw_rate, -self.max_yaw_rate, self.max_yaw_rate))
+                self.committed_x_traj = None
+                self.committed_u_traj = None
+                self.current_time_idx = 0
+                self.next_event_time = 0.0
+                self.rejected_replan_events += 1
+                return np.array([[yaw_rate]])
 
         if self.committed_x_traj is None or self.committed_u_traj is None:
             backup_steps = max(int(np.ceil(self.backup_horizon / self.dt)), 1)
@@ -490,10 +528,18 @@ class GatekeeperAtt:
             max_nominal_steps = max(int(np.ceil(self.nominal_horizon / self.dt)), 0)
             backup_steps = max(int(np.ceil(self.backup_horizon / self.dt)), 0)
             discount_steps = max(int(np.ceil(self.horizon_discount / self.dt)), 1)
+            if critical_point is None and crossing_step is None:
+                critical_point, crossing_step = self._compute_critical_point(
+                    max_state_steps=max_nominal_steps + backup_steps + 2
+                )
 
-            critical_point, crossing_step = self._compute_critical_point(
-                max_state_steps=max_nominal_steps + backup_steps + 2
-            )
+            # If the positional plan exits the currently known region too soon,
+            # force the switch to the backup yaw before that boundary. This
+            # prevents near-start blindside cases where the nominal yaw would
+            # otherwise consume most of the preview budget.
+            if crossing_step is not None:
+                latest_nominal_steps = max(int(crossing_step) - backup_steps, 0)
+                max_nominal_steps = min(max_nominal_steps, latest_nominal_steps)
 
             found_valid = False
             for i in range(max_nominal_steps // discount_steps + 2):

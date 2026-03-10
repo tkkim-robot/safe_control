@@ -6,7 +6,12 @@ class SimpleAtt:
         self.robot = robot
         self.robot_spec = robot_spec
 
-        self.yaw_rate_const = 0.5
+        self.yaw_rate_const = float(
+            robot_spec.get(
+                'simple_yaw_rate',
+                robot_spec.get('w_max', 0.5),
+            )
+        )
 
         self.setup_control_problem()
 

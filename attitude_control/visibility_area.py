@@ -73,8 +73,32 @@ class VisibilityAreaAtt:
                                        robot_spec.get('cam_range', 3.0)))
 
         # Sampling parameters
-        self.n_yaw_samples = int(n_yaw_samples)
-        self.arc_resolution = int(arc_resolution)
+        self.n_yaw_samples = int(robot_spec.get('visibility_area_n_yaw_samples', n_yaw_samples))
+        self.arc_resolution = int(robot_spec.get('visibility_area_arc_resolution', arc_resolution))
+        self.forward_bias = float(robot_spec.get('visibility_area_forward_bias', 0.0))
+        self.forward_floor = float(robot_spec.get('visibility_area_forward_floor', 0.6))
+
+    def _reference_yaw(self, robot_state: np.ndarray, current_yaw: float, u: np.ndarray) -> float:
+        state_arr = np.asarray(robot_state, dtype=float).reshape(-1)
+        u_arr = np.asarray(u, dtype=float).reshape(-1) if u is not None else np.zeros(2, dtype=float)
+        model = str(self.robot_spec.get('model', ''))
+
+        vx = 0.0
+        vy = 0.0
+        if model == 'SingleIntegrator2D' and u_arr.size >= 2:
+            vx = float(u_arr[0])
+            vy = float(u_arr[1])
+        elif model == 'DoubleIntegrator2D':
+            if state_arr.size >= 4:
+                vx = float(state_arr[2])
+                vy = float(state_arr[3])
+            if u_arr.size >= 2:
+                vx = vx + 0.25 * float(u_arr[0])
+                vy = vy + 0.25 * float(u_arr[1])
+
+        if np.hypot(vx, vy) <= 1e-3:
+            return float(current_yaw)
+        return float(np.arctan2(vy, vx))
 
     # --------------------------------------------------------------------- #
     # Public API – identical to legacy controller
@@ -109,6 +133,7 @@ class VisibilityAreaAtt:
 
         # Pre-compute union with a small buffer to avoid topological artefacts
         footprints = footprints.buffer(0.0)
+        ref_yaw = self._reference_yaw(robot_state, current_yaw, u)
 
         # Generate candidate headings (absolute angles)
         candidate_yaws = np.linspace(-np.pi, np.pi,
@@ -122,7 +147,13 @@ class VisibilityAreaAtt:
                                       resolution=self.arc_resolution)
             # Newly observable = FoV sector \ already-seen region
             new_area = sector.difference(footprints)
-            unexplored_areas.append(new_area.area)
+            score = new_area.area
+            # not used now
+            if self.forward_bias > 0.0:
+                alignment = 0.5 * (1.0 + np.cos(angle_normalize(yaw - ref_yaw)))
+                alignment = self.forward_floor + (1.0 - self.forward_floor) * alignment
+                score *= (1.0 - self.forward_bias) + self.forward_bias * alignment
+            unexplored_areas.append(score)
 
         # Select heading with maximum prospective gain
         best_idx = int(np.argmax(unexplored_areas))
