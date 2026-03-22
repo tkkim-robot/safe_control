@@ -109,7 +109,7 @@ Three examples describe how a parabolic region in the new plane shapes the safet
 
 |     mu(x)-only case              |              lambda(x)-only case        |              DPCBF        |
 | :------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: |
-|  <img src="https://github.com/user-attachments/assets/a3571760-b8f3-48cc-91cd-895e1252c0f7"  height="250px"> | <img src="https://github.com/user-attachments/assets/5114daea-75f0-4ea1-a575-e37837d8d19d"  height="250px"> | <img src="https://github.com/user-attachments/assets/e7898647-94bb-4dea-ac25-17e9004b68e3"  height="250px"> |
+|  <img src="https://github.com/user-attachments/assets/e03a6a53-1e31-4f5d-850a-9d2891e80515"  height="250px"> | <img src="https://github.com/user-attachments/assets/26c4e24d-033f-467e-b6e9-3c5e36d22521"  height="250px"> | <img src="https://github.com/user-attachments/assets/4721883e-1eff-4656-87cd-76bf236eb23a"  height="250px"> |
 
 Now, our DPCBF formulation defines a parabolic safety boundary with a Line-of-Sight coordinate frame to explicitly consider both the distance to an obstacle and the relative velocity. DPCBF considers the robot is safe as long as its relative velocity vector stays outside the parabolic region.
 
