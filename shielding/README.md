@@ -42,7 +42,7 @@ uv run python examples/evade/test_evade.py --algo gatekeeper
 
 |     Backup CBF              |        MPS       |    gatekeeper    |
 | :------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------: |
-|  <img src="https://github.com/user-attachments/assets/f10a6e6d-a4a3-4ec2-81cd-e8fc3b6ad6b4"  height="200px"> | <img src="https://github.com/user-attachments/assets/78e1d266-b052-4eb7-ba7d-bb4eee80e3dc"  height="200px"> | <img src="https://github.com/user-attachments/assets/4e75c1be-66b8-4b4a-abda-d06e84fca0d3"  height="200px"> |
+|  <img src="https://github.com/user-attachments/assets/4e75c1be-66b8-4b4a-abda-d06e84fca0d3"  height="200px"> | <img src="https://github.com/user-attachments/assets/f10a6e6d-a4a3-4ec2-81cd-e8fc3b6ad6b4"  height="200px"> | <img src="https://github.com/user-attachments/assets/78e1d266-b052-4eb7-ba7d-bb4eee80e3dc"  height="200px"> |
 
 
 If you want to export videos, add the `--save` flag.
