@@ -112,7 +112,7 @@ class LaneChangeController(BackupController):
         
         # Velocity control gains
         self.Kp_v = 500.0     # Proportional gain for velocity tracking
-        self.Kp_tau_dot = 2.0 # Torque rate gain (aligned with MPCBF)
+        self.Kp_tau_dot = 2.0 # Torque rate gain (aligned with PLCBF)
         self.target_velocity = robot_spec.get('v_ref', 8.0)  # Target velocity during lane change
         
         # Limits
@@ -187,7 +187,7 @@ class LaneChangeController(BackupController):
         tau_des = np.clip(tau_des, -self.tau_max, self.tau_max)
         
         # Torque rate
-        # Use linear gain logic from MPCBF/PCBF
+        # Use linear gain logic from PLCBF/PCBF
         tau_error = tau_des - tau
         tau_dot = self.Kp_tau_dot * tau_error
         tau_dot = np.clip(tau_dot, -self.tau_dot_max, self.tau_dot_max)

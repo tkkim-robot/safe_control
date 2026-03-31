@@ -86,6 +86,10 @@ class MPS(Gatekeeper):
             self.current_time_idx = 0
             self.next_event_time = 0.0  # Trigger event immediately on next call
         
+        # Prepare backup controller ONCE per physical step using current real state
+        if self.backup_controller is not None and hasattr(self.backup_controller, 'prepare_rollout'):
+             self.backup_controller.prepare_rollout(robot_state)
+             
         # MPS: Re-evaluate EVERY step (key difference from Gatekeeper)
         # MPS: Only try ONE step of nominal
         nominal_horizon_steps = 1

@@ -12,19 +12,19 @@ Track Modes:
 - gatekeeper: Straight track with obstacles, puddles, and Gatekeeper safety shielding
 
 Usage:
-    uv run python mpcbf/examples/test_mpcc.py [--track straight|oval|gatekeeper] [--save]
+    uv run python plcbf/examples/test_mpcc.py [--track straight|oval|gatekeeper] [--save]
 
 Examples:
     # Run pure MPCC on straight track
-    uv run python mpcbf/examples/test_mpcc.py --track straight
+    uv run python plcbf/examples/test_mpcc.py --track straight
     
     # Run pure MPCC on oval track and save animation
-    uv run python mpcbf/examples/test_mpcc.py --track oval --save
+    uv run python plcbf/examples/test_mpcc.py --track oval --save
     
     # Run MPCC with gatekeeper safety shielding (default)
-    uv run python mpcbf/examples/test_mpcc.py --track gatekeeper --save
+    uv run python plcbf/examples/test_mpcc.py --track gatekeeper --save
 
-@required-scripts: mpcbf/envs/drifting_env.py, safe_control/robots/drifting_car.py,
+@required-scripts: plcbf/envs/drifting_env.py, safe_control/robots/drifting_car.py,
                    safe_control/robots/dynamic_bicycle2D.py, safe_control/position_control/mpcc.py
 """
 

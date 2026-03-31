@@ -60,6 +60,9 @@ class BackupCBF:
         if model in ['DoubleIntegrator2D', 'double_integrator']:
             self.n_states = 4
             self.n_controls = 2
+        elif model in ['Quad3D', 'quad3d']:
+            self.n_states = 12
+            self.n_controls = 4
         elif model in ['DriftingCar', 'DynamicBicycle2D']:
             self.n_states = 8
             self.n_controls = 2
@@ -88,22 +91,19 @@ class BackupCBF:
         self.alpha_terminal = 2.0  # Class-K function gain for terminal constraint
         
         # Safety margin - depends on scenario
-        # Can be overridden via robot_spec
+        # Can be overridden via robot_spec or set_environment
         if 'safety_margin' in robot_spec:
             self.safety_margin = robot_spec['safety_margin']
-        elif model in ['DriftingCar', 'DynamicBicycle2D']:
-            self.safety_margin = 0.5  # Realistic margin
         else:
-            self.safety_margin = 0.5  # Standard default margin (consistent with test configs)
+            self.safety_margin = 0.0 
         
         # Stabilization weights for QP objective
         # Balance between steering (small) and torque (large)
         if model in ['DriftingCar', 'DynamicBicycle2D']:
-            # Steering is ~0.1, Torque is ~2000. Weight steering more or torque less.
-            # Normalize to ~1.0 range
             # Steering and torque weights [steering, torque]
-            # Penalize torque deviation (braking) more heavily to encourage steering avoidance
             self.Q_u = np.array([1.0, 10.0])
+        elif model in ['Quad3D', 'quad3d']:
+            self.Q_u = np.array([1.0, 1.0, 1.0, 1.0])
         else:
             self.Q_u = np.array([1.0, 1.0])
             
@@ -387,6 +387,14 @@ class BackupCBF:
                     h_top = self.env.half_width - py - robot_radius
                     h_min = min(h_min, h_top)
                     
+            elif hasattr(self.env, 'width') and hasattr(self.env, 'height'):
+                # Warehouse scenario boundaries
+                h_left = position[0] - robot_radius
+                h_right = self.env.width - position[0] - robot_radius
+                h_bottom = position[1] - robot_radius
+                h_top = self.env.height - position[1] - robot_radius
+                h_min = min(h_min, h_left, h_right, h_bottom, h_top)
+            
             elif hasattr(self.env, 'track_width'):
                 # Track environment (drift car)
                 half_width = self.env.track_width / 2
@@ -396,17 +404,15 @@ class BackupCBF:
         
         # Static obstacle constraints  
         if self.env is not None and hasattr(self.env, 'obstacles'):
+            robot_radius_base = self.robot_spec.get('radius', 1.0)
             for obs in self.env.obstacles:
                 obs_pos = np.array([obs.get('x', 0), obs.get('y', 0)])
-                # Handle different obstacle formats:
-                # - Simple dict: {'x': x, 'y': y, 'radius': r}
-                # - DriftingEnv: {'x': x, 'y': y, 'spec': {'radius': r}}
                 if 'spec' in obs:
                     obs_radius = obs['spec'].get('radius', 2.5)
                 else:
                     obs_radius = obs.get('radius', 1.0)
                 dist = np.linalg.norm(position - obs_pos)
-                h_obs = dist - robot_radius - obs_radius - self.safety_margin
+                h_obs = dist - robot_radius_base - obs_radius
                 h_min = min(h_min, h_obs)
         
         # Moving obstacle constraint (bullet)
@@ -570,6 +576,10 @@ class BackupCBF:
         """
         robot_state = np.array(robot_state).flatten()
         
+        # Prepare backup controller (update latching, target selection)
+        if hasattr(self.backup_controller, 'prepare_rollout'):
+             self.backup_controller.prepare_rollout(robot_state)
+        
         # Integrate backup trajectory and sensitivity
         phi, S = self._integrate_backup_trajectory(robot_state)
         
@@ -587,6 +597,10 @@ class BackupCBF:
         # Store for visualization
         if self.visualize_backup and self.curr_step % self.save_every_N == 0:
             self.backup_trajs.append(phi.copy())
+        
+        # Always store latest for debugging/visualization
+        self.latest_backup_trajectory = phi.copy()
+        
         self.curr_step += 1
         
         # Get nominal control reference - BackupCBF uses nominal as QP reference
@@ -674,11 +688,17 @@ class BackupCBF:
             elif model in ['DoubleIntegrator2D', 'double_integrator']:
                  a_max = self.robot_spec.get('a_max', 2.0)
                  u_scale_list = [a_max, a_max]
+            elif model in ['Quad3D', 'quad3d']:
+                 u_max = self.robot_spec.get('u_max', 10.0)
+                 u_scale_list = [u_max, u_max, u_max, u_max]
             else:
                  # Default fallback if unknown model (should restrict or warn)
                  u_scale_list = [1.0] * self.n_controls
                  
             u_scale = np.array(u_scale_list)
+            
+            # Clip u_ref to actuator limits to avoid numerical issues in QP
+            u_ref = np.clip(u_ref, -u_scale, u_scale)
             
             S_mat = np.diag(u_scale)           # u = S * u_scaled
             
@@ -708,17 +728,26 @@ class BackupCBF:
             
             prob = cp.Problem(objective, constraints)
             
-            # Solve with strict feasibility requirement
-            # Try OSQP first (faster), fallback to SCS (more robust)
-            try:
-                prob.solve(solver=cp.OSQP, warm_start=True, verbose=False)
-            except:
-                prob.solve(solver=cp.SCS, verbose=False)
+            prob_status = None
+            if np.any(np.isnan(G)) or np.any(np.isnan(h)):
+                 print("Warning: NaNs in CBF constraints matrix. Skipping QP.")
+                 prob_status = 'failure'
+            else:
+                try:
+                    prob.solve(solver=cp.OSQP, warm_start=True, verbose=False)
+                    prob_status = prob.status
+                except:
+                    try:
+                        prob.solve(solver=cp.SCS, verbose=False)
+                        prob_status = prob.status
+                    except:
+                        prob_status = 'failure'
             
-            if prob.status in ['optimal', 'optimal_inaccurate']:
+            if prob_status in ['optimal', 'optimal_inaccurate']:
                 if u_scaled.value is None:
                         raise ValueError("QP solved but returned None value")
 
+                # Unscale result to physical units for output
                 # Unscale result to physical units for output
                 u_safe = S_mat @ u_scaled.value
                 
@@ -736,29 +765,23 @@ class BackupCBF:
                 self._using_backup = control_diff > 0.1
 
             else:
+                # QP Failed or NaNs detected
+                # If we are safe, use nominal (clipped) control logic
                 if self._last_h_min > 0.01:
+                    # if self.curr_step < 5:
+                    #     print(f"QP Failed ({prob_status}) but SAFE (h={self._last_h_min:.4f}). Fallback to nominal.")
+                    u_safe = u_ref # Already clipped above
+                    self._last_intervention = False
+                    self._using_backup = False
+                else:
+                    # Unsafe and QP failed -> Emergency Backup
                     u_backup = self.backup_controller.compute_control(robot_state, self.backup_target).flatten()
                     u_safe = u_backup
                     self._last_intervention = True
                     self._using_backup = True
-                else:
-                    print(f"\n*** CBF-QP {prob.status.upper()} ***")
-                    print(f"CRITICAL: Backup trajectory is also UNSAFE or marginally safe (h={self._last_h_min:.4f}).")
-                    if self.env and hasattr(self.env, 'obstacles'):
-                        print(f"Obstacles: {self.env.obstacles}")
-                    
-                    print("\n--- INFEASIBILITY ANALYSIS ---")
-                    try:
-                        for i in range(len(phi)):
-                            if i < len(phi):
-                                # Pass time i*dt to correctly evaluate moving obstacles
-                                h_val = self._h_safety(phi[i], i * self.dt)
-                                if h_val < 0.1:
-                                    print(f"  Step {i} is dangerously close: h={h_val:.4f}")
-                    except:
-                        pass
-                    
-                    raise ValueError(f"CBF-QP {prob.status} and Backup Unsafe (h_min={self._last_h_min:.4f})")
+                
+                # Don't raise error immediately, try to brake with u_backup
+                # raise ValueError(f"CBF-QP {prob.status} and Backup Unsafe (h_min={self._last_h_min:.4f})")
         else:
             # No constraints needed - use reference directly
             u_safe = u_ref

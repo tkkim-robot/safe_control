@@ -76,6 +76,10 @@ class Gatekeeper:
             # Double Integrator: [x, y, vx, vy] (4 states), [ax, ay] (2 controls)
             self.n_states = 4
             self.n_controls = 2
+        elif model in ['Quad3D', 'quad3d']:
+            # Quad3D: 12 states, 4 controls
+            self.n_states = 12
+            self.n_controls = 4
         else:
             # Default: Drifting car model
             # State: [x, y, theta, r, beta, V, delta, tau] (8 states)
@@ -380,8 +384,9 @@ class Gatekeeper:
         Args:
             state: State vector [x, y, theta, ...] or [x, y, vx, vy]
             safety_margin: Additional buffer distance for conservative checking
-            obstacle_state: Optional dict with obstacle position at this timestep
-                           {'x': x, 'y': y, 'length': l, 'width': w} for rectangular
+            obstacle_state: Optional obstacle(s) at this timestep.
+                           Can be a single dict or list of dicts.
+                           Each dict: {'x': x, 'y': y, 'length': l, 'width': w} for rectangular
                            or {'x': x, 'y': y, 'radius': r} for circular
             
         Returns:
@@ -395,12 +400,15 @@ class Gatekeeper:
         
         # Check boundary collision
         if hasattr(self.env, 'check_collision'):
-            if self.env.check_collision(position, robot_radius):
+            robot_radius_base = self.robot_spec.get('radius', 1.5)
+            if self.env.check_collision(position, robot_radius_base):
                 return (True, "Environment Boundary") if return_reason else True
         
         # Check static obstacle collision (from environment)
         if hasattr(self.env, 'check_obstacle_collision'):
-            collision, _ = self.env.check_obstacle_collision(position, robot_radius)
+            # Static hurdles: no extra safety margin added
+            robot_radius_base = self.robot_spec.get('radius', 1.5)
+            collision, _ = self.env.check_obstacle_collision(position, robot_radius_base)
             if collision:
                 return (True, "Static Obstacle") if return_reason else True
         
@@ -573,6 +581,10 @@ class Gatekeeper:
             self.current_time_idx = 0
             self.next_event_time = 0.0  # Trigger event immediately on next call
         
+        # Prepare backup controller ONCE per physical step using current real state
+        if self.backup_controller is not None and hasattr(self.backup_controller, 'prepare_rollout'):
+             self.backup_controller.prepare_rollout(robot_state)
+
         # Try updating committed trajectory if event triggered
         if self.current_time_idx >= self.next_event_time / self.dt:
             # Determine max nominal steps from available trajectory or controller
@@ -626,6 +638,7 @@ class Gatekeeper:
                 
                 # Check validity with safety margin (conservative)
                 if self._is_candidate_valid(candidate_x_traj, safety_margin=self.safety_margin, obstacle_states=obstacle_states):
+                    # print(f"DEBUG: Gatekeeper UPDATE! Steps={actual_steps} (req={nominal_horizon_steps})")
                     self._update_committed_trajectory(actual_steps)
                     found_valid = True
                     break

@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 class AnimationSaver:
     """Handles saving matplotlib animations as video files."""
     
-    def __init__(self, output_dir="output/animations", save_per_frame=1, fps=30):
+    def __init__(self, output_dir="output/animations", save_per_frame=1, fps=30, dpi=150, video_height=720):
         """
         Initialize the animation saver.
         
@@ -25,6 +25,8 @@ class AnimationSaver:
         self.fps = fps
         self.frame_idx = 0
         self.enabled = True
+        self.dpi = dpi
+        self.video_height = video_height
         
         # Create output directory
         os.makedirs(self.output_dir, exist_ok=True)
@@ -44,7 +46,7 @@ class AnimationSaver:
         if force or self.frame_idx % self.save_per_frame == 0:
             frame_num = self.frame_idx // self.save_per_frame
             filepath = os.path.join(self.output_dir, f"frame_{frame_num:05d}.png")
-            fig.savefig(filepath, dpi=150)
+            fig.savefig(filepath, dpi=self.dpi)
     
     def export_video(self, output_name="animation.mp4", cleanup=True):
         """
@@ -65,7 +67,7 @@ class AnimationSaver:
                 'ffmpeg', '-y',
                 '-framerate', str(self.fps),
                 '-i', input_pattern,
-                '-vf', f'scale=-2:720,fps={self.fps}',
+                '-vf', f'scale=-2:{self.video_height},fps={self.fps}',
                 '-pix_fmt', 'yuv420p',
                 '-c:v', 'libx264',
                 output_path
@@ -82,4 +84,3 @@ class AnimationSaver:
     def reset(self):
         """Reset frame counter."""
         self.frame_idx = 0
-
