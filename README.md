@@ -261,8 +261,9 @@ controller = LocalTrackingController(..., show_animation=True, save_animation=Tr
 
 ## Citing
 
-If you find this repository useful, please consider citing our paper:
+If you find this repository useful, please consider citing our papers:
 
+- For general CBF-based controller:
 ```
 @inproceedings{kim2025how, 
     author    = {Kim, Taekyung and Beard, Randal W. and Panagou, Dimitra},
@@ -273,12 +274,40 @@ If you find this repository useful, please consider citing our paper:
 }
 ```
 
+- For dynamic obstacle avoidance:
+
+```
+@inproceedings{park2026dpcbf, 
+    author    = {Park, Hun Kuk and Kim, Taekyung and Panagou, Dimitra},
+    title     = {Beyond Collision Cones: Dynamic Obstacle Avoidance for Nonholonomic Robots via Dynamic Parabolic Control Barrier Functions}, 
+    booktitle = {IEEE International Conference on Robotics and Automation (ICRA)},
+    shorttitle = {DPCBF},
+    year      = {2026}
+}
+```
+
+- For backup-based safety filters:
+
+```
+@inproceedings{kim2026backupbased, 
+    author    = {Kim, Taekyung and Menon, Aswin D. and Trivedi, Akshunn and Panagou, Dimitra},
+    title     = {Backup-Based Safety Filters: A Comparative Review of Backup CBF, Model Predictive Shielding, and gatekeeper}, 
+    booktitle = {},
+    shorttitle = {Backup-Based Safety Filters},
+    year      = {2026}
+}
+```
+
+
+
 ## Related Works
 
 This repository has been utilized in several other projects. Here are some repositories that build upon or use components from this library:
 
 - [Visibility-Aware RRT*](https://github.com/tkkim-robot/visibility-rrt): Safety-critical Global Path Planning (GPP) using Visibility Control Barrier Functions
 - [Online Adaptive CBF](https://github.com/tkkim-robot/online_adaptive_cbf): Online adaptation of CBF parameters for input constrained robot systems
+- [Policy Library CBF](https://github.com/tkkim-robot/plcbf): When safety filters meet parallelization. PL-CBF leverages a finite library of candidate closed-loop policies and certifies safety whenever at least one library policy remains safe over the planning horizon. The method certifies safety on the fly , requiring no offline value function computation.
+- [Backup-Based Safety Filters](https://github.com/tkkim-robot/safe_control_jax): A parallel implementation of gatekeeper using JAX.
 - [Multi-Robot Exploration and Mapping](): to be public soon
 - [UGV Experiments with ROS2](https://github.com/tkkim-robot/px4_ugv_exp): Environmental setup for rovers using PX4, ros2 humble, Vicon MoCap, and NVIDIA VSLAM + NvBlox
 - [Quadrotor Experiments with ROS2](https://github.com/RahulHKumar/px4_quad_exp): Environmental setup for quadrotors using PX4, ros2 humble, Vicon MoCap, and NVIDIA VSLAM + NvBlox
