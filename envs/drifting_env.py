@@ -72,6 +72,10 @@ class DriftingEnv:
         self.obstacles = []
         self.obstacle_patches = []
         
+        # Moving obstacles are tracked separately so shielding can use
+        # time-synchronized predictions without treating them as static.
+        self.dynamic_obstacles = []
+        
     def _generate_track(self):
         """Generate track boundaries based on track type."""
         if self.track_type == 'straight':
@@ -515,8 +519,48 @@ class DriftingEnv:
         
         return len(self.obstacles) - 1
     
-    def _draw_obstacle_car(self, obstacle):
-        """Draw a static obstacle car."""
+    def add_moving_obstacle_car(self, x, y, theta, vx=0.0, vy=0.0, robot_spec=None):
+        """
+        Add a moving obstacle car to the track.
+        
+        Args:
+            x: X position of obstacle car
+            y: Y position of obstacle car
+            theta: Heading angle of obstacle car
+            vx: Constant X velocity of obstacle car
+            vy: Constant Y velocity of obstacle car
+            robot_spec: Robot specification dict (optional)
+            
+        Returns:
+            int: Index of the added moving obstacle
+        """
+        if robot_spec is None:
+            robot_spec = {
+                'body_length': 4.5,
+                'body_width': 2.0,
+                'a': 1.4,
+                'b': 1.4,
+                'radius': 1.0,
+            }
+        
+        obstacle = {
+            'x': x,
+            'y': y,
+            'theta': theta,
+            'vx': vx,
+            'vy': vy,
+            'spec': robot_spec,
+            'patches': [],
+        }
+        self.dynamic_obstacles.append(obstacle)
+        
+        if self.ax is not None:
+            self._draw_dynamic_obstacle_car(obstacle)
+        
+        return len(self.dynamic_obstacles) - 1
+    
+    def _create_obstacle_car_patches(self, obstacle, body_color=(0.7, 0.2, 0.2), zorder=8):
+        """Create the full car-shaped patches used for obstacle visualization."""
         x, y, theta = obstacle['x'], obstacle['y'], obstacle['theta']
         spec = obstacle['spec']
         
@@ -525,11 +569,9 @@ class DriftingEnv:
         L = spec.get('body_length', 4.3)
         W = spec.get('body_width', 1.8)
         
-        # Body vertices (centered at CG)
         rear_overhang = (L - a - b) * 0.4
         front_overhang = (L - a - b) * 0.6
         
-        # Main body outline (counterclockwise from rear-left)
         body_vertices = np.array([
             [-b - rear_overhang, -W/2],
             [-b - rear_overhang, W/2],
@@ -543,24 +585,19 @@ class DriftingEnv:
             [-b - rear_overhang + 0.3, -W/2 - 0.05],
         ]).T
         
-        # Rotation matrix
         cos_t, sin_t = np.cos(theta), np.sin(theta)
         R = np.array([[cos_t, -sin_t], [sin_t, cos_t]])
-        
-        # Transform body vertices
         body_world = R @ body_vertices + np.array([[x], [y]])
         
-        # Draw body
-        body_patch = MplPolygon(
-            body_world.T, closed=True,
-            facecolor=(0.7, 0.2, 0.2),  # Dark red color
-            edgecolor='black',
-            linewidth=1.5, alpha=0.9, zorder=8
-        )
-        self.ax.add_patch(body_patch)
-        self.obstacle_patches.append(body_patch)
+        patches = [
+            MplPolygon(
+                body_world.T, closed=True,
+                facecolor=body_color,
+                edgecolor='black',
+                linewidth=1.5, alpha=0.9, zorder=zorder
+            )
+        ]
         
-        # Draw tires
         tire_length = 0.6
         tire_width = 0.25
         tire_y_offset = W / 2 - tire_width / 2 - 0.1
@@ -580,17 +617,60 @@ class DriftingEnv:
             [tl, -tw]
         ]).T
         
-        for name, pos in tire_positions.items():
+        for pos in tire_positions.values():
             pos_world = R @ pos.reshape(-1, 1) + np.array([[x], [y]])
             tire_world = R @ tire_vertices + pos_world
-            tire_patch = MplPolygon(
-                tire_world.T, closed=True,
-                facecolor=(0.3, 0.3, 0.3),
-                edgecolor='black',
-                linewidth=1, alpha=0.9, zorder=9
+            patches.append(
+                MplPolygon(
+                    tire_world.T, closed=True,
+                    facecolor=(0.3, 0.3, 0.3),
+                    edgecolor='black',
+                    linewidth=1, alpha=0.9, zorder=zorder + 1
+                )
             )
-            self.ax.add_patch(tire_patch)
-            self.obstacle_patches.append(tire_patch)
+        
+        return patches
+    
+    def _draw_obstacle_car(self, obstacle):
+        """Draw a static obstacle car."""
+        for patch in self._create_obstacle_car_patches(obstacle):
+            self.ax.add_patch(patch)
+            self.obstacle_patches.append(patch)
+    
+    def _draw_dynamic_obstacle_car(self, obstacle):
+        """Draw a moving obstacle with the same car shape as static obstacles."""
+        for patch in obstacle.get('patches', []):
+            patch.remove()
+        obstacle['patches'] = self._create_obstacle_car_patches(
+            obstacle,
+            body_color=(0.7, 0.2, 0.2),
+            zorder=8,
+        )
+        for patch in obstacle['patches']:
+            self.ax.add_patch(patch)
+    
+    def step_dynamic_obstacles(self, dt):
+        """Advance moving obstacles by one timestep."""
+        for obstacle in self.dynamic_obstacles:
+            obstacle['x'] += obstacle.get('vx', 0.0) * dt
+            obstacle['y'] += obstacle.get('vy', 0.0) * dt
+            if obstacle.get('patches'):
+                self._draw_dynamic_obstacle_car(obstacle)
+    
+    def get_dynamic_obstacle_states(self, t=0.0):
+        """Return predicted dynamic obstacle states at time t."""
+        states = []
+        for obstacle in self.dynamic_obstacles:
+            states.append({
+                'x': obstacle['x'] + obstacle.get('vx', 0.0) * t,
+                'y': obstacle['y'] + obstacle.get('vy', 0.0) * t,
+                'vx': obstacle.get('vx', 0.0),
+                'vy': obstacle.get('vy', 0.0),
+                'radius': obstacle['spec'].get('radius', 1.0),
+                'length': obstacle['spec'].get('body_length', 4.5),
+                'width': obstacle['spec'].get('body_width', 2.0),
+            })
+        return states
     
     def check_obstacle_collision(self, position, robot_radius=0.0):
         """
@@ -609,6 +689,30 @@ class DriftingEnv:
         for i, obstacle in enumerate(self.obstacles):
             obs_x, obs_y = obstacle['x'], obstacle['y']
             obs_radius = obstacle['spec'].get('radius', 2.5)
+            
+            dist = np.sqrt((x - obs_x)**2 + (y - obs_y)**2)
+            if dist < (obs_radius + robot_radius):
+                return True, i
+        
+        return False, None
+    
+    def check_dynamic_obstacle_collision(self, position, robot_radius=0.0):
+        """
+        Check if a position collides with any moving obstacle cars.
+        
+        Args:
+            position: [x, y] position to check
+            robot_radius: Radius of the robot for collision margin
+            
+        Returns:
+            bool: True if collision detected
+            int or None: Index of collided obstacle, or None
+        """
+        x, y = position[0], position[1]
+        
+        for i, obstacle in enumerate(self.dynamic_obstacles):
+            obs_x, obs_y = obstacle['x'], obstacle['y']
+            obs_radius = obstacle['spec'].get('radius', 1.0)
             
             dist = np.sqrt((x - obs_x)**2 + (y - obs_y)**2)
             if dist < (obs_radius + robot_radius):
@@ -649,4 +753,3 @@ class DriftingEnv:
         
         ax.set_xlim(x_min, x_max)
         ax.set_ylim(y_min, y_max)
-

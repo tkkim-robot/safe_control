@@ -99,16 +99,16 @@ class LaneChangeController(BackupController):
             raise NotImplementedError("LaneChangeController is only implemented for DriftingCar model.")
         self.direction = direction
         
-        # Cascaded control gains (tuned for agile lane change with damping)
-        self.Kp_y = 0.3       # Increased for faster response
-        self.Kd_y = 0.5       # Added damping to reduce overshoot at high speed
+        # Cascaded control gains
+        self.Kp_y = 0.25
+        self.Kd_y = 0.3
         
         # Inner loop: heading -> desired steering
-        self.Kp_theta = 1.5   # Proportional gain for heading error -> steering
-        self.Kd_theta = 0.3   # Derivative gain (using yaw rate)
+        self.Kp_theta = 1.2
+        self.Kd_theta = 1.0
         
         # Actuator loop: steering -> steering rate
-        self.Kp_delta = 3.0   # Proportional gain for steering error -> steering rate
+        self.Kp_delta = 2.5
         
         # Velocity control gains
         self.Kp_v = 500.0     # Proportional gain for velocity tracking
@@ -117,11 +117,11 @@ class LaneChangeController(BackupController):
         
         # Limits
         self.delta_max = robot_spec.get('delta_max', np.deg2rad(20))
-        self.delta_dot_max = robot_spec.get('delta_dot_max', np.deg2rad(15))
+        self.delta_dot_max = robot_spec.get('delta_dot_max', np.deg2rad(25))
         self.tau_max = robot_spec.get('tau_max', 4000.0)
         self.tau_dot_max = robot_spec.get('tau_dot_max', 8000.0)
         
-        self.theta_des_max = np.deg2rad(30)  # Reverted to 30 (MPCBF value) to support agile lane changes
+        self.theta_des_max = np.deg2rad(20)
     
     def compute_control(self, state, target_y):
         """
@@ -286,12 +286,12 @@ class StoppingController(BackupController):
         
         # Steering control gains (to straighten out)
         self.Kp_theta = 2.0    # Proportional gain for heading correction
-        self.Kd_theta = 0.5    # Derivative gain (yaw rate damping)
+        self.Kd_theta = 1.0    # Derivative gain (yaw rate damping)
         self.Kp_delta = 3.0    # Proportional gain for steering rate
         
         # Limits
         self.delta_max = robot_spec.get('delta_max', np.deg2rad(20))
-        self.delta_dot_max = robot_spec.get('delta_dot_max', np.deg2rad(15))
+        self.delta_dot_max = robot_spec.get('delta_dot_max', np.deg2rad(25))
         self.tau_max = robot_spec.get('tau_max', 4000.0)
         self.tau_dot_max = robot_spec.get('tau_dot_max', 8000.0)
         
@@ -299,7 +299,8 @@ class StoppingController(BackupController):
         self.stop_velocity_threshold = 0.05  # m/s
         
         # Holding torque to keep vehicle stationary after stopping
-        self.holding_torque = -100.0  # Small negative torque to resist rolling
+        self.min_braking_torque = -500.0
+        self.holding_torque = -100.0
     
     def compute_control(self, state, target=None):
         """
@@ -323,7 +324,7 @@ class StoppingController(BackupController):
             # Use maximum braking at high speeds, proportional at low speeds
             tau_des = -self.Kp_v * V
             # Ensure we're always applying significant braking when moving
-            tau_des = min(tau_des, -500.0)  # At least -500 Nm when moving
+            tau_des = min(tau_des, self.min_braking_torque)
         else:
             # Stopped - apply small holding torque to prevent rolling
             # This keeps the vehicle stationary
@@ -623,4 +624,3 @@ class EvadeBackupController(BackupController):
     
     def get_behavior_name(self):
         return "EvadeToPocket"
-

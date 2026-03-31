@@ -50,6 +50,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from dataclasses import dataclass
 from typing import Optional, Tuple, Dict, Any, Union
+import re
 
 from safe_control.envs.drifting_env import DriftingEnv
 from safe_control.robots.drifting_car import DriftingCar, DriftingCarSimulator
@@ -86,6 +87,9 @@ class TrackConfig:
     track_length: float = 300.0
     lane_width: float = 4.0
     num_lanes: int = 5
+    ego_lane_idx: int = 1
+    middle_lane_idx: int = 2
+    backup_lane_idx: int = 3
 
 
 @dataclass
@@ -97,7 +101,7 @@ class VehicleConfig:
     wheel_base: float = 2.8     # Total wheelbase [m]
     body_length: float = 4.5
     body_width: float = 2.0
-    radius: float = 1.5         # Collision radius
+    radius: float = 1.2         # Collision radius
     
     # Mass and inertia
     m: float = 2500.0           # Vehicle mass [kg]
@@ -112,7 +116,7 @@ class VehicleConfig:
     
     # Input limits
     delta_max: float = np.deg2rad(20)      # Max steering [rad]
-    delta_dot_max: float = np.deg2rad(15)  # Max steering rate [rad/s]
+    delta_dot_max: float = np.deg2rad(25)  # Max steering rate [rad/s]
     tau_max: float = 4000.0                # Max torque [Nm]
     tau_dot_max: float = 8000.0            # Max torque rate [Nm/s]
     
@@ -145,11 +149,11 @@ class VehicleConfig:
 class SimulationConfig:
     """Simulation configuration parameters."""
     dt: float = 0.05
-    tf: float = 14.0
-    nominal_horizon_time: float = 1.5    # MPCC prediction horizon [s]
+    tf: float = 12.0
+    nominal_horizon_time: float = 6.0    # MPCC prediction horizon [s]
     backup_horizon_time: float = 3.0     # Backup trajectory horizon [s]
-    event_offset: float = 0.1            # Gatekeeper re-evaluation interval [s]
-    safety_margin: float = 1.5           # Collision checking margin [m]
+    event_offset: float = 0.05           # Gatekeeper re-evaluation interval [s]
+    safety_margin: float = 1.25          # Collision checking margin [m]
     initial_velocity: float = 10.0        # Starting velocity [m/s]
     target_velocity: float = 10.0         # Target velocity [m/s]
 
@@ -159,10 +163,13 @@ class ObstacleConfig:
     """Single obstacle configuration."""
     x: float = 80.0             # X position
     y: Optional[float] = None   # Y position (None = middle lane)
+    lane_idx: Optional[int] = None
     theta: float = 0.0          # Heading angle
     body_length: float = 4.5
     body_width: float = 2.0
-    radius: float = 2.5         # Collision radius (larger for safety)
+    radius: float = 1.0         # Collision radius
+    vx: float = 0.0
+    vy: float = 0.0
 
 
 
@@ -222,14 +229,13 @@ def setup_environment(config: TestConfig) -> Tuple[DriftingEnv, plt.Axes, plt.Fi
 
 def setup_vehicle(config: TestConfig, env: DriftingEnv, ax: plt.Axes) -> Tuple[DriftingCar, np.ndarray, float, float]:
     """Setup the vehicle and get lane positions."""
-    middle_lane = env.get_middle_lane_idx()
-    middle_lane_y = env.get_lane_center(middle_lane)
-    left_lane_y = env.get_lane_center(middle_lane - 1)
+    ego_lane_y = env.get_lane_center(config.track.ego_lane_idx)
+    backup_lane_y = env.get_lane_center(config.track.backup_lane_idx)
     
-    # Initial state in middle lane
+    # Initial state in ego lane
     X0 = np.array([
         5.0,                        # x
-        middle_lane_y,              # y
+        ego_lane_y,                 # y
         np.deg2rad(0),              # theta
         0, 0,                       # r, beta
         config.simulation.initial_velocity,  # V
@@ -237,39 +243,41 @@ def setup_vehicle(config: TestConfig, env: DriftingEnv, ax: plt.Axes) -> Tuple[D
     ])
     
     robot_spec = config.vehicle.to_dict()
+    robot_spec['v_ref'] = config.simulation.target_velocity
+    robot_spec['safety_margin'] = config.simulation.safety_margin
     car = DriftingCar(X0, robot_spec, config.simulation.dt, ax)
     
-    return car, X0, middle_lane_y, left_lane_y
+    return car, X0, ego_lane_y, backup_lane_y
 
 
 def setup_controllers(
     config: TestConfig, 
     car: DriftingCar, 
     env: DriftingEnv,
-    middle_lane_y: float,
-    left_lane_y: float,
+    ego_lane_y: float,
+    backup_lane_y: float,
     ax: plt.Axes
 ) -> Tuple[MPCC, Union[Gatekeeper, MPS]]:
     """Setup MPCC and shielding controller (Gatekeeper or MPS)."""
     sim = config.simulation
     robot_spec = config.vehicle.to_dict()
     
-    # Reference path along middle lane
+    # Reference path along ego lane
     ref_x = env.centerline[:, 0]
-    ref_y = np.full_like(ref_x, middle_lane_y)
+    ref_y = np.full_like(ref_x, ego_lane_y)
     
     # MPCC controller
     nominal_horizon_steps = int(sim.nominal_horizon_time / sim.dt)
     mpcc = MPCC(car, car.robot_spec, horizon=nominal_horizon_steps)
     mpcc.set_reference_path(ref_x, ref_y)
     mpcc.set_cost_weights(
-        Q_c=30.0,       # Contouring error (reduced - less aggressive correction)
-        Q_l=1.0,        # Lag error
-        Q_theta=20.0,   # Heading error (reduced)
-        Q_v=50.0,       # Velocity tracking
-        Q_r=80.0,       # Yaw rate penalty (increased - more damping)
+        Q_c=8.0,
+        Q_l=1.0,
+        Q_theta=2.0,
+        Q_v=50.0,
+        Q_r=400.0,
         v_ref=sim.target_velocity,
-        R=np.array([300.0, 0.5, 0.1]),  # Steering rate penalty increased for smoother control
+        R=np.array([100.0, 0.5, 0.1]),
     )
     mpcc.set_progress_rate(sim.target_velocity)
     
@@ -280,8 +288,7 @@ def setup_controllers(
         print(f"  Using STOPPING backup controller")
     else:  # 'lane_change' (default)
         backup_controller = LaneChangeController(car.robot_spec, sim.dt, direction='left')
-        # Target is the center of the left lane as requested by user
-        backup_target = left_lane_y  # never change the target here.
+        backup_target = backup_lane_y
         print(f"  Using LANE CHANGE backup controller (target y={backup_target:.2f})")
     
     # Shielding algorithm - choose based on config
@@ -292,7 +299,8 @@ def setup_controllers(
             dt=sim.dt,
             backup_horizon=sim.backup_horizon_time,
             event_offset=sim.event_offset,
-            ax=ax
+            ax=ax,
+            safety_margin=sim.safety_margin,
         )
         print(f"  Using MPS algorithm (one-step nominal horizon)")
     elif config.algo_type == 'backupcbf':
@@ -311,21 +319,23 @@ def setup_controllers(
             dt=sim.dt,
             backup_horizon=sim.backup_horizon_time,
             event_offset=sim.event_offset,
-            ax=ax
+            ax=ax,
+            nominal_horizon=sim.nominal_horizon_time,
+            safety_margin=sim.safety_margin,
         )
         print(f"  Using GATEKEEPER algorithm (backward search)")
     
     shielding.set_backup_controller(backup_controller, target=backup_target)
     shielding.set_environment(env)
+    if env.dynamic_obstacles:
+        shielding.set_moving_obstacles(lambda t=0.0: env.get_dynamic_obstacle_states(t))
     
     return mpcc, shielding
 
 
 def setup_obstacles_and_puddles(
     config: TestConfig, 
-    env: DriftingEnv, 
-    middle_lane_y: float,
-    left_lane_y: float
+    env: DriftingEnv
 ):
     """Add obstacles and puddles to the environment."""
     # Add obstacles (up to num_obstacles)
@@ -333,10 +343,12 @@ def setup_obstacles_and_puddles(
         # Determine Y position
         if obs.y is not None:
             obs_y = obs.y
+        elif obs.lane_idx is not None:
+            obs_y = env.get_lane_center(obs.lane_idx)
         elif i == 0:
-            obs_y = middle_lane_y  # First obstacle in middle lane
+            obs_y = env.get_lane_center(config.track.middle_lane_idx)
         else:
-            obs_y = left_lane_y  # Additional obstacles in left lane by default
+            obs_y = env.get_lane_center(config.track.backup_lane_idx)
         
         obstacle_spec = {
             'body_length': obs.body_length,
@@ -344,8 +356,18 @@ def setup_obstacles_and_puddles(
             'a': 1.4, 'b': 1.4,
             'radius': obs.radius,
         }
-        env.add_obstacle_car(x=obs.x, y=obs_y, theta=obs.theta, robot_spec=obstacle_spec)
-        print(f"  Obstacle {i+1}: x={obs.x:.1f}, y={obs_y:.1f}")
+        if abs(obs.vx) > 1e-9 or abs(obs.vy) > 1e-9:
+            env.add_moving_obstacle_car(
+                x=obs.x,
+                y=obs_y,
+                theta=obs.theta,
+                vx=obs.vx,
+                vy=obs.vy,
+                robot_spec=obstacle_spec,
+            )
+        else:
+            env.add_obstacle_car(x=obs.x, y=obs_y, theta=obs.theta, robot_spec=obstacle_spec)
+        print(f"  Obstacle {i+1}: x={obs.x:.1f}, y={obs_y:.1f}, vx={obs.vx:.2f}, vy={obs.vy:.2f}")
     
     # Add puddles
     for puddle in config.puddles:
@@ -355,16 +377,16 @@ def setup_obstacles_and_puddles(
 def setup_visualization(
     ax: plt.Axes, 
     env: DriftingEnv, 
-    middle_lane_y: float, 
-    left_lane_y: float
+    ego_lane_y: float, 
+    backup_lane_y: float
 ) -> Tuple:
     """Setup visualization elements."""
     ref_x = env.centerline[:, 0]
     
     # Reference paths
-    ax.plot(ref_x, np.full_like(ref_x, middle_lane_y), 
-            'g-', linewidth=1, alpha=0.3, label='Reference (middle lane)')
-    ax.plot(ref_x, np.full_like(ref_x, left_lane_y), 
+    ax.plot(ref_x, np.full_like(ref_x, ego_lane_y), 
+            'g-', linewidth=1, alpha=0.3, label='Reference (ego lane)')
+    ax.plot(ref_x, np.full_like(ref_x, backup_lane_y), 
             'orange', linewidth=1, alpha=0.3, linestyle=':', label='Backup target')
     
     # Dynamic visualization
@@ -515,18 +537,17 @@ def run_test(config: TestConfig) -> Dict[str, Any]:
     
     # Setup
     env, ax, fig = setup_environment(config)
-    car, X0, middle_lane_y, left_lane_y = setup_vehicle(config, env, ax)
-    mpcc, shielding = setup_controllers(config, car, env, middle_lane_y, left_lane_y, ax)
-    setup_obstacles_and_puddles(config, env, middle_lane_y, left_lane_y)
-    ref_horizon_line, mpc_pred_line = setup_visualization(ax, env, middle_lane_y, left_lane_y)
+    car, X0, ego_lane_y, backup_lane_y = setup_vehicle(config, env, ax)
+    setup_obstacles_and_puddles(config, env)
+    mpcc, shielding = setup_controllers(config, car, env, ego_lane_y, backup_lane_y, ax)
+    ref_horizon_line, mpc_pred_line = setup_visualization(ax, env, ego_lane_y, backup_lane_y)
     
     simulator = DriftingCarSimulator(car, env, show_animation=True)
     
     # Setup animation saver if enabled
     animation_saver = None
     if config.save_animation:
-        # Create unique output directory for this test
-        safe_name = config.name.lower().replace(' ', '_')
+        safe_name = slugify_name(config.name)
         output_dir = f"output/animations/{safe_name}"
         animation_saver = AnimationSaver(output_dir=output_dir, save_per_frame=1, fps=30)
         print(f"\n  Animation saving enabled -> {output_dir}/")
@@ -548,7 +569,7 @@ def run_test(config: TestConfig) -> Dict[str, Any]:
     
     # Export video if animation was saved
     if animation_saver is not None:
-        animation_saver.export_video(output_name=f"{config.name.lower().replace(' ', '_')}.mp4")
+        animation_saver.export_video(output_name=f"{slugify_name(config.name)}.mp4")
     
     # Print results
     print("\n" + "-" * 50)
@@ -581,20 +602,43 @@ def run_test(config: TestConfig) -> Dict[str, Any]:
 # Test Case Definitions
 # =============================================================================
 
+def slugify_name(value: str) -> str:
+    """Create a filesystem-safe slug for saved animations."""
+    slug = re.sub(r'[^a-z0-9]+', '_', value.lower()).strip('_')
+    return slug or "simulation"
+
 def create_high_friction_test() -> TestConfig:
     """Test Case 1: High friction - normal conditions."""
     return TestConfig(
         name="High Friction",
-        description="Normal high friction conditions. Gatekeeper should avoid obstacle.",
+        description="Two moving obstacles: one in the middle lane and one in the ego lane.",
         track=TrackConfig(),
         vehicle=VehicleConfig(mu=1.0),  # High friction
         simulation=SimulationConfig(),
         obstacles=[
-            ObstacleConfig(x=80.0, y=None),       # First obstacle in middle lane
-            ObstacleConfig(x=85.0, y=None),       # Second obstacle in left lane (y=None uses default)
+            ObstacleConfig(x=50.0, lane_idx=2, vx=2.0),
+            ObstacleConfig(x=35.0, y=4.0, vx=0.75),
         ],
         puddles=[],  # No puddles
         expected_collision=False,
+        num_obstacles=2,
+    )
+
+
+def create_middle_lane_only_test() -> TestConfig:
+    """Test Case 2: Ego lane clear, single obstacle in the middle lane."""
+    return TestConfig(
+        name="Middle Lane Only",
+        description="Ego lane is clear and a single moving obstacle remains in the middle lane.",
+        track=TrackConfig(),
+        vehicle=VehicleConfig(mu=1.0),
+        simulation=SimulationConfig(),
+        obstacles=[
+            ObstacleConfig(x=50.0, lane_idx=2, vx=2.0),
+        ],
+        puddles=[],
+        expected_collision=False,
+        num_obstacles=1,
     )
 
 
@@ -607,20 +651,25 @@ def create_low_friction_test() -> TestConfig:
         vehicle=VehicleConfig(mu=0.3),  # Low friction everywhere
         simulation=SimulationConfig(),
         obstacles=[
-            ObstacleConfig(x=80.0, y=None),       # First obstacle in middle lane
-            ObstacleConfig(x=85.0, y=None),       # Second obstacle in left lane
+            ObstacleConfig(x=50.0, lane_idx=2, vx=2.0),
+            ObstacleConfig(x=35.0, y=4.0, vx=0.75),
         ],
         puddles=[],  # No puddles - friction is globally low
         expected_collision=False,
+        num_obstacles=2,
     )
 
 
 def create_puddle_surprise_test() -> TestConfig:
     """Test Case 3: Puddle surprise - gatekeeper should fail."""
-    # Get middle lane Y position
     track = TrackConfig()
-    half_width = track.lane_width * track.num_lanes / 2
-    middle_lane_y = half_width - (track.num_lanes // 2 + 0.5) * track.lane_width
+    env = DriftingEnv(
+        track_type=track.track_type,
+        track_width=track.lane_width * track.num_lanes,
+        track_length=track.track_length,
+        num_lanes=track.num_lanes,
+    )
+    ego_lane_y = env.get_lane_center(track.ego_lane_idx)
     
     return TestConfig(
         name="Puddle Surprise",
@@ -630,14 +679,14 @@ def create_puddle_surprise_test() -> TestConfig:
         vehicle=VehicleConfig(mu=1.0),  # Start with high friction
         simulation=SimulationConfig(),
         obstacles=[
-            ObstacleConfig(x=80.0, y=None),       # First obstacle in middle lane
-            ObstacleConfig(x=85.0, y=None),       # Second obstacle in left lane
+            ObstacleConfig(x=50.0, lane_idx=2, vx=2.0),
+            ObstacleConfig(x=35.0, y=4.0, vx=0.75),
         ],
         puddles=[
-            # Large puddle right in front of obstacle
-            PuddleConfig(x=70.0, y=middle_lane_y, radius=15.0, friction=0.25),
+            PuddleConfig(x=28.0, y=ego_lane_y, radius=10.0, friction=0.25),
         ],
         expected_collision=True,  # Expected to fail!
+        num_obstacles=2,
     )
 
 
@@ -650,7 +699,7 @@ def main():
     
     parser = argparse.ArgumentParser(description='Test safety shielding algorithms (Gatekeeper/MPS)')
     parser.add_argument('--test', type=str, default='high_friction',
-                        choices=['high_friction', 'low_friction', 'puddle_surprise', 'all'],
+                        choices=['high_friction', 'middle_lane_only', 'low_friction', 'puddle_surprise', 'all'],
                         help='Which test to run')
     parser.add_argument('--algo', type=str, default='gatekeeper',
                         choices=ALGO_TYPES,
@@ -658,9 +707,9 @@ def main():
     parser.add_argument('--backup', type=str, default='lane_change',
                         choices=BACKUP_TYPES,
                         help='Backup controller type: lane_change (default) or stop')
-    parser.add_argument('--obs', type=int, default=1,
+    parser.add_argument('--obs', type=int, default=None,
                         choices=NUM_OBSTACLES,
-                        help='Number of obstacles: 1 (default) or 2 (blocks lane change)')
+                        help='Override number of obstacles (otherwise use the case default)')
     parser.add_argument('--save', action='store_true',
                         help='Save animation as video')
     
@@ -671,6 +720,7 @@ def main():
     # For lane change backup with high/low friction, no collision expected
     test_configs = {
         'high_friction': create_high_friction_test,
+        'middle_lane_only': create_middle_lane_only_test,
         'low_friction': create_low_friction_test,
         'puddle_surprise': create_puddle_surprise_test,
     }
@@ -679,10 +729,6 @@ def main():
     # Key: (backup_type, num_obstacles, test_name) -> expected_collision
     def get_expected_collision(test_name, backup_type, num_obstacles):
         """Determine expected collision based on test configuration."""
-        # With 2 obstacles, lane change backup will fail (left lane blocked)
-        if num_obstacles == 2 and backup_type == 'lane_change':
-            return True  # Both lanes blocked - collision expected
-        
         # With stopping backup
         if backup_type == 'stop':
             if test_name == 'puddle_surprise':
@@ -690,7 +736,8 @@ def main():
             else:
                 return False  # Should be able to stop with high/low friction
         
-        # Default: lane change with 1 obstacle
+        # Default: informational drift cases are intended to be runnable, not
+        # guaranteed collision-free for every shielding method.
         if test_name == 'puddle_surprise':
             return True  # Puddle causes failure
         return False  # Lane change should work
@@ -699,7 +746,7 @@ def main():
     
     if args.test == 'all':
         print("\n" + "=" * 70)
-        print(f"  RUNNING ALL {args.algo.upper()} TESTS (backup: {args.backup}, obstacles: {args.obs})")
+        print(f"  RUNNING ALL {args.algo.upper()} TESTS (backup: {args.backup}, obstacles: {args.obs or 'case default'})")
         print("=" * 70)
         
         for name, create_config in test_configs.items():
@@ -707,17 +754,18 @@ def main():
             config.save_animation = args.save
             config.algo_type = args.algo
             config.backup_type = args.backup
-            config.num_obstacles = args.obs
+            if args.obs is not None:
+                config.num_obstacles = args.obs
             # Update expected collision based on configuration
-            config.expected_collision = get_expected_collision(name, args.backup, args.obs)
+            config.expected_collision = get_expected_collision(name, args.backup, config.num_obstacles)
             # Update name to include algo, backup type and obstacle count
-            config.name = f"{config.name} ({args.algo}, {args.backup}, {args.obs} obs)"
+            config.name = f"{config.name} ({args.algo}, {args.backup}, {config.num_obstacles} obs)"
             results[name] = run_test(config)
             input("\nPress Enter to continue to next test...")
         
         # Summary
         print("\n" + "=" * 70)
-        print(f"  TEST SUMMARY ({args.algo}, backup: {args.backup}, obstacles: {args.obs})")
+        print(f"  TEST SUMMARY ({args.algo}, backup: {args.backup}, obstacles: {args.obs or 'case default'})")
         print("=" * 70)
         for name, result in results.items():
             status = "✓ PASSED" if result['passed'] else "✗ FAILED"
@@ -733,11 +781,12 @@ def main():
         config.save_animation = args.save
         config.algo_type = args.algo
         config.backup_type = args.backup
-        config.num_obstacles = args.obs
+        if args.obs is not None:
+            config.num_obstacles = args.obs
         # Update expected collision based on configuration
-        config.expected_collision = get_expected_collision(args.test, args.backup, args.obs)
+        config.expected_collision = get_expected_collision(args.test, args.backup, config.num_obstacles)
         # Update name to include algo, backup type and obstacle count
-        config.name = f"{config.name} ({args.algo}, {args.backup}, {args.obs} obs)"
+        config.name = f"{config.name} ({args.algo}, {args.backup}, {config.num_obstacles} obs)"
         results[args.test] = run_test(config)
     
     return results
@@ -745,4 +794,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

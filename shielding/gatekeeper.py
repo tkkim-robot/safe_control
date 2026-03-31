@@ -139,17 +139,17 @@ class Gatekeeper:
             label='Committed nominal', zorder=20
         )
         
-        # Committed backup portion (blue = lane change)
+        # Committed backup portion (cyan = backup trajectory)
         self.committed_backup_line, = self.ax.plot(
-            [], [], '-', color='dodgerblue', linewidth=3, alpha=0.9,
-            label='Committed backup', zorder=20
+            [], [], '-', color='cyan', linewidth=3, alpha=0.9,
+            label='Backup trajectory', zorder=20
         )
         
         # Switching point marker
         self.switching_point_marker, = self.ax.plot(
             [], [], 'mo', markersize=12, markerfacecolor='magenta',
             markeredgecolor='white', markeredgewidth=2,
-            label='Switching point', zorder=25
+            label='Switching time', zorder=25
         )
     
     def set_nominal_controller(self, nominal_controller):
@@ -406,13 +406,22 @@ class Gatekeeper:
         
         # Check moving obstacle collision (if provided)
         if obstacle_state is not None:
-            collision = self._check_moving_obstacle_collision(
-                position, robot_radius, obstacle_state
-            )
-            if collision:
-                return (True, "Moving Obstacle") if return_reason else True
+            for obstacle in self._iter_obstacles(obstacle_state):
+                collision = self._check_moving_obstacle_collision(
+                    position, robot_radius, obstacle
+                )
+                if collision:
+                    return (True, "Moving Obstacle") if return_reason else True
         
         return (False, "None") if return_reason else False
+    
+    def _iter_obstacles(self, obstacle_state):
+        """Normalize obstacle input to a flat iterable of obstacle dicts."""
+        if obstacle_state is None:
+            return []
+        if isinstance(obstacle_state, (list, tuple)):
+            return [obs for obs in obstacle_state if obs is not None]
+        return [obstacle_state]
     
     def _check_moving_obstacle_collision(self, position, robot_radius, obstacle):
         """
@@ -725,4 +734,3 @@ class Gatekeeper:
             'using_backup': self.is_using_backup(),
             'committed_length': len(self.committed_u_traj) if self.committed_u_traj is not None else 0,
         }
-

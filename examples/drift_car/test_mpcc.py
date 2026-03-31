@@ -51,28 +51,28 @@ def create_robot_spec_high_friction():
         'wheel_base': 2.8,  # Total wheelbase [m]
         'body_length': 4.5,
         'body_width': 2.0,
-        'radius': 1.5,      # Collision radius
+        'radius': 1.2,      # Collision radius
         
         # Mass and inertia
         'm': 2500.0,        # Vehicle mass [kg]
         'Iz': 5000.0,       # Yaw moment of inertia [kg*m^2]
         
         # Tire parameters
-        'Cc_f': 150000.0,   # Front cornering stiffness [N/rad]
-        'Cc_r': 180000.0,   # Rear cornering stiffness [N/rad]
+        'Cc_f': 80000.0,    # Front cornering stiffness [N/rad]
+        'Cc_r': 100000.0,   # Rear cornering stiffness [N/rad]
         'mu': 1.0,          # Friction coefficient
         'r_w': 0.35,        # Wheel radius [m]
-        'gamma': 0.99,      # Numeric stability parameter
+        'gamma': 0.95,      # Numeric stability parameter
         
         # Input limits
         'delta_max': np.deg2rad(20),     # Max steering [rad]
-        'delta_dot_max': np.deg2rad(15), # Max steering rate [rad/s]
+        'delta_dot_max': np.deg2rad(25), # Max steering rate [rad/s]
         'tau_max': 4000.0,               # Max torque [Nm]
         'tau_dot_max': 8000.0,           # Max torque rate [Nm/s]
         
         # State limits
         'v_max': 20.0,      # Max velocity [m/s]
-        'v_min': 0.5,       # Min velocity [m/s]
+        'v_min': 0.0,       # Min velocity [m/s]
         'r_max': 2.0,       # Max yaw rate [rad/s]
         'beta_max': np.deg2rad(45),  # Max slip angle [rad]
         
@@ -444,4 +444,3 @@ if __name__ == "__main__":
         run_mpcc_oval_track(save_animation=args.save)
     elif args.track == 'test':
         test_parameter_combinations()
-

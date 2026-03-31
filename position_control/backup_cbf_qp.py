@@ -330,6 +330,14 @@ class BackupCBF:
         else:
             return self.moving_obstacles
     
+    def _iter_obstacles(self, obstacle_state):
+        """Normalize obstacle input to a flat iterable of obstacle dicts."""
+        if obstacle_state is None:
+            return []
+        if isinstance(obstacle_state, (list, tuple)):
+            return [obs for obs in obstacle_state if obs is not None]
+        return [obstacle_state]
+    
     def _h_safety(self, x, t=0.0):
         """
         Compute safety CBF value h(x).
@@ -403,14 +411,16 @@ class BackupCBF:
         
         # Moving obstacle constraint (bullet)
         obs_state = self._get_obstacle_at_time(t)
-        if obs_state is not None and obs_state.get('active', True):
-            obs_x = obs_state.get('x', 0)
-            obs_y = obs_state.get('y', 0)
+        for obstacle in self._iter_obstacles(obs_state):
+            if not obstacle.get('active', True):
+                continue
+            obs_x = obstacle.get('x', 0)
+            obs_y = obstacle.get('y', 0)
             
-            if 'length' in obs_state and 'width' in obs_state:
+            if 'length' in obstacle and 'width' in obstacle:
                 # Rectangular obstacle (bullet bill)
-                obs_length = obs_state['length']
-                obs_width = obs_state['width']
+                obs_length = obstacle['length']
+                obs_width = obstacle['width']
                 
                 # Distance to rectangle (signed distance)
                 dx = max(abs(position[0] - obs_x) - obs_length / 2, 0)
@@ -419,7 +429,7 @@ class BackupCBF:
                 h_obs = dist - robot_radius - self.safety_margin
             else:
                 # Circular obstacle
-                obs_radius = obs_state.get('radius', 1.0)
+                obs_radius = obstacle.get('radius', 1.0)
                 dist = np.sqrt((position[0] - obs_x)**2 + (position[1] - obs_y)**2)
                 h_obs = dist - robot_radius - obs_radius - self.safety_margin
             

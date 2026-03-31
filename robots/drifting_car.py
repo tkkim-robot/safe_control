@@ -699,6 +699,14 @@ class DriftingCarSimulator:
                 self.collision_type = 'obstacle'
                 self._draw_collision_marker()
                 return True
+        
+        if hasattr(self.env, 'check_dynamic_obstacle_collision'):
+            obs_collision, obs_idx = self.env.check_dynamic_obstacle_collision(position, robot_radius)
+            if obs_collision and not self.collision_detected:
+                self.collision_detected = True
+                self.collision_type = 'obstacle'
+                self._draw_collision_marker()
+                return True
             
         return self.collision_detected
     
@@ -723,6 +731,8 @@ class DriftingCarSimulator:
             dict with 'collision', 'state', 'done' keys
         """
         self.car.step(U)
+        if hasattr(self.env, 'step_dynamic_obstacles'):
+            self.env.step_dynamic_obstacles(self.car.dt)
         collision = self.check_collision()
         
         if self.show_animation:
@@ -740,4 +750,3 @@ class DriftingCarSimulator:
             self.car.ax.figure.canvas.draw_idle()
             self.car.ax.figure.canvas.flush_events()
             plt.pause(pause)
-

@@ -29,9 +29,12 @@ Examples:
 
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.patches import Circle
+from matplotlib.patches import Circle, Patch
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List, Union
+import re
+import glob
+import os
 
 from safe_control.envs.evade_env import EvadeEnv
 from safe_control.robots.double_integrator2D import DoubleIntegrator2D
@@ -90,10 +93,10 @@ class SimulationConfig:
     tf: float = 60.0
     backup_horizon_time: float = 12.0
     nominal_horizon_time: float = 10.0
-    event_offset: float = 0.2
+    event_offset: float = 0.05
     safety_margin: float = 0.5
     initial_x: float = 20.0  # Start ahead of bullet
-    target_velocity: float = 1.0
+    target_velocity: float = 1.5
 
 
 @dataclass
@@ -216,6 +219,45 @@ class RobotVisualizer:
         self.trail.set_data(self.trail_x, self.trail_y)
 
 
+def slugify_name(value: str) -> str:
+    """Create a filesystem-safe slug for saved animations."""
+    slug = re.sub(r'[^a-z0-9]+', '_', value.lower()).strip('_')
+    return slug or "simulation"
+
+
+def reset_animation_dir(output_dir: str) -> None:
+    """Remove stale frames and videos so each run leaves one video artifact."""
+    os.makedirs(output_dir, exist_ok=True)
+    for pattern in ("frame_*.png", "*.mp4"):
+        for path in glob.glob(os.path.join(output_dir, pattern)):
+            os.remove(path)
+
+
+def build_legend_handles(config: TestConfig, env: EvadeEnv, shielding):
+    """Build a method-specific legend for the evade scenario."""
+    handles = [
+        Patch(facecolor=env.pocket_color, edgecolor=(0.3, 0.5, 0.7), label='Safe Pocket'),
+        Patch(facecolor=env.goal_color, edgecolor=(0.2, 0.6, 0.2), label='Goal'),
+    ]
+    
+    if config.algo_type != 'backupcbf':
+        committed_nominal = getattr(shielding, 'committed_nominal_line', None)
+        if committed_nominal is not None:
+            handles.append(committed_nominal)
+    
+    backup_handle = getattr(shielding, 'committed_backup_line', None)
+    if backup_handle is None:
+        backup_handle = getattr(shielding, 'backup_traj_line', None)
+    if backup_handle is not None:
+        handles.append(backup_handle)
+    
+    switching_handle = getattr(shielding, 'switching_point_marker', None)
+    if switching_handle is not None:
+        handles.append(switching_handle)
+    
+    return handles
+
+
 # =============================================================================
 # Simulation
 # =============================================================================
@@ -254,6 +296,7 @@ def run_simulation(config: TestConfig, animation_saver: Optional['AnimationSaver
     ])
     
     robot_spec = config.robot.to_dict()
+    robot_spec['safety_margin'] = config.simulation.safety_margin
     
     # Get pocket info
     pocket_center = env.get_pocket_center()
@@ -297,7 +340,8 @@ def run_simulation(config: TestConfig, animation_saver: Optional['AnimationSaver
             dt=config.simulation.dt,
             backup_horizon=backup_horizon_time,
             event_offset=config.simulation.event_offset,
-            ax=ax
+            ax=ax,
+            safety_margin=config.simulation.safety_margin,
         )
     elif config.algo_type == 'backupcbf':
         print(f"  Algorithm: BACKUPCBF (backup CBF-QP)")
@@ -317,7 +361,8 @@ def run_simulation(config: TestConfig, animation_saver: Optional['AnimationSaver
             backup_horizon=backup_horizon_time,
             nominal_horizon=config.simulation.nominal_horizon_time,
             event_offset=config.simulation.event_offset,
-            ax=ax
+            ax=ax,
+            safety_margin=config.simulation.safety_margin,
         )
     
     # Configure shielding
@@ -364,6 +409,13 @@ def run_simulation(config: TestConfig, animation_saver: Optional['AnimationSaver
     
     # Setup visualization
     robot_viz = RobotVisualizer(ax, config.robot.radius, 'orange')
+    ax.legend(
+        handles=build_legend_handles(config, env, shielding),
+        loc='upper right',
+        fontsize=9,
+        framealpha=0.95,
+    )
+    last_using_backup = False
     
     # Simulation loop
     state = initial_state.reshape(-1, 1)
@@ -388,9 +440,11 @@ def run_simulation(config: TestConfig, animation_saver: Optional['AnimationSaver
         shielding.set_nominal_trajectory(nom_x, nom_u)
         
         control = shielding.solve_control_problem(state)
+        using_backup = shielding.is_using_backup()
+        last_using_backup = using_backup
         
         # Track mode
-        if shielding.is_using_backup():
+        if using_backup:
             backup_steps += 1
         else:
             nominal_steps += 1
@@ -446,7 +500,7 @@ def run_simulation(config: TestConfig, animation_saver: Optional['AnimationSaver
         if step % 20 == 0:
             status = shielding.get_status()
             mode = "BACKUP" if status['using_backup'] else "NOMINAL"
-            h_min = status['h_min']
+            h_min = status.get('h_min', status.get('global_min_h', 1.0))
             in_pocket = env.is_in_safe_pocket(pos)
             pocket_str = " [IN POCKET]" if in_pocket else ""
             print(f"Step {step:4d}: x={pos[0]:6.2f}, y={pos[1]:6.2f}, mode={mode}, h_min={h_min:6.3f}{pocket_str}")
@@ -516,8 +570,9 @@ def main():
     # Setup animation saver if enabled
     animation_saver = None
     if config.save_animation:
-        safe_name = config.name.lower().replace(' ', '_').replace('(', '').replace(')', '')
+        safe_name = slugify_name(config.name)
         output_dir = f"output/animations/{safe_name}"
+        reset_animation_dir(output_dir)
         animation_saver = AnimationSaver(output_dir=output_dir, save_per_frame=1, fps=30)
         print(f"\n  Animation saving enabled -> {output_dir}/")
     
