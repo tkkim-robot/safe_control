@@ -51,7 +51,6 @@ import matplotlib.pyplot as plt
 from dataclasses import dataclass
 from typing import Optional, Tuple, Dict, Any, Union
 import re
-
 from safe_control.envs.drifting_env import DriftingEnv
 from safe_control.robots.drifting_car import DriftingCar, DriftingCarSimulator
 from safe_control.position_control.mpcc import MPCC
@@ -153,7 +152,7 @@ class SimulationConfig:
     nominal_horizon_time: float = 6.0    # MPCC prediction horizon [s]
     backup_horizon_time: float = 3.0     # Backup trajectory horizon [s]
     event_offset: float = 0.05           # Gatekeeper re-evaluation interval [s]
-    safety_margin: float = 1.25          # Collision checking margin [m]
+    safety_margin: float = 0.01          # Collision checking margin [m]
     initial_velocity: float = 10.0        # Starting velocity [m/s]
     target_velocity: float = 10.0         # Target velocity [m/s]
 
@@ -234,7 +233,7 @@ def setup_vehicle(config: TestConfig, env: DriftingEnv, ax: plt.Axes) -> Tuple[D
     
     # Initial state in ego lane
     X0 = np.array([
-        5.0,                        # x
+        1.0,                        # x
         ego_lane_y,                 # y
         np.deg2rad(0),              # theta
         0, 0,                       # r, beta

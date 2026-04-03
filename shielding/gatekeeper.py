@@ -709,7 +709,12 @@ class Gatekeeper:
             switch_idx = self.actual_nominal_steps  # Index of switching state
             if 0 <= switch_idx < len(self.committed_x_traj):
                 switch_state = self.committed_x_traj[switch_idx]
-                self.switching_point_marker.set_data([switch_state[0]], [switch_state[1]])
+                switch_x=switch_state[0]
+                if switch_x> self.ax.get_xlim()[1]:
+                    switch_x=self.ax.get_xlim()[1]
+                    self.switching_point_marker.set_data([switch_x], [switch_state[1]])
+                else:
+                    self.switching_point_marker.set_data([switch_state[0]], [switch_state[1]])
             else:
                 self.switching_point_marker.set_data([], [])
     
