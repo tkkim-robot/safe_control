@@ -1,13 +1,13 @@
 # Dynamic Parabolic Control Barrier Functions
 
-The Dynamic Parabolic Control Barrier Function (DPCBF) is a safety-critical controller that enables safe dynamic obstacle avoidance for the kinematic bicycle model. Its detailed implementation can be found in `kinematic_bicycle2D_dpcbf.py` within the `safe_control` library. Please refer to our paper ["Beyond Collision Cones: Dynamic Obstacle Avoidance for Nonholonomic Robots via Dynamic Parabolic Control Barrier Functions"]() for more details.
+The Dynamic Parabolic Control Barrier Function (DPCBF) is a safety-critical controller that enables safe dynamic obstacle avoidance for the kinematic bicycle model. Its detailed implementation can be found in `kinematic_bicycle2D_dpcbf.py` within the `safe_control` library. Please refer to our paper ["Beyond Collision Cones: Dynamic Obstacle Avoidance for Nonholonomic Robots via Dynamic Parabolic Control Barrier Functions"](https://www.taekyung.me/dpcbf) for more details.
 
 <div align="center">
 <img src="https://github.com/user-attachments/assets/0f6c1b74-7f00-4340-a2a8-16da081e68bf" >
 <div align="center">
 
 [[Homepage]](https://www.taekyung.me/dpcbf)
-[[Arxiv]](https://arxiv.org/abs/)
+[[Arxiv]](https://arxiv.org/abs/2510.01402)
 [[Video]](https://youtu.be/57qgoe7YJao)
 [[Research Group]](https://dasc-lab.github.io/)
 
