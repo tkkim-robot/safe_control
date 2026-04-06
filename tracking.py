@@ -482,14 +482,15 @@ class LocalTrackingController:
         if self.state_machine == 'rotate':
             # in-place rotation
             current_angle = self.robot.get_orientation()
-            goal_angle = np.arctan2(self.waypoints[0][1] - self.robot.X[1, 0],
-                                    self.waypoints[0][0] - self.robot.X[0, 0])
+            rotate_goal = self.waypoints[self.current_goal_index]
+            goal_angle = np.arctan2(rotate_goal[1] - self.robot.X[1, 0],
+                                    rotate_goal[0] - self.robot.X[0, 0])
             if self.robot_spec['model'] in ['Quad2D', 'VTOL2D', 'Manipulator2D']: # Those skip 'rotate' state 
                 self.state_machine = 'track'
             if not self.enable_rotation:
                 self.state_machine = 'track'
             if abs(current_angle - goal_angle) > self.rotation_threshold:
-                return self.waypoints[0][:n_pos]
+                return rotate_goal[:n_pos]
             else:
                 self.state_machine = 'track'
                 self.u_att = None

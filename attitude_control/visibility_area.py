@@ -62,7 +62,7 @@ class VisibilityAreaAtt:
         self.robot_spec = robot_spec
 
         # Control parameters
-        self.kp = kp
+        self.kp = float(robot_spec.get('visibility_area_kp', kp))
         self.w_max = float(robot_spec.get('w_max', 0.5))
 
         # Sensor model

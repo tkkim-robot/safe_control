@@ -108,14 +108,44 @@ class GatekeeperAtt:
         if backup_name not in self._ctrl_map:
             raise ValueError(f"Unknown gatekeeper backup controller '{backup_key}'")
 
-        self.nominal_ctrl = self._ctrl_map[nominal_name](robot, robot_spec)
-        self.backup_ctrl = self._ctrl_map[backup_name](robot, robot_spec)
+        nominal_spec = self._controller_spec_with_overrides(nominal_name, role="nominal")
+        backup_spec = self._controller_spec_with_overrides(backup_name, role="backup")
+
+        self.nominal_ctrl = self._ctrl_map[nominal_name](robot, nominal_spec)
+        self.backup_ctrl = self._ctrl_map[backup_name](robot, backup_spec)
         self.nominal_controller = self.nominal_ctrl.solve_control_problem
         self.backup_controller = self.backup_ctrl.solve_control_problem
 
     @staticmethod
     def _normalize_ctrl_name(name):
         return str(name).strip().lower().replace("-", "_").replace(" ", "_")
+
+    def _controller_spec_with_overrides(self, controller_name, role):
+        spec = dict(self.robot_spec)
+        prefix = f"gatekeeper_{role}_"
+        normalized = self._normalize_ctrl_name(controller_name)
+
+        if normalized == "visibility_area":
+            spec["visibility_area_kp"] = float(
+                self.robot_spec.get(
+                    f"{prefix}visibility_area_kp",
+                    spec.get("visibility_area_kp", 1.5),
+                )
+            )
+            spec["visibility_area_n_yaw_samples"] = int(
+                self.robot_spec.get(
+                    f"{prefix}visibility_area_n_yaw_samples",
+                    spec.get("visibility_area_n_yaw_samples", 36),
+                )
+            )
+            spec["visibility_area_arc_resolution"] = int(
+                self.robot_spec.get(
+                    f"{prefix}visibility_area_arc_resolution",
+                    spec.get("visibility_area_arc_resolution", 30),
+                )
+            )
+
+        return spec
 
     def setup_pos_controller(self, pos_controller):
         self.pos_controller = pos_controller
