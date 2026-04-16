@@ -425,28 +425,52 @@ class LocalTrackingController:
         nearest_obstacle = all_obs[min_distance_index]
         return nearest_obstacle.reshape(-1, 1)
 
+    @staticmethod
+    def _known_obs_geometry(obs):
+        obs = np.asarray(obs, dtype=float).reshape(-1)
+        if obs.shape[0] < 7:
+            return 'circle'
+
+        shape_flag = obs[6]
+        if np.isclose(shape_flag, 0.0):
+            return 'circle'
+
+        # Dynamic-env examples store extra metadata in the trailing slots
+        # instead of the shared shape flag, so unknown tags default to circles.
+        if np.isclose(shape_flag, 1.0) and obs[4] >= 2.0:
+            return 'superellipsoid'
+
+        return 'circle'
+
     def is_collide_unknown(self):
         # if self.unknown_obs is None:
         #     return False
         robot_radius = self.robot.robot_radius
+        robot_pos = self.robot.get_position()
         
         if self.unknown_obs is not None:
-            for obs in self.unknown_obs:
+            for obs in np.atleast_2d(self.unknown_obs):
+                obs = np.asarray(obs, dtype=float).reshape(-1)
+                if obs.shape[0] < 3:
+                    continue
                 # check if the robot collides with the obstacle
-                distance = np.linalg.norm(self.robot.get_position() - obs[:2])
+                distance = np.linalg.norm(robot_pos - obs[:2])
                 if distance < (obs[2] + robot_radius):
                     print("Collision with unknown obstacle detected!")
                     return True
                 
         if self.obs is not None:
-            for obs in self.obs:
+            for obs in np.atleast_2d(self.obs):
+                obs = np.asarray(obs, dtype=float).reshape(-1)
+                if obs.shape[0] < 3:
+                    continue
                 # check if the robot collides with the obstacle
-                if obs[6] == 0:
-                    distance = np.linalg.norm(self.robot.get_position() - obs[:2])
+                if self._known_obs_geometry(obs) == 'circle':
+                    distance = np.linalg.norm(robot_pos - obs[:2])
                     if distance < (obs[2] + robot_radius):
-                        print(f"Collision with known obstacle detected! Obs: {obs}, Robot: {self.robot.get_position()} {robot_radius}, Distance: {distance}, {distance < (obs[2] + robot_radius)}")
+                        print(f"Collision with known obstacle detected! Obs: {obs}, Robot: {robot_pos} {robot_radius}, Distance: {distance}, {distance < (obs[2] + robot_radius)}")
                         return True
-                elif obs[6] == 1:
+                else:
                     ox = obs[0]
                     oy = obs[1]
                     a = obs[2]
@@ -612,6 +636,14 @@ class LocalTrackingController:
         # 8. Step the robot
         self.robot.step(u, self.u_att)
         self.u_pos = u
+
+        collide = self.is_collide_unknown()
+        if collide:
+            self.draw_infeasible()
+            print("Collision detected !!")
+            if self.raise_error:
+                raise InfeasibleError("Collision detected !!")
+            return -2
     
         if self.show_animation:
             self.robot.render_plot()

@@ -207,6 +207,14 @@ class LocalTrackingControllerDyn(LocalTrackingController):
         # 9. Step the robot
         self.robot.step(u, self.u_att)
         self.u_pos = u
+
+        collide = self.is_collide_unknown()
+        if collide:
+            self.draw_infeasible()
+            print("Collision detected !!")
+            if self.raise_error:
+                raise InfeasibleError("Collision detected !!")
+            return -2
     
         if self.show_animation:
             self.robot.render_plot()
