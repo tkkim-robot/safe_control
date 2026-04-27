@@ -302,8 +302,23 @@ class BarrierNetController:
             u_ref_t = torch.from_numpy(np.array(u_ref, dtype=np.float64)).double().unsqueeze(0).to(self.device)
 
             # Forward pass: forward(z_norm, ctx, u_ref, sgn=0)
+            # Use return_aux=True to get p_obs for debugging
             with torch.no_grad():
-                u = self.model(z_t, ctx_t, u_ref_t, sgn=0)
+                u, aux = self.model(z_t, ctx_t, u_ref_t, sgn=0, return_aux=True)
+                p_obs = aux["p_obs"]  # (1, K, 2) or (1, K, 1) for relative degree 1
+            
+            # Debug: Print p values (CBF parameters) for each obstacle
+            if p_obs.size(2) == 2:  # HOCBF: p1, p2
+                p1_vals = p_obs[0, :, 0].cpu().numpy()
+                p2_vals = p_obs[0, :, 1].cpu().numpy()
+                n_active = len(p1_vals)
+                if n_active > 0:
+                    print(f"[BarrierNet] p1: {p1_vals}, p2: {p2_vals} (n_obs={n_active})")
+            else:  # Relative degree 1: alpha only
+                alpha_vals = p_obs[0, :, 0].cpu().numpy()
+                n_active = len(alpha_vals)
+                if n_active > 0:
+                    print(f"[BarrierNet] alpha: {alpha_vals} (n_obs={n_active})")
             
             u_np = u.detach().cpu().numpy().reshape(-1)
             u_np = self._clip_control(u_np)

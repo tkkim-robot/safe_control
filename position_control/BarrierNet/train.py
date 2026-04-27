@@ -122,6 +122,9 @@ def main():
     )
 
     best_val = float("inf")
+    patience = int(os.environ.get("BN_PATIENCE", "10"))  # Early stopping patience
+    patience_counter = 0
+    
     for ep in range(EPOCHS):
         model.train()
         tr_losses = []
@@ -131,11 +134,32 @@ def main():
             u_refb = u_refb.to(device)
             yb = yb.to(device)
             pred = model(zb, ctxb, u_refb, sgn=1)  # forward(z_norm, ctx, u_ref, sgn)
-            loss = loss_fn(pred, yb)
+            
+            # Main loss: prediction error
+            main_loss = loss_fn(pred, yb)
+            
+            # Regularization: prevent p1, p2 from being too large (too conservative)
+            # Get p_obs from model (need to call with return_aux)
+            with torch.enable_grad():
+                _, aux = model(zb, ctxb, u_refb, sgn=1, return_aux=True)
+                p_obs = aux["p_obs"]  # (B, K, 2) or (B, K, 1)
+                
+                # Penalize p values that are too close to maximum (4.0)
+                # Target: p should be in reasonable range (e.g., 0.5-3.0)
+                p_reg_weight = float(os.environ.get("BN_P_REG_WEIGHT", "0.01"))
+                if p_obs.size(2) == 2:  # HOCBF: p1, p2
+                    # Penalize values > 3.5 (too conservative)
+                    p_penalty = torch.clamp(p_obs - 3.5, min=0.0).mean()
+                else:  # Relative degree 1: alpha
+                    p_penalty = torch.clamp(p_obs - 3.5, min=0.0).mean()
+                
+                p_reg_loss = p_reg_weight * p_penalty
+            
+            total_loss = main_loss + p_reg_loss
             opt.zero_grad()
-            loss.backward()
+            total_loss.backward()
             opt.step()
-            tr_losses.append(loss.item())
+            tr_losses.append(main_loss.item())
 
         model.eval()
         with torch.no_grad():
@@ -150,9 +174,11 @@ def main():
             val = float(np.mean(val_losses)) if val_losses else float("inf")
 
         tr = float(np.mean(tr_losses)) if tr_losses else float("inf")
-        print(f"epoch {ep+1}/{EPOCHS} train={tr:.6f} valid={val:.6f}")
+        print(f"epoch {ep+1}/{EPOCHS} train={tr:.6f} valid={val:.6f}", end="")
+        
         if val < best_val:
             best_val = val
+            patience_counter = 0
             ckpt_path = os.path.join(CKPT_DIR, f"{ROBOT_MODEL}_barriernet.pth")
             meta_path = ckpt_path.replace(".pth", "_meta.json")
             torch.save(model.state_dict(), ckpt_path)
@@ -176,7 +202,14 @@ def main():
             }
             with open(meta_path, "w") as f:
                 json.dump(meta, f, indent=2)
-            print(f"  saved: {ckpt_path} (best valid={best_val:.6f})")
+            print(f" -> saved (best valid={best_val:.6f})")
+        else:
+            patience_counter += 1
+            print(f" (patience: {patience_counter}/{patience})")
+            if patience_counter >= patience:
+                print(f"\nEarly stopping at epoch {ep+1}: validation loss did not improve for {patience} epochs")
+                print(f"Best validation loss: {best_val:.6f}")
+                break
 
 
 if __name__ == "__main__":

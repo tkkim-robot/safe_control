@@ -1,4 +1,13 @@
-from tracking import LocalTrackingController
+import os
+import sys
+
+# Allow running as a standalone repo (e.g., `cd safe_control && python dynamic_env/main.py`)
+# by ensuring the parent directory of this package is on sys.path.
+_PKG_PARENT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if _PKG_PARENT not in sys.path:
+    sys.path.insert(0, _PKG_PARENT)
+
+from safe_control.tracking import LocalTrackingController
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -33,7 +42,7 @@ class LocalTrackingControllerDyn(LocalTrackingController):
                          ax=ax, fig=fig, env=env)
         
         if self.pos_controller_type == 'cbf_qp':
-            from position_control.cbf_qp import CBFQP
+            from safe_control.position_control.cbf_qp import CBFQP
             self.pos_controller = CBFQP(self.robot, self.robot_spec, num_obs=10)
         
         # Create a list to hold the arrow patches for obstacle velocities
@@ -46,7 +55,7 @@ class LocalTrackingControllerDyn(LocalTrackingController):
     
 
     def setup_robot(self, X0):
-        from dynamic_env.robot import BaseRobotDyn
+        from safe_control.dynamic_env.robot import BaseRobotDyn
         self.robot = BaseRobotDyn(
             X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
         
@@ -173,13 +182,22 @@ class LocalTrackingControllerDyn(LocalTrackingController):
                        'u_ref': u_ref,
                        'goal': self.goal}
         
-        if self.pos_controller_type in ['optimal_decay_cbf_qp', 'cbf_qp']:
-            u = self.pos_controller.solve_control_problem(
-                self.robot.X, control_ref, self.nearest_multi_obs) 
+        if self.pos_controller_type == 'barriernet':
+            # BarrierNet selects closest obstacles internally by signed clearance.
+            # Pass the full obstacle set (known + detected) instead of the pre-truncated nearest_multi_obs.
+            if len(detected_obs) != 0:
+                if len(self.obs) == 0:
+                    obs_for_bn = np.array(detected_obs)
+                else:
+                    obs_for_bn = np.vstack((self.obs, detected_obs))
+            else:
+                obs_for_bn = self.obs
+            u = self.pos_controller.solve_control_problem(self.robot.X, control_ref, obs_for_bn)
         else:
-            u = self.pos_controller.solve_control_problem(
-                self.robot.X, control_ref, self.nearest_multi_obs)
-        plt.figure(self.fig.number)
+            u = self.pos_controller.solve_control_problem(self.robot.X, control_ref, self.nearest_multi_obs)
+
+        if self.fig is not None:
+            plt.figure(self.fig.number)
 
         # 6. Draw collision cones/parabolas for C3BF/DPCBF
         if self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
@@ -348,8 +366,8 @@ def single_agent_main(controller_type):
     unexpected_beh = tracking_controller.run_all_steps(tf=100)
 
 if __name__ == "__main__":
-    from utils import plotting
-    from utils import env
+    from safe_control.utils import plotting
+    from safe_control.utils import env
     import math
 
     single_agent_main(controller_type={'pos': 'cbf_qp'})

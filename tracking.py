@@ -1,3 +1,5 @@
+import os
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -6,8 +8,9 @@ import glob
 import subprocess
 import csv
 
-# BarrierNet inference controller
-from position_control.barriernet_controller import BarrierNetController
+_PKG_PARENT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _PKG_PARENT not in sys.path:
+    sys.path.insert(0, _PKG_PARENT)
 
 """
 Created on June 20th, 2024
@@ -125,18 +128,19 @@ class LocalTrackingController:
         self.setup_robot(X0)
         self.num_constraints = 5 # number of max obstacle constraints to consider in the controller
         if self.pos_controller_type == 'cbf_qp':
-            from position_control.cbf_qp import CBFQP
+            from safe_control.position_control.cbf_qp import CBFQP
             self.pos_controller = CBFQP(self.robot, self.robot_spec)
         elif self.pos_controller_type == 'mpc_cbf':
-            from position_control.mpc_cbf import MPCCBF
+            from safe_control.position_control.mpc_cbf import MPCCBF
             self.pos_controller = MPCCBF(self.robot, self.robot_spec, show_mpc_traj=self.show_mpc_traj)
         elif self.pos_controller_type == 'optimal_decay_cbf_qp':
-            from position_control.optimal_decay_cbf_qp import OptimalDecayCBFQP
+            from safe_control.position_control.optimal_decay_cbf_qp import OptimalDecayCBFQP
             self.pos_controller = OptimalDecayCBFQP(self.robot, self.robot_spec)
         elif self.pos_controller_type == 'optimal_decay_mpc_cbf':
-            from position_control.optimal_decay_mpc_cbf import OptimalDecayMPCCBF
+            from safe_control.position_control.optimal_decay_mpc_cbf import OptimalDecayMPCCBF
             self.pos_controller = OptimalDecayMPCCBF(self.robot, self.robot_spec)
         elif self.pos_controller_type == 'barriernet':
+            from safe_control.position_control.barriernet_controller import BarrierNetController
             ckpt_path = controller_type.get('ckpt')
             if ckpt_path is None:
                 raise ValueError("For pos=='barriernet' you must supply controller_type['ckpt']")
@@ -149,23 +153,23 @@ class LocalTrackingController:
             
         if self.enable_rotation and self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
             if self.att_controller_type == 'simple':
-                from attitude_control.simple_attitude import SimpleAtt
+                from safe_control.attitude_control.simple_attitude import SimpleAtt
                 self.att_controller = SimpleAtt(self.robot, self.robot_spec)
             elif self.att_controller_type == 'velocity_tracking_yaw':
-                from attitude_control.velocity_tracking_yaw import VelocityTrackingYaw
+                from safe_control.attitude_control.velocity_tracking_yaw import VelocityTrackingYaw
                 self.att_controller = VelocityTrackingYaw(self.robot, self.robot_spec)
             elif self.att_controller_type == 'visibility_raycast':
                 from safe_control.attitude_control.visibility_raycast import VisibilityRayCastAtt
                 self.att_controller = VisibilityRayCastAtt(self.robot, self.robot_spec)
             elif self.att_controller_type == 'visibility_area':
-                from attitude_control.visibility_area import VisibilityAreaAtt
+                from safe_control.attitude_control.visibility_area import VisibilityAreaAtt
                 self.att_controller = VisibilityAreaAtt(self.robot, self.robot_spec)
             elif self.att_controller_type == 'gatekeeper':
-                from attitude_control.gatekeeper_attitude import GatekeeperAtt
+                from safe_control.attitude_control.gatekeeper_attitude import GatekeeperAtt
                 self.att_controller = GatekeeperAtt(self.robot, self.robot_spec)
                 self.att_controller.setup_pos_controller(self.pos_controller)
             elif self.att_controller_type == 'visibility':
-                from attitude_control.visibility_promoting_yaw import VisibilityAtt
+                from safe_control.attitude_control.visibility_promoting_yaw import VisibilityAtt
                 self.att_controller = VisibilityAtt(self.robot, self.robot_spec)
                 
             else:
@@ -200,7 +204,7 @@ class LocalTrackingController:
             [], [], s=10, facecolors='g', edgecolors='g', alpha=0.5)
 
     def setup_robot(self, X0):
-        from robots.robot import BaseRobot
+        from safe_control.robots.robot import BaseRobot
         self.robot = BaseRobot(
             X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
 
@@ -375,25 +379,46 @@ class LocalTrackingController:
         if self.obs is not None:
             for obs in self.obs:
                 # check if the robot collides with the obstacle
-                if obs[6] == 0:
+                # Handle both 5-element format [x, y, r, vx, vy] and 7-element format [x, y, r, vx, vy, y_min_or_theta, flag]
+                # Handle both numpy arrays and lists
+                if isinstance(obs, np.ndarray):
+                    obs_len = obs.shape[0]
+                else:
+                    obs_len = len(obs) if hasattr(obs, '__len__') else 0
+                
+                # For 5-element obstacles, treat as circles (standard format for non-DPCBF robots)
+                if obs_len == 5:
                     distance = np.linalg.norm(self.robot.X[:2, 0] - obs[:2])
                     if distance < (obs[2] + robot_radius):
                         print(f"Collision with known obstacle detected! Obs: {obs}, Robot: {self.robot.X[:2, 0]} {robot_radius}, Distance: {distance}, {distance < (obs[2] + robot_radius)}")
                         return True
-                elif obs[6] == 1:
-                    ox = obs[0]
-                    oy = obs[1]
-                    a = obs[2]
-                    b = obs[3]
-                    e = obs[4]
-                    theta = obs[5]
+                # For 7-element obstacles, check flag at index 6 (DPCBF format)
+                elif obs_len == 7:
+                    if obs[6] == 0:
+                        distance = np.linalg.norm(self.robot.X[:2, 0] - obs[:2])
+                        if distance < (obs[2] + robot_radius):
+                            print(f"Collision with known obstacle detected! Obs: {obs}, Robot: {self.robot.X[:2, 0]} {robot_radius}, Distance: {distance}, {distance < (obs[2] + robot_radius)}")
+                            return True
+                    elif obs[6] == 1:
+                        ox = obs[0]
+                        oy = obs[1]
+                        a = obs[2]
+                        b = obs[3]
+                        e = obs[4]
+                        theta = obs[5]
 
-                    pox_prime = np.cos(theta)*(self.robot.X[0,0]-ox) + np.sin(theta)*(self.robot.X[1,0]-oy)
-                    poy_prime = -np.sin(theta)*(self.robot.X[0,0]-ox) + np.cos(theta)*(self.robot.X[1,0]-oy)
+                        pox_prime = np.cos(theta)*(self.robot.X[0,0]-ox) + np.sin(theta)*(self.robot.X[1,0]-oy)
+                        poy_prime = -np.sin(theta)*(self.robot.X[0,0]-ox) + np.cos(theta)*(self.robot.X[1,0]-oy)
 
-                    h = ((pox_prime)/(a + robot_radius))**(e) + ((poy_prime)/(b + robot_radius))**(e) - 1
-                    if h<=0:
-                        print(f"Collision with known obstacle detected! Obs: {obs}, Robot: {self.robot.X[:2, 0]} {robot_radius}")
+                        h = ((pox_prime)/(a + robot_radius))**(e) + ((poy_prime)/(b + robot_radius))**(e) - 1
+                        if h<=0:
+                            print(f"Collision with known obstacle detected! Obs: {obs}, Robot: {self.robot.X[:2, 0]} {robot_radius}")
+                            return True
+                # For 3-element obstacles (basic format), treat as circles
+                elif obs_len == 3:
+                    distance = np.linalg.norm(self.robot.X[:2, 0] - obs[:2])
+                    if distance < (obs[2] + robot_radius):
+                        print(f"Collision with known obstacle detected! Obs: {obs}, Robot: {self.robot.X[:2, 0]} {robot_radius}, Distance: {distance}, {distance < (obs[2] + robot_radius)}")
                         return True
                     
         # Collision with the ground
@@ -516,22 +541,37 @@ class LocalTrackingController:
                        'goal': self.goal}
         
         if self.pos_controller_type in ['optimal_decay_cbf_qp', 'cbf_qp']:
-            u = self.pos_controller.solve_control_problem(
-                self.robot.X, control_ref, self.nearest_obs)
-            self.robot.draw_collision_cone(self.robot.X, [self.nearest_obs], self.ax)
-        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
-            u = self.pos_controller.solve_control_problem(
-                self.robot.X, control_ref, [self.nearest_obs.flatten()])
-            # self.robot.draw_collision_cone(self.robot.X, [self.nearest_obs], self.ax)            
-            self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)            
-        elif self.pos_controller_type == 'barriernet':
+            # Use the same multi-obstacle format across controllers.
+            # CBFQP is configured with `num_obs` and expects a list/array of obstacles.
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
+            # self.robot.draw_collision_cone(self.robot.X, [self.nearest_obs], self.ax)
+        elif self.pos_controller_type == 'optimal_decay_mpc_cbf':
+            # Slice obstacles to 5 dimensions [x, y, r, vx, vy] for optimal_decay_mpc_cbf
+            sliced_obs = None
+            if self.nearest_multi_obs is not None:
+                sliced_obs = self.nearest_multi_obs[:, :5]  # Take first 5 dimensions
+            u = self.pos_controller.solve_control_problem(
+                self.robot.X, control_ref, sliced_obs)
+        elif self.pos_controller_type == 'barriernet':
+            # BarrierNet selects closest obstacles internally by signed clearance.
+            # Pass the full obstacle set (known + detected) instead of the pre-truncated nearest_multi_obs.
+            if len(detected_obs) != 0:
+                if len(self.obs) == 0:
+                    obs_for_bn = np.array(detected_obs)
+                else:
+                    obs_for_bn = np.vstack((self.obs, detected_obs))
+            else:
+                obs_for_bn = self.obs
+            # u = control_ref['u_ref']
+            u = self.pos_controller.solve_control_problem(
+                self.robot.X, control_ref, obs_for_bn)
             u = np.asarray(u).reshape(-1, 1)  # ensure column vector
         else:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
-        plt.figure(self.fig.number)
+        if self.fig is not None:
+            plt.figure(self.fig.number)
 
         # 6. Update the attitude controller
         if self.state_machine == 'track' and self.att_controller is not None:
@@ -667,14 +707,15 @@ def single_agent_main(controller_type):
     waypoints = [
         [2, 2, math.pi/2],
         [2, 12, 0],
-        [12, 12, 0],
-        [12, 2, 0]
+        # [12, 12, 0],
+        # [12, 2, 0]
     ]
 
     # Define static obs
-    known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
-                        [10.0, 7.3, 0.4],
-                        [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
+    known_obs = np.array([[2.2, 5.0, 0.2],])
+    # known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
+    #                     [10.0, 7.3, 0.4],
+    #                     [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
 
     env_width = 14.0
     env_height = 14.0
@@ -796,7 +837,7 @@ def single_agent_main(controller_type):
                                                   controller_type=controller_type,
                                                   dt=dt,
                                                   show_animation=True,
-                                                  save_animation=False,
+                                                  save_animation=True,
                                                   show_mpc_traj=False,
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
@@ -889,6 +930,11 @@ if __name__ == "__main__":
     import math
 
     #single_agent_main(controller_type={'pos': 'cbf_qp'})
-    single_agent_main(controller_type={'pos': 'mpc_cbf'})
+    # single_agent_main(controller_type={'pos': 'mpc_cbf'})
     # single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'gatekeeper'}) # only Integrators have attitude controller, otherwise ignored
     # single_agent_main(controller_type={'pos': 'barriernet', 'ckpt': 'BarrierNet/2D_Robot/model_bn.pth'}) # BarrierNet controller example
+    single_agent_main(controller_type={
+        'pos': 'barriernet',
+        'ckpt': 'position_control/BarrierNet/checkpoints/DynamicUnicycle2D_barriernet.pth'
+    })
+

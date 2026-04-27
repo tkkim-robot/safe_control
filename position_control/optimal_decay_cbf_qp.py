@@ -35,6 +35,11 @@ class OptimalDecayCBFQP:
             self.cbf_param['alpha'] = 0.5
             self.cbf_param['omega1'] = 1.0  # Initial omega
             self.cbf_param['p_sb1'] = 10**4  # Penalty parameter for soft decay
+        elif self.robot_spec['model'] == 'KinematicBicycle2D_DPCBF':
+            self.cbf_param = {}            
+            self.cbf_param['alpha'] = 0.5
+            self.cbf_param['omega1'] = 1.0  # Initial omega
+            self.cbf_param['p_sb1'] = 10**4  # Penalty parameter for soft decay
         elif self.robot_spec['model'] == 'Quad2D':
             self.cbf_param = {}            
             self.cbf_param['alpha1'] = 0.5
@@ -63,7 +68,7 @@ class OptimalDecayCBFQP:
         self.h = cp.Parameter((1, 1), value=np.zeros((1, 1)))
         self.h_dot = cp.Parameter((1, 1), value=np.zeros((1, 1)))
         
-        if self.robot_spec['model'] in ['KinematicBicycle2D_C3BF', 'Quad3D']:
+        if self.robot_spec['model'] in ['KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'Quad3D']:
             objective = cp.Minimize(
                 cp.sum_squares(self.u - self.u_ref) +
                 self.cbf_param['p_sb1'] * cp.square(self.omega1 - self.cbf_param['omega1'])
@@ -95,7 +100,7 @@ class OptimalDecayCBFQP:
                 cp.abs(self.u[0]) <= self.robot_spec['a_max'],
                 cp.abs(self.u[1]) <= self.robot_spec['beta_max'],
             ]
-        elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
+        elif self.robot_spec['model'] in ['KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
             constraints = [
                 self.A1 @ self.u + self.b1 + self.cbf_param['alpha'] * self.h @ self.omega1 >= 0,
                 cp.abs(self.u[0]) <= self.robot_spec['a_max'],
@@ -121,10 +126,10 @@ class OptimalDecayCBFQP:
             constraints = [
                 self.A1 @ self.u + self.b1 + self.cbf_param['alpha'] * self.h @ self.omega1 >= 0,
                 self.u[0] >= 0.0,
-                self.u[0] <= self.robot_spec['f_max'],
-                cp.abs(self.u[1]) <= self.robot_spec['phi_dot_max'],
-                cp.abs(self.u[2]) <= self.robot_spec['theta_dot_max'],
-                cp.abs(self.u[3]) <= self.robot_spec['psi_dot_max'],
+                self.u[0] <= self.robot_spec['u_max'],
+                cp.abs(self.u[1]) <= self.robot_spec['u_max'],
+                cp.abs(self.u[2]) <= self.robot_spec['u_max'],
+                cp.abs(self.u[3]) <= self.robot_spec['u_max'],
             ]
 
         self.cbf_controller = cp.Problem(objective, constraints)
@@ -136,8 +141,25 @@ class OptimalDecayCBFQP:
             self.b1.value = np.zeros_like(self.b1.value)
             self.h.value = np.zeros_like(self.h.value)
             self.h_dot.value = np.zeros_like(self.h_dot.value)
-        elif self.robot_spec['model'] in ['KinematicBicycle2D_C3BF', 'Quad3D']:
-            h, dh_dx = self.robot.agent_barrier(nearest_obs)
+        elif self.robot_spec['model'] in ['KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'Quad3D']:
+            # Extract the nearest obstacle
+            if isinstance(nearest_obs, list) and len(nearest_obs) > 0:
+                obs = nearest_obs[0]  # Take first obstacle from list
+            elif isinstance(nearest_obs, np.ndarray):
+                if nearest_obs.ndim == 1:
+                    obs = nearest_obs
+                elif nearest_obs.ndim == 2 and nearest_obs.shape[0] > 0:
+                    obs = nearest_obs[0]  # Take first row
+                else:
+                    obs = nearest_obs
+            else:
+                obs = nearest_obs
+            
+            if obs is not None:
+                h, dh_dx = self.robot.agent_barrier(obs)
+            else:
+                h, dh_dx = 0.0, np.zeros((1, robot_state.shape[0]))
+            
             self.A1.value[0,:] = dh_dx @ self.robot.g()
             self.b1.value[0,:] = dh_dx @ self.robot.f()
             self.h.value[0,:] = h

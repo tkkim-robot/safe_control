@@ -119,7 +119,7 @@ class OptimalDecayMPCCBF:
         _goal = model.set_variable(
             var_type='_tvp', var_name='goal', shape=(self.n_states, 1))
         _obs = model.set_variable(
-            var_type='_tvp', var_name='obs', shape=(5, 5))
+            var_type='_tvp', var_name='obs', shape=(5, 7))
 
         # Add omega parameters
         _omega1 = model.set_variable(var_type='_u', var_name='omega1', shape=(1, 1))
@@ -243,13 +243,13 @@ class OptimalDecayMPCCBF:
             # Handle up to 5 obstacles (if fewer than 5, substitute dummy obstacles)
             if self.obs is None:
                 # Before detecting any obstacle, set 5 dummy obstacles far away
-                dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0]), (5, 1))  # 5 far away obstacles
+                dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0, 0, 0]), (5, 1))  # 5 far away obstacles
                 tvp_template['_tvp', :, 'obs'] = dummy_obstacles
             else:
                 num_obstacles = self.obs.shape[0]
                 if num_obstacles < 5:
                     # Add dummy obstacles for missing ones
-                    dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0]), (5 - num_obstacles, 1))
+                    dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0, 0, 0]), (5 - num_obstacles, 1))
                     tvp_template['_tvp', :, 'obs'] = np.vstack([self.obs, dummy_obstacles])
                 else:
                     # Use the detected obstacles directly
@@ -316,27 +316,35 @@ class OptimalDecayMPCCBF:
         
         if obs is None or len(obs) == 0:
             # No obstacles detected, set 5 dummy obstacles far away
-            self.obs = np.tile(np.array([1000, 1000, 0, 0, 0]), (5, 1))
+            self.obs = np.tile(np.array([1000, 1000, 0, 0, 0, 0, 0]), (5, 1))
         else:
-            num_obstacles = len(obs)
-            padded_obs = []
-            for ob in obs:
-                ob = np.array(ob)
-                if ob.shape[0] == 3:
-                    # Pad missing velocity fields with zeros
-                    ob = np.concatenate([ob, [0.0, 0.0]])
-                elif ob.shape[0] != 5:
-                    raise ValueError(f"Invalid obstacle format: {ob}")
-                padded_obs.append(ob)
-            padded_obs = np.array(padded_obs)
+            self.obs = self._prepare_obstacles(obs)
 
-            if num_obstacles < 5:
-                # Add dummy obstacles for missing ones
-                dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0]), (5 - num_obstacles, 1))
-                self.obs = np.vstack([padded_obs, dummy_obstacles])
-            else:
-                # Use the detected obstacles directly (up to 5)
-                self.obs = padded_obs[:5]
+    def _prepare_obstacles(self, obs_list, max_obs=5):
+        """Pad/trim obstacles to the 7D format expected by DT-CBF."""
+        padded_obs = []
+        for ob in obs_list:
+            ob = np.array(ob)
+            if ob.shape[0] == 3:
+                # Circle: [x, y, r] -> add [vx, vy, dummy, flag]
+                ob = np.concatenate([ob, [0.0, 0.0, 0.0, 0]])
+            elif ob.shape[0] == 5:
+                # Already has velocity: add [dummy, flag]
+                ob = np.concatenate([ob, [0.0, 0]])
+            elif ob.shape[0] != 7:
+                raise ValueError(f"Invalid obstacle format: {ob}")
+            padded_obs.append(ob)
+
+        padded_obs = np.array(padded_obs)
+        num_obstacles = padded_obs.shape[0]
+
+        if num_obstacles < max_obs:
+            dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0, 0, 0]), (max_obs - num_obstacles, 1))
+            padded_obs = np.vstack([padded_obs, dummy_obstacles])
+        else:
+            padded_obs = padded_obs[:max_obs]
+
+        return padded_obs
 
     def solve_control_problem(self, robot_state, control_ref, nearest_obs):
         # Set initial state and reference

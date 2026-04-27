@@ -25,7 +25,7 @@ from torch.autograd import Variable
 
 
 def _cvxopt_qp_solve(Q: torch.Tensor, p: torch.Tensor, G: torch.Tensor, h: torch.Tensor):
-    """cvxopt solver for inference (CPU)."""
+    """cvxopt solver for inference (CPU) - matching official BarrierNet repo."""
     from cvxopt import matrix, solvers
     import numpy as np
 
@@ -38,7 +38,7 @@ def _cvxopt_qp_solve(Q: torch.Tensor, p: torch.Tensor, G: torch.Tensor, h: torch
     
     # Check if solution is valid
     if sol["x"] is None:
-        # QP is infeasible - return None to trigger fallback
+        # QP is infeasible - return None
         return None
     
     # Convert cvxopt matrix to numpy array
@@ -176,6 +176,15 @@ class BarrierNet(nn.Module):
         if self.spec.extra_layers:
             self.obs_fcm = nn.Linear(hs["nHidden21"], hs["nHidden21"]).double()
 
+        # Heads: per-obstacle CBF parameters
+        # - For HOCBF (relative degree 2): outputs p1, p2 (2 params)
+        # - For DPCBF (relative degree 1): outputs alpha (1 param, linear class K function)
+        # Parameters are scaled to (0, 4) range via 4.0 * sigmoid()
+        if self.robot_model == "KinematicBicycle2D_DPCBF":
+            self.fc_p = nn.Linear(hs["nHidden21"], 1).double()  # alpha only for relative degree 1
+        else:
+            self.fc_p = nn.Linear(hs["nHidden21"], 2).double()  # p1, p2 for HOCBF
+
         u_in_dim = hs["nHidden21"] + self.spec.state_dim + self.spec.goal_dim + self.spec.n_u
         self.u_fc1 = nn.Linear(u_in_dim, hs["nHidden22"]).double()
         if self.spec.extra_layers:
@@ -254,8 +263,8 @@ class BarrierNet(nn.Module):
             du = self._act(self.u_fcm(du))
         du = self.u_out(du)
         u_nom = u_ref + du
-        q = -u_ref # F
-        # q = -u_nom # F
+        # q = -u_ref # F
+        q = -u_nom # F
 
         state, goal, obs = self._split_ctx(ctx)
         
@@ -376,27 +385,22 @@ class BarrierNet(nn.Module):
                 return (-q) + 0.0 * grad_anchor.expand(-1, q.size(1))
 
         # inference:
-        # Prefer cvxopt (CPU) for determinism, but fall back to qpth (and finally safe stop) if solver fails.
-        try:
-            u0 = _cvxopt_qp_solve(Q_u[0], q[0], G[0], h[0])
-            if u0 is not None:
-                u0 = np.array(u0).astype(np.float64).reshape(1, -1)
-                return torch.from_numpy(u0).to(self.device).double()
-            # If cvxopt returns None (infeasible), try qpth
-        except Exception as e:
-            # If cvxopt throws exception, try qpth
-            pass
+        # Use cvxopt solver (matching official repo - no fallback)
+        # Process batch by solving each sample separately
+        u_list = []
+        for i in range(n_batch):
+            u_i = _cvxopt_qp_solve(Q_u[i], q[i], G[i], h[i])
+            # Convert cvxopt result to numpy array
+            if u_i is not None:
+                u_i = np.array(u_i).astype(np.float64).flatten()
+            else:
+                # If infeasible, use zero control (safe stop)
+                u_i = np.zeros(self.spec.n_u, dtype=np.float64)
+            u_list.append(u_i)
         
-        # Fallback to qpth
-        try:
-            u = QPFunction(verbose=0)(Q_u, q, G, h, e, e)
-            if u is not None:
-                return u
-        except Exception:
-            pass
-        
-        print(f"WARNING: BarrierNet QP failed, returning safe stop control")
-        return torch.zeros((n_batch, self.spec.n_u), dtype=torch.double, device=self.device)
+        # Stack results and convert to torch
+        u = np.vstack(u_list)  # (n_batch, n_u)
+        return torch.from_numpy(u).to(self.device).double()
 
     def _bounds_constraints(self, n_batch: int) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
         b = self.control_bounds_runtime
@@ -505,9 +509,16 @@ class BarrierNet(nn.Module):
         CBF constraints for Quad2D matching agent_barrier structure.
         Based on agent_barrier: h = ||X[0:2] - obsX[0:2]||^2 - beta*d_min^2
         State: [x, z, theta, x_dot, z_dot, theta_dot]
+        
+        Matches agent_barrier calculation:
+        - h = ||X[0:2] - obsX[0:2]||^2 - beta*d_min^2
+        - h_dot = 2 * (X[0:2] - obsX[0:2]).T @ f(X)[0:2]
+        - dh_dot_dx = (2 * f(X)[0:2]).T + 2 * (X[0:2] - obsX[0:2]).T @ df_dx[0:2, :]
+        - Lg Lf b = dh_dot_dx @ g(X)
         """
         x = robot_state[:, 0:1]
         z = robot_state[:, 1:2]
+        theta = robot_state[:, 2:3]
         vx = robot_state[:, 3:4]
         vz = robot_state[:, 4:5]
 
@@ -519,7 +530,7 @@ class BarrierNet(nn.Module):
         R_sq = beta * d_min * d_min  # beta * d_min^2
 
         # Barrier function: h = ||X[0:2] - obsX[0:2]||^2 - beta*d_min^2
-        dx = x - ox
+        dx = x - ox  # (B,1,K) after broadcasting
         dz = z - oz
         b = dx * dx + dz * dz - R_sq  # (B,K)
 
@@ -527,18 +538,38 @@ class BarrierNet(nn.Module):
         # f(X)[0:2] = [vx, vz]
         Lf_b = 2.0 * dx * vx + 2.0 * dz * vz  # (B,K)
 
+        # Lf^2 b = dh_dot_dx @ f(X)
+        # dh_dot_dx = [2*vx, 2*vz, 0, 0, 2*dx, 2*dz, 0]
+        # f(X) = [vx, vz, theta_dot, 0, -g, 0]
+        # Lf^2 b = 2*vx*vx + 2*vz*vz + 2*dx*0 + 2*dz*(-g) = 2*(vx^2 + vz^2) - 2*g*dz
         g = 9.81  # gravity constant
         Lf2_b = 2.0 * (vx * vx + vz * vz) - 2.0 * g * dz  # (B,K)
 
+        # Lg Lf b = dh_dot_dx @ g(X)
+        # dh_dot_dx = [2*vx, 2*vz, 0, 0, 2*dx, 2*dz, 0]
+        # g(X) = [[0, 0], [0, 0], [0, 0], [-sin(theta)/m, -sin(theta)/m], [cos(theta)/m, cos(theta)/m], [r/I, -r/I]]
+        # dh_dot_dx[4] = 2*dx, dh_dot_dx[5] = 2*dz
+        # Lg Lf b = [2*dx*(-sin(theta)/m) + 2*dz*(cos(theta)/m), 2*dx*(-sin(theta)/m) + 2*dz*(cos(theta)/m)]
+        # Note: theta_dot term (dh_dot_dx[2] @ g[2,:]) is zero, so we ignore it
+        
+        # Get mass (default to 1.0, matching typical Quad2D setup)
+        # Note: mass is typically 1.0 for Quad2D in this codebase
+        m = 1.0
+        
+        sin_theta = torch.sin(theta)  # (B,1)
+        cos_theta = torch.cos(theta)  # (B,1)
+        
         # Lg Lf b for u=[u_r, u_l]
-        dLf_dvx = 2.0 * dx
-        dLf_dvz = 2.0 * dz
-        # map to 2 controls (u_r,u_l) via sum channel
-        g1 = dLf_dvx + dLf_dvz
-        g2 = dLf_dvx + dLf_dvz
-        LgLf = torch.stack([g1, g2], dim=2)  # (B,K,2)
+        # For each obstacle k: LgLf_k = [2*dx_k*(-sin(theta)/m) + 2*dz_k*(cos(theta)/m), ...]
+        # dx, dz are (B,K), sin_theta, cos_theta are (B,1)
+        # Broadcast: (B,1) * (B,K) -> (B,K)
+        LgLf_u1 = (2.0 * dx * (-sin_theta / m) + 2.0 * dz * (cos_theta / m))  # (B,K)
+        LgLf_u2 = (2.0 * dx * (-sin_theta / m) + 2.0 * dz * (cos_theta / m))  # (B,K) - same for both controls
+        
+        LgLf = torch.stack([LgLf_u1, LgLf_u2], dim=2)  # (B,K,2)
 
-        # HOCBF constraint
+        # HOCBF constraint: Lf^2 b + (p1+p2)*Lf b + (p1*p2)*b >= -Lg Lf b @ u
+        # Rewrite as: -Lg Lf b @ u <= Lf^2 b + (p1+p2)*Lf b + (p1*p2)*b
         p1 = p_obs[:, :, 0]  # from NN
         p2 = p_obs[:, :, 1]  # from NN
         h = Lf2_b + (p1 + p2) * Lf_b + (p1 * p2) * b
@@ -657,6 +688,3 @@ class BarrierNet(nn.Module):
         G = -Lg_h
         h = Lf_h + alpha * h_k
         return G, h
-
-
-

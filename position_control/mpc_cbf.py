@@ -341,6 +341,9 @@ class MPCCBF:
                 if ob.shape[0] == 3:
                     # Pad missing velocity fields with zeros
                     ob = np.concatenate([ob, [0.0, 0.0, 0, 0]])
+                elif ob.shape[0] == 5:
+                    # Pad 5-element obstacles (x, y, r, vx, vy) to 7-element format (x, y, r, vx, vy, y_min_or_theta, flag)
+                    ob = np.concatenate([ob, [0.0, 0]])
                 elif ob.shape[0] != 7:
                     raise ValueError(f"Invalid obstacle format: {ob}")
                 padded_obs.append(ob)
