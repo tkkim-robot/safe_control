@@ -342,20 +342,20 @@ class LocalTrackingController:
                 self.unknown_obs_patches[idx].set_facecolor(self.unknown_obs_detected_color)
                 self.unknown_obs_patches[idx].set_alpha(0.85)
 
-    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=5):
+    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=None, obs_num=5):
         def angle_normalize(x):
             return (((x + np.pi) % (2 * np.pi)) - np.pi)
-        '''
-        Get the nearest 5 obstacles that haven't been passed by (i.e., they're still in front of the robot or the robot should still consider the obstacle).
-        '''
-        
-        if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'Quad2D', 'Quad3D']:
-            angle_unpassed=np.pi*2
-        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'VTOL2D']:
-            angle_unpassed=np.pi*1.2
-        elif 'KinematicBicycle2D' in self.robot_spec['model']:
-            angle_unpassed=np.pi*2.0
-        
+
+        if angle_unpassed is None:
+            if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'Quad2D', 'Quad3D']:
+                angle_unpassed=np.pi*2
+            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'VTOL2D']:
+                angle_unpassed=np.pi*1.2
+            elif 'KinematicBicycle2D' in self.robot_spec['model']:
+                angle_unpassed=np.pi*2.0
+            else:
+                angle_unpassed=np.pi*2
+
         if len(detected_obs) != 0:
             if len(self.obs) == 0:
                 all_obs = np.array(detected_obs)
@@ -385,7 +385,7 @@ class LocalTrackingController:
             angle_to_obs = np.arctan2(to_obs_vector[1], to_obs_vector[0])
             angle_diff = abs(angle_normalize(angle_to_obs - robot_yaw))
             
-            # If the obstacle is within the forward-facing 180 degrees, consider it
+            # If the obstacle is within the forward-facing angle_unpassed, consider it
             if angle_diff <= angle_unpassed/2:
                 unpassed_obs.append(obs)
         
